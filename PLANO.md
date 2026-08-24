@@ -14,16 +14,19 @@ signaling por WebSocket, e responde STUN. Ele **nunca** toca em mídia.
 
 ## 2. Stack e layout
 
-Bun + TypeScript, sem dependências externas. Nada de npm install.
+Bun + TypeScript, sem dependências externas. Nada de npm install para
+desenvolver o projeto em si — ver seção 11 sobre o pacote publicado.
 
 ```
+bin/cli.ts       CLI: flags, --bg/--stop, repassa config por env pro server.ts
 server.ts        Bun.serve: estático + /config + WebSocket de signaling
 stun.ts          servidor STUN mínimo (~50 linhas, node:dgram)
 public/
   index.html     cliente inteiro: HTML + CSS + JS, arquivo único
 ```
 
-Rodar: `bun run server.ts`. Sobe HTTP em `:3000` e STUN em UDP `:3478`.
+Rodar direto do repo: `bun run server.ts`. Sobe HTTP em `:3000` e STUN em UDP
+`:3478`. Publicado no npm, o comando é `bunx screen-share` (seção 11).
 
 ## 3. Estado atual
 
@@ -439,3 +442,72 @@ sofrem**: a rota até o `100.x` deles sai pela `tailscale0` e a origem sai certa
 Só quebra com cliente na mesma máquina — que é exatamente o caso "duas abas no
 host", e é candidato concreto a explicar por que a única rodada real de ICE
 voltou `prflx` em vez do `srflx` que o T0 esperava. Não corrigido; registrado.
+
+---
+
+## 11. Empacotamento npm
+
+O projeto virou publicável no registry do npm sob o nome **`screen-share`**.
+Isso mudou só a forma de distribuir e invocar; não mudou o stack. Uma spec e
+um plano mais ambiciosos foram escritos antes disso e avaliaram portar o
+servidor para `node:http` com um WebSocket escrito à mão, para tirar a
+dependência do Bun (`docs/superpowers/specs/2026-08-24-pacote-npm-design.md`
+e `docs/superpowers/plans/2026-08-24-pacote-npm.md`). **Esse porte não foi o
+caminho seguido.** O que foi implementado manteve Bun e TypeScript ponta a
+ponta: `bin/cli.ts`, `server.ts` e `stun.ts` são publicados como escritos, sem
+transpilação e sem `dist/`, e é o Bun que os executa direto — os dois
+documentos acima registram uma exploração descartada, não o desenho atual.
+
+**Como se roda.** `bunx screen-share [flags]`. O shebang do `bin/cli.ts` é
+`#!/usr/bin/env bun`. Quem roda `npx screen-share` numa máquina sem Bun recebe
+`env: bun: No such file or directory` — seco, mas nomeia o que falta; com Bun
+instalado, `npx` funciona igual a `bunx`.
+
+**CLI.** `bin/cli.ts` só faz três coisas: parseia flags, decide primeiro plano
+ou segundo (`--bg`/`--stop`), e repassa a configuração ao `server.ts` por
+variável de ambiente — nenhuma lógica de servidor mora ali. Flags: `-p/--port`
+(3000), `--stun-port` (3478), `--peers` (5), `--sharers` (3), `--pixels`
+(1440000), `--bg`, `--stop`, `-h/--help`, `-v/--version`. `--bg` grava pidfile
+em `$TMPDIR/screen-share-<porta>.pid` e log em
+`$TMPDIR/screen-share-<porta>.log`, e só reporta sucesso depois que o
+`/config` do processo filho responder com a config *dele* — checando primeiro
+que o filho segue vivo, e só então sondando o HTTP, porque uma porta já
+ocupada por outro processo também responde 200 e um sondador que olhasse só o
+HTTP daria o servidor como no ar com o nosso processo já morto de
+`EADDRINUSE`. `--stop` lê o pidfile e mata o processo registrado nele.
+
+**`server.ts` passou a ler os três limites do ambiente**, com os mesmos
+números medidos como padrão: `MAX_PEERS = process.env.MAX_PEERS ?? 5`,
+`MAX_SHARERS = process.env.MAX_SHARERS ?? 3`,
+`MAX_CAPTURE_PIXELS = process.env.MAX_CAPTURE_PIXELS ?? 1_440_000`. Isso é o
+que permite as flags do CLI sem duplicar a lógica dos limites em dois lugares:
+`bin/cli.ts` só seta `PORT`, `STUN_PORT`, `MAX_PEERS`, `MAX_SHARERS` e
+`MAX_CAPTURE_PIXELS` no ambiente do processo filho. Rodar `bun run server.ts`
+direto do repo continua funcionando sozinho, com as mesmas variáveis, sem o
+CLI no meio.
+
+**Dois bugs que só apareceram numa instalação de verdade, os dois corrigidos
+aqui:**
+
+1. Os estáticos resolviam `"./public"` contra o cwd do processo. Instalado
+   como pacote, o processo roda do diretório de quem chamou `bunx`, então
+   `/config` respondia mas a própria página dava "not found". Agora
+   `resolverEstatico()`, em `server.ts`, resolve contra `import.meta.dir` e
+   guarda contra traversal (`../`, `%2e%2e`, barras codificadas — tudo 404
+   agora, verificado).
+2. `--bg` reportava sucesso mesmo com a porta já ocupada: sondava `/config`
+   antes de checar se o processo filho seguia vivo, e qualquer 200 satisfazia
+   a checagem, inclusive o de quem já ocupava a porta. Agora a checagem de
+   vida vem primeiro, o corpo da resposta é validado como sendo do próprio
+   filho (compara `stunPort`), e o `EADDRINUSE` do filho é impresso a partir
+   do arquivo de log em vez de o comando morrer em silêncio.
+
+**Verificado:** suíte de 97 asserções verde contra o `server.ts` modificado, e
+empacotar + instalar + rodar a partir de um diretório de consumidor separado
+serve a página real.
+
+**O que não muda.** `PLANO.md` continua descrevendo o projeto pelo nome
+interno `tela` — repositório, UI e este documento seguem `tela`; só o pacote
+publicado e o comando de CLI são `screen-share`. As seções 5 (invariantes) e
+9–10 (medições de CPU) descrevem `server.ts`/`stun.ts` e continuam valendo sem
+alteração — nada no empacotamento toca em signaling, mídia ou STUN.

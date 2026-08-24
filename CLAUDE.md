@@ -6,7 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `tela` — browser-to-browser screen sharing (no audio) for a small group inside a
 Tailscale tailnet. Bun + TypeScript, **zero dependencies**, no build step, no
-`npm install`. Three source files total.
+`npm install`. Four source files total.
+
+It is also published to npm as **`screen-share`**, runnable with `bunx
+screen-share`. Nothing about the stack changed for that: the package still
+ships `.ts` as written, and Bun still runs it directly — no transpilation, no
+`dist/`. `bin/cli.ts` is the published entry point (`bin.screen-share` in
+`package.json`); it only parses flags and hands the real work to `server.ts`.
+The project's internal name stays `tela` — repo, UI strings and `PLANO.md`
+keep saying `tela`; only the package name and the CLI command are
+`screen-share`. Be consistent about which is which when writing docs.
 
 `PLANO.md` is the authoritative spec and task list. Read it before changing
 behavior — it records why each design decision exists, and section 5 lists
@@ -19,7 +28,18 @@ when editing.
 
 ```bash
 bun run server.ts          # HTTP+WS on :3000, STUN on UDP :3478
+bun bin/cli.ts --help       # CLI flags: -p/--port, --stun-port, --peers,
+                             # --sharers, --pixels, --bg, --stop, -h, -v
 ```
+
+`bin/cli.ts` just sets environment variables (`PORT`, `STUN_PORT`, `MAX_PEERS`,
+`MAX_SHARERS`, `MAX_CAPTURE_PIXELS`) and imports `server.ts` — running the
+server directly with `bun run server.ts` still works standalone, with the same
+env vars, no CLI in the loop. `--bg` backgrounds the process, writes a pidfile
+and log to `$TMPDIR/screen-share-<port>.{pid,log}`, and only reports success
+once the child's own `/config` answers (it checks the child is alive *before*
+probing HTTP, so an already-occupied port doesn't get misreported as success).
+`--stop` reads that pidfile and kills it.
 
 Tests need a live server. Background processes from a separate tool invocation
 do not survive, so start the server and run the suite in **one** shell command:
@@ -50,6 +70,7 @@ tailscale serve --bg 3000   # persists across restarts; only the Bun process nee
 ## Architecture
 
 ```
+bin/cli.ts       CLI: flags, --bg/--stop, env handoff to server.ts
 server.ts        Bun.serve: static files + /config + WebSocket signaling + room/sharer state
 stun.ts          ~50-line STUN server (node:dgram), Binding Request → XOR-MAPPED-ADDRESS
 public/index.html  the entire client: HTML + CSS + JS in one file
@@ -97,7 +118,17 @@ Do not unify these maps.
 server owns both decisions — it is the only place that sees a whole room, so
 simultaneous clicks on different machines are only serializable there. Changing
 `MAX_SHARERS` requires editing only that number — `test.ts` derives its T2 room
-size from the same constant.
+size from the same constant. All three limits (`MAX_PEERS`, `MAX_SHARERS`,
+`MAX_CAPTURE_PIXELS`) now read `process.env.X ?? default` so the CLI's
+`--peers`/`--sharers`/`--pixels` flags can override them; the measured
+defaults did not change.
+
+Static files resolve against `import.meta.dir`, not the process cwd — installed
+as a package, the process runs from whatever directory invoked `bunx`, and
+`"./public"` pointed at nothing there (that is how the page first went missing
+in a real install). `resolverEstatico()` in `server.ts` does that resolution
+and also guards against path traversal (`../`, encoded slashes) — keep new
+static-file logic going through it rather than building paths ad hoc.
 
 **`MAX_SHARERS` does not govern encoder count, and never did.** A sharer opens
 one PC per destination, so it runs `MAX_PEERS - 1` encoders whether it is the
