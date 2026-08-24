@@ -54,7 +54,15 @@ maior incógnita do projeto e ainda não foi exercitada uma única vez.**
 - ICE candidates carregam `dir: "tx" | "rx"` (ponto de vista do remetente,
   invertido no receptor) para desambiguar de qual das duas PCs vieram.
 - Fila de ICE candidates chegados antes de `setRemoteDescription` (`pc.pending`).
-- Grid de tiles: já suporta N streams simultâneos na tela.
+- Layout de tiles calculado em JS (`layout()`), não em CSS grid: o palco tem
+  altura fixa e cada tile é encaixado dentro dela pela proporção real do vídeo.
+  A página não rola em nenhuma contagem de telas. O `STRIP = 40` do JS tem que
+  continuar igual à altura da faixa no CSS (wave 16 + fields 24), e as bordas dos
+  tiles são `box-shadow: inset` justamente para não somarem altura.
+- Modo foco: clique numa tela joga ela no palco inteiro e manda as outras para
+  uma trilha de miniaturas (à direita, ou embaixo em tela estreita). `esc` sai.
+  Os tiles nunca trocam de pai no DOM — mover um `<video>` com `srcObject` pisca.
+- Fita de bitrate por tile: 60 amostras, uma por segundo, em canvas.
 - `maxBitrate` 1.5 Mb/s, `maxFramerate` 30, `degradationPreference:
   "maintain-resolution"`, `contentHint = "detail"`.
 - Telemetria por tile a cada 1s: bitrate, resolução, fps, tipo de candidate, RTT.

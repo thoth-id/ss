@@ -6,30 +6,36 @@
 <title>tela</title>
 <style>
   :root {
-    --bg: #0e1316;
-    --panel: #151b20;
-    --line: #232c33;
-    --line-hi: #35424b;
-    --fg: #c3ccd2;
-    --dim: #6e7f8a;
+    --void: #000;
+    --bg: #0a0e11;
+    --panel: #111a1e;
+    --line: #1c262b;
+    --line-hi: #2b383f;
+    --fg: #d3dbdf;
+    --dim: #6b7c86;
     --accent: #58c8b4;
     --warn: #d9a441;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
+  /* Nada de scroll: o palco tem a altura que sobra e encaixa os tiles dentro
+     dela. Se um tile pudesse crescer além disso, a página rolaria e a faixa de
+     telemetria sumiria embaixo da dobra. */
   body {
-    margin: 0; background: var(--bg); color: var(--fg);
+    margin: 0; overflow: hidden; background: var(--bg); color: var(--fg);
     font: 13px/1.5 var(--mono);
     -webkit-font-smoothing: antialiased;
     display: flex; flex-direction: column;
   }
+
   header {
-    display: flex; align-items: center; gap: 16px;
-    padding: 10px 16px; border-bottom: 1px solid var(--line);
-    background: var(--panel); flex: none; flex-wrap: wrap;
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 14px; background: var(--panel);
+    box-shadow: inset 0 -1px 0 var(--line);
+    flex: none; flex-wrap: wrap;
   }
-  .brand { color: var(--fg); letter-spacing: .18em; text-transform: lowercase; }
+  .brand { letter-spacing: .2em; text-transform: lowercase; }
   .brand i {
     display: inline-block; width: 6px; height: 6px; margin-left: 7px;
     background: var(--dim); border-radius: 50%; vertical-align: 2px;
@@ -40,10 +46,11 @@
   .room b { color: var(--fg); font-weight: 400; }
   .spacer { flex: 1; }
   .count { color: var(--dim); font-variant-numeric: tabular-nums; }
+
   button {
     font: inherit; padding: 6px 14px; border-radius: 4px; cursor: pointer;
     border: 1px solid var(--line-hi); background: transparent; color: var(--fg);
-    transition: border-color .15s, color .15s;
+    transition: border-color .15s, color .15s, background .15s;
   }
   button:hover { border-color: var(--accent); color: var(--accent); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -56,43 +63,128 @@
   }
   button:disabled:hover { border-color: var(--line); color: var(--dim); }
 
+  .chip {
+    font-size: 11.5px; padding: 4px 10px; border-radius: 999px;
+    color: var(--accent); border-color: var(--line-hi);
+  }
+  /* Em telas estreitas o cabeçalho quebrava em três linhas. Rótulos curtos
+     (ver `tight` no render) mais isto o mantêm em duas. */
+  @media (max-width: 560px) {
+    header { gap: 6px 10px; padding: 8px 12px; }
+    header button { padding: 5px 10px; }
+    /* O espaçador vira a quebra: sala em cima, estado e ações embaixo. Sem
+       isso o cabeçalho quebrava em três linhas e comia o palco. */
+    .spacer { flex: 1 0 100%; height: 0; }
+  }
+  .chip[hidden] { display: none; }
+
+  /* Aviso pode ser longo (o texto de HTTPS é). Rola por dentro em vez de
+     empurrar o palco fora da tela. */
   .notice {
-    flex: none; padding: 9px 16px; background: #241d10;
-    border-bottom: 1px solid #3d3016; color: var(--warn);
+    flex: none; max-height: 30%; overflow-y: auto;
+    padding: 9px 14px; background: #241d10; color: var(--warn);
+    box-shadow: inset 0 -1px 0 #3d3016;
   }
   .notice[hidden] { display: none; }
 
+  /* ---------- palco ---------- */
+
   main {
-    flex: 1; display: grid; gap: 12px; padding: 16px;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    align-content: start;
+    flex: 1; min-height: 0; position: relative; overflow: hidden;
   }
-  main:empty { display: none; }
+  main.idle { display: none; }
 
-  .tile { border: 1px solid var(--line); border-radius: 4px; background: #000; overflow: hidden; }
-  .tile video { display: block; width: 100%; aspect-ratio: 16/9; object-fit: contain; background: #000; }
-  .tile.self video { opacity: .55; }
-  .meta {
-    display: flex; gap: 14px; padding: 7px 10px;
-    background: var(--panel); border-top: 1px solid var(--line);
-    color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap;
-    overflow-x: auto; scrollbar-width: none;
+  /* Tile posicionado e dimensionado pelo layout() em px. A borda é box-shadow
+     inset de propósito: borda de verdade somaria altura e o encaixe erraria
+     por 2px. Ver STRIP no JS. */
+  .tile {
+    position: absolute; left: 0; top: 0;
+    display: flex; flex-direction: column;
+    border-radius: 5px; overflow: hidden; background: var(--void);
+    box-shadow: inset 0 0 0 1px var(--line);
+    transition: left .16s ease, top .16s ease, width .16s ease, box-shadow .15s;
   }
-  .meta::-webkit-scrollbar { display: none; }
-  .meta .who { color: var(--fg); }
-  .meta .hi { color: var(--accent); }
-  .meta .warn { color: var(--warn); }
+  .tile:hover, .tile:focus-within { box-shadow: inset 0 0 0 1px var(--line-hi); }
 
+  .frame { position: relative; cursor: zoom-in; background: var(--void); }
+  .tile.focused .frame { cursor: zoom-out; }
+  .frame video {
+    display: block; width: 100%; height: var(--vh, 180px);
+    object-fit: contain; background: var(--void);
+    transition: height .16s ease;
+  }
+  /* A própria tela em espelho confunde; escurece um pouco, menos no foco. */
+  .tile.self .frame video { opacity: .72; }
+  .tile.self.focused .frame video { opacity: 1; }
+  .frame:fullscreen video { width: 100%; height: 100%; opacity: 1; }
+
+  .ctl {
+    position: absolute; top: 8px; right: 8px; display: flex; gap: 6px;
+    opacity: 0; transition: opacity .14s;
+  }
+  .tile:hover .ctl, .tile:focus-within .ctl { opacity: 1; }
+  @media (hover: none) { .ctl { opacity: 1; } }
+  .act {
+    font-size: 11px; padding: 4px 9px; letter-spacing: .02em;
+    background: rgba(6,10,12,.78); backdrop-filter: blur(3px);
+  }
+
+  .meta { flex: none; background: var(--panel); box-shadow: inset 0 1px 0 var(--line); }
+  /* A fita: 60 barras, uma por segundo, do bitrate real. Mostra a queda do
+     link acontecendo, coisa que o número instantâneo não conta. */
+  .wave { display: block; width: 100%; height: 16px; }
+  .fields {
+    display: flex; align-items: center; gap: 12px; height: 24px; padding: 0 9px;
+    font-size: 11.5px; color: var(--dim); white-space: nowrap; overflow: hidden;
+    font-variant-numeric: tabular-nums;
+  }
+  .fields .who { color: var(--fg); }
+  .fields .hi { color: var(--accent); }
+  .fields .warn { color: var(--warn); }
+
+  /* Miniatura na trilha de foco: só o id cabe. */
+  .tile.mini .fields { height: 20px; font-size: 10.5px; padding: 0 7px; }
+  /* Na miniatura o botão no canto tapava o vídeo: vira uma camada sobre o
+     quadro todo, que é o alvo de clique de qualquer jeito. */
+  .tile.mini .ctl {
+    inset: 0; align-items: center; justify-content: center;
+    background: rgba(6,10,12,.5);
+  }
+  .tile.mini .wave,
+  .tile.mini .rate,
+  .tile.mini .size,
+  .tile.mini .path,
+  .tile.mini .full { display: none; }
+
+  /* Antes de qualquer coisa no ar, a tela mostra o que ela sabe da sala. É a
+     mesma linguagem da faixa de telemetria: rótulo apagado, valor aceso. */
   .empty {
-    flex: 1; display: flex; flex-direction: column; justify-content: center;
-    align-items: flex-start; gap: 10px; padding: 32px; color: var(--dim);
-    max-width: 620px;
+    flex: 1; min-height: 0; overflow-y: auto;
+    display: flex; flex-direction: column; justify-content: flex-start;
+    padding: 30px 34px;
   }
-  .empty h1 { font: inherit; color: var(--fg); margin: 0; }
-  .empty p { margin: 0; }
-  .empty .row { display: flex; gap: 8px; margin-top: 8px; }
   .empty[hidden] { display: none; }
+  .card { max-width: 620px; display: flex; flex-direction: column; gap: 16px; }
+  .card h1 { font: inherit; font-size: 19px; color: var(--fg); margin: 0; letter-spacing: -.01em; }
+  .card p { margin: 0; color: var(--dim); max-width: 58ch; }
+  .facts {
+    display: grid; grid-template-columns: max-content 1fr;
+    column-gap: 22px; row-gap: 6px; margin: 0;
+    padding: 14px 0 14px 16px; box-shadow: inset 1px 0 0 var(--line-hi);
+  }
+  .facts dt { color: var(--dim); letter-spacing: .04em; }
+  .facts dd { margin: 0; color: var(--fg); font-variant-numeric: tabular-nums; }
+  .facts dd.note { color: var(--dim); }
+  .hint { color: var(--dim); }
+  kbd {
+    color: var(--fg); font: inherit; font-size: 11.5px; padding: 1px 6px;
+    border-radius: 3px; box-shadow: inset 0 0 0 1px var(--line-hi);
+  }
   code { color: var(--fg); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tile, .frame video, .ctl { transition: none; }
+  }
 </style>
 </head>
 <body>
@@ -100,6 +192,7 @@
 <header>
   <span class="brand">tela<i id="live"></i></span>
   <span class="room">sala/<b id="roomName"></b></span>
+  <button class="chip" id="focusChip" hidden></button>
   <span class="spacer"></span>
   <span class="count" id="count">conectando</span>
   <button id="copyBtn">Copiar link</button>
@@ -108,12 +201,23 @@
 
 <div class="notice" id="notice" hidden></div>
 
-<main id="grid"></main>
+<main id="stage" class="idle"></main>
 
 <section class="empty" id="empty">
-  <h1>Ninguém compartilhando ainda.</h1>
-  <p>Clique em compartilhar tela para transmitir, ou mande o link desta página<br>pra quem vai assistir. Só quem está no tailnet consegue abrir.</p>
-  <p>Troque de sala editando o <code>#</code> da URL.</p>
+  <div class="card">
+    <h1>Nada no ar nesta sala.</h1>
+    <p>Compartilhe a sua tela, ou mande o link desta página pra quem vai assistir.
+      Só quem está no tailnet consegue abrir: não há login porque não há porta pra fora.</p>
+    <dl class="facts">
+      <dt>sala</dt><dd id="fRoom">—</dd>
+      <dt>peers</dt><dd id="fPeers">—</dd>
+      <dt>transmitindo</dt><dd id="fSharers">—</dd>
+      <dt>captura</dt><dd id="fCap">—</dd>
+      <dt>vídeo</dt><dd class="note">direto entre os navegadores — o servidor só apresenta os dois</dd>
+    </dl>
+    <p class="hint">Com duas telas no ar, clique numa delas para focar. <kbd>esc</kbd> volta.
+      Troque de sala editando o <code>#</code> da URL.</p>
+  </div>
 </section>
 
 <script>
@@ -180,6 +284,7 @@ function notice(text) {
   const el = $("notice");
   el.textContent = text || "";
   el.hidden = !text;
+  relayout();
 }
 
 // getDisplayMedia só existe em secure context. http://100.x e http://192.168.x
@@ -465,60 +570,307 @@ function stopShare() {
   render();
 }
 
-/* ---------- ui ---------- */
+/* ---------- tiles ---------- */
+
+let focusId = null;               // tile no palco inteiro, ou null
 
 function attachTile(id, stream, isSelf = false) {
   let tile = tiles.get(id);
   if (!tile) {
     tile = document.createElement("div");
     tile.className = "tile" + (isSelf ? " self" : "");
+    tile.dataset.id = id;
     tile.innerHTML =
-      '<video autoplay playsinline muted></video>' +
-      '<div class="meta"><span class="who"></span><span class="rate"></span>' +
-      '<span class="size"></span><span class="path"></span></div>';
+      '<div class="frame">' +
+        '<video autoplay playsinline muted></video>' +
+        '<div class="ctl">' +
+          '<button class="act focus"></button>' +
+          '<button class="act full">tela cheia</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="meta">' +
+        '<canvas class="wave" aria-hidden="true"></canvas>' +
+        '<div class="fields"><span class="who"></span><span class="rate"></span>' +
+        '<span class="size"></span><span class="path"></span></div>' +
+      '</div>';
+
     tile.querySelector(".who").textContent = isSelf ? "você" : id;
+    tile.querySelector(".frame").onclick = () => toggleFocus(id);
+    tile.querySelector(".focus").onclick = (e) => {
+      e.stopPropagation();
+      toggleFocus(id);
+    };
+    tile.querySelector(".full").onclick = (e) => {
+      e.stopPropagation();
+      if (document.fullscreenElement) document.exitFullscreen();
+      else tile.querySelector(".frame").requestFullscreen?.().catch(() => {});
+    };
+
+    // A proporção real só aparece com o primeiro frame, e pode mudar no meio
+    // (a pessoa troca a janela capturada). Refaz o layout nos dois casos.
+    const video = tile.querySelector("video");
+    video.onloadedmetadata = relayout;
+    video.onresize = relayout;
+
     tiles.set(id, tile);
-    $("grid").append(tile);
+    $("stage").append(tile);
   }
   tile.querySelector("video").srcObject = stream;
   render();
 }
 
 function dropTile(id) {
+  if (focusId === id) focusId = null;
+  hist.delete(id);
   tiles.get(id)?.remove();
   tiles.delete(id);
   render();
 }
 
+function toggleFocus(id) {
+  focusId = focusId === id ? null : id;
+  render();
+}
+
+/* ---------- layout ---------- */
+
+// O encaixe é calculado aqui, em px, não pelo CSS. Motivo: o palco tem altura
+// fixa e cada tela compartilhada tem a proporção dela (1600×900 e 1440×900
+// convivem na mesma sala). Dimensionar por largura, como fazia o grid de CSS,
+// deixava o tile mais alto que a viewport e a página passava a rolar — a faixa
+// de telemetria ficava embaixo da dobra.
+const GAP = 12;                   // entre tiles
+const PAD = 14;                   // borda do palco
+const STRIP = 40;                 // faixa: wave 16 + fields 24. Bate com o CSS.
+const MINI_STRIP = 20;            // faixa da miniatura na trilha
+const WAVE_H = 16;
+const WAVE_LEN = 60;              // amostras na fita, uma por segundo
+
+let pending = 0;
+
+function relayout() {
+  if (pending) return;
+  pending = requestAnimationFrame(() => {
+    pending = 0;
+    layout();
+  });
+}
+
+function arOf(tile) {
+  const v = tile.querySelector("video");
+  return v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 16 / 9;
+}
+
+// Maior vídeo com proporção ar que cabe em W×H descontando a faixa.
+function fitBox(ar, W, H, strip) {
+  const h = Math.max(24, Math.min(H - strip, W / ar));
+  return { w: Math.min(W, h * ar), h };
+}
+
+function place(tile, x, y, w, h, mini) {
+  tile.classList.toggle("mini", mini);
+  tile.style.left = Math.round(x) + "px";
+  tile.style.top = Math.round(y) + "px";
+  tile.style.width = Math.round(w) + "px";
+  tile.style.setProperty("--vh", Math.round(h) + "px");
+  sizeWave(tile, Math.round(w));
+}
+
+function layout() {
+  const stage = $("stage");
+  if (!tiles.size) return;
+  const W = stage.clientWidth - PAD * 2;
+  const H = stage.clientHeight - PAD * 2;
+  if (W <= 0 || H <= 0) return;
+
+  const list = [...tiles.values()];
+  const focused = focusId ? tiles.get(focusId) : null;
+  if (focused && list.length > 1) fitFocus(list, focused, PAD, PAD, W, H);
+  else fitGrid(list, PAD, PAD, W, H);
+}
+
+// Escolhe o número de colunas que maximiza a área total de vídeo. Não é
+// ceil(sqrt(n)): com proporções diferentes na mesma sala, o arranjo ótimo
+// depende delas, e o palco raramente é quadrado.
+//
+// Dentro de cada linha todos os tiles têm a MESMA altura e as larguras saem da
+// proporção de cada um, como numa galeria justificada. Alinha topo e rodapé da
+// linha, e as faixas de telemetria viram uma régua só. As linhas são empilhadas
+// coladas e o bloco todo é centralizado — centralizar cada tile na sua célula
+// abria buracos irregulares entre eles.
+function rowsFor(list, ars, cols, W, H) {
+  const n = list.length;
+  const nRows = Math.ceil(n / cols);
+  // Teto de altura por linha. Uniforme de propósito: é o que garante que a
+  // soma das linhas nunca passe de H, ou seja, que nada precise de scroll.
+  const budget = (H - GAP * (nRows - 1)) / nRows - STRIP;
+  const rows = [];
+  for (let r = 0; r < nRows; r++) {
+    const idx = [];
+    for (let i = r * cols; i < Math.min(n, (r + 1) * cols); i++) idx.push(i);
+    const sumAr = idx.reduce((sum, i) => sum + ars[i], 0);
+    const h = Math.min(budget, (W - GAP * (idx.length - 1)) / sumAr);
+    rows.push({ idx, sumAr, h: Math.max(24, h) });
+  }
+  return rows;
+}
+
+function fitGrid(list, X, Y, W, H) {
+  const n = list.length;
+  const ars = list.map(arOf);
+  let cols = 1, best = -1;
+
+  for (let c = 1; c <= n; c++) {
+    const rows = rowsFor(list, ars, c, W, H);
+    const area = rows.reduce((sum, r) => sum + r.h * r.h * r.sumAr, 0);
+    if (area > best) { best = area; cols = c; }
+  }
+
+  const rows = rowsFor(list, ars, cols, W, H);
+  const total = rows.reduce((sum, r) => sum + r.h + STRIP, 0) + GAP * (rows.length - 1);
+  let y = Y + Math.max(0, (H - total) / 2);
+
+  for (const row of rows) {
+    const ws = row.idx.map((i) => row.h * ars[i]);
+    const rowW = ws.reduce((a, b) => a + b, 0) + GAP * (ws.length - 1);
+    let x = X + (W - rowW) / 2;
+    row.idx.forEach((i, k) => {
+      place(list[i], x, y, ws[k], row.h, false);
+      x += ws[k] + GAP;
+    });
+    y += row.h + STRIP + GAP;
+  }
+}
+
+// Foco: um tile no palco, os outros numa trilha. À direita quando há largura,
+// embaixo quando não há. Ninguém troca de pai no DOM — mover um <video> com
+// srcObject pisca — só muda de tamanho e de lugar.
+function fitFocus(list, focused, X, Y, W, H) {
+  const others = list.filter((t) => t !== focused);
+  const k = others.length;
+  const side = W >= 620;
+  const railW = side ? Math.max(112, Math.min(208, W * 0.15)) : 0;
+  const railH = side ? 0 : Math.max(72, Math.min(132, H * 0.22));
+  const mainW = W - (side ? railW + GAP : 0);
+  const mainH = H - (side ? 0 : railH + GAP);
+  const box = fitBox(arOf(focused), mainW, mainH, STRIP);
+
+  if (side) {
+    const top = Y + (mainH - box.h - STRIP) / 2;
+    place(focused, X + (mainW - box.w) / 2, top, box.w, box.h, false);
+    // Trilha pendurada na borda de cima do tile em foco: os dois viram um
+    // bloco só. Centralizar a trilha na altura do palco a deixava solta.
+    const slot = (H - GAP * (k - 1)) / k;
+    const boxes = others.map((t) => fitBox(arOf(t), railW, slot, MINI_STRIP));
+    const total = boxes.reduce((sum, b) => sum + b.h + MINI_STRIP, 0) + GAP * (k - 1);
+    let y = Math.min(Math.max(Y, top), Y + Math.max(0, H - total));
+    others.forEach((tile, i) => {
+      place(tile, X + W - railW + (railW - boxes[i].w) / 2, y, boxes[i].w, boxes[i].h, true);
+      y += boxes[i].h + MINI_STRIP + GAP;
+    });
+    return;
+  }
+
+  // Retrato: foco e trilha colados, bloco centralizado.
+  const slot = (W - GAP * (k - 1)) / k;
+  const boxes = others.map((t) => fitBox(arOf(t), slot, railH, MINI_STRIP));
+  const miniH = Math.max(...boxes.map((b) => b.h)) + MINI_STRIP;
+  const total = box.h + STRIP + GAP + miniH;
+  const y0 = Y + Math.max(0, (H - total) / 2);
+  place(focused, X + (mainW - box.w) / 2, y0, box.w, box.h, false);
+
+  const rowW = boxes.reduce((sum, b) => sum + b.w, 0) + GAP * (k - 1);
+  let x = X + Math.max(0, (W - rowW) / 2);
+  others.forEach((tile, i) => {
+    place(tile, x, y0 + box.h + STRIP + GAP, boxes[i].w, boxes[i].h, true);
+    x += boxes[i].w + GAP;
+  });
+}
+
+new ResizeObserver(relayout).observe($("stage"));
+// Rótulos curtos/longos mudam com a largura, não só o encaixe.
+matchMedia("(max-width: 560px)").addEventListener("change", render);
+document.addEventListener("fullscreenchange", relayout);
+
+addEventListener("keydown", (e) => {
+  // Em tela cheia o esc é do navegador; aqui só sai do foco.
+  if (e.key === "Escape" && focusId && !document.fullscreenElement) {
+    focusId = null;
+    render();
+  }
+});
+
+/* ---------- ui ---------- */
+
 function render() {
   const n = peers.size;
+  const tight = innerWidth < 560;   // rótulos curtos, cabeçalho em duas linhas
   // Mostra a ocupação de sharers junto: é a resposta pra "por que o botão
   // está bloqueado?" sem precisar passar o mouse em cima.
-  const ocupacao = sharers.size ? ` · ${sharers.size}/${maxSharers} compartilhando` : "";
+  const ocupacao = sharers.size
+    ? ` · ${sharers.size}/${maxSharers}` + (tight ? "" : " compartilhando")
+    : "";
   $("count").textContent = (n === 1 ? "1 peer" : `${n} peers`) + ocupacao;
-  $("empty").hidden = tiles.size > 0;
+
+  const idle = tiles.size === 0;
+  $("stage").classList.toggle("idle", idle);
+  $("empty").hidden = !idle;
+  if (idle) {
+    // Mesmo teto que startShare() usa como dica no picker, assumindo 16:9.
+    const w = Math.round(Math.sqrt((maxCapturePixels * 16) / 9) / 2) * 2;
+    $("fRoom").textContent = ROOM;
+    $("fPeers").textContent = n;
+    $("fSharers").textContent = `${sharers.size}/${maxSharers}`;
+    $("fCap").textContent = `até ${w}×${Math.round((w * 9) / 16 / 2) * 2}`;
+  }
   $("live").classList.toggle("live", !!localStream);
+
+  if (focusId && !tiles.has(focusId)) focusId = null;
+  const chip = $("focusChip");
+  chip.hidden = !focusId;
+  if (focusId) chip.textContent = tight ? "foco · esc" : `foco ${focusId === myId ? "você" : focusId} · esc`;
+
+  for (const [id, tile] of tiles) {
+    const on = id === focusId;
+    tile.classList.toggle("focused", on);
+    const who = id === myId ? "sua tela" : id;
+    const btn = tile.querySelector(".focus");
+    btn.textContent = on ? "sair do foco" : "focar";
+    btn.setAttribute("aria-label", on ? "Sair do foco" : `Focar em ${who}`);
+    tile.querySelector(".full").setAttribute("aria-label", `Tela cheia: ${who}`);
+  }
+
+  const copy = $("copyBtn");
+  if (copy.textContent !== "Copiado") copy.textContent = tight ? "Link" : "Copiar link";
 
   const btn = $("shareBtn");
   const mine = !!localStream;
   const full = !mine && sharers.size >= maxSharers;
-  btn.textContent = mine ? "Parar" : "Compartilhar tela";
+  btn.textContent = mine ? "Parar" : tight ? "Compartilhar" : "Compartilhar tela";
   btn.className = mine ? "stop" : "primary";
   // Conjunto cheio e eu não estou nele: não há vaga pra pedir.
   btn.disabled = dead || full || !canShare();
   btn.title = !canShare() ? whyCantShare() : full ? "Limite de sharers atingido" : "";
+
+  relayout();
 }
 
 $("shareBtn").onclick = () => (localStream ? stopShare() : startShare());
+$("focusChip").onclick = () => {
+  focusId = null;
+  render();
+};
 $("copyBtn").onclick = async () => {
   await navigator.clipboard.writeText(location.href);
   $("copyBtn").textContent = "Copiado";
-  setTimeout(() => ($("copyBtn").textContent = "Copiar link"), 1400);
+  setTimeout(render, 1400);
 };
 
 /* ---------- telemetria ---------- */
 
 const prev = new Map();
+const hist = new Map();           // id -> últimas WAVE_LEN medidas de bitrate
+let accent = "";
 
 function rate(key, bytes) {
   const now = performance.now();
@@ -535,21 +887,52 @@ function fmt(bps) {
   return bps >= 1e6 ? (bps / 1e6).toFixed(1) + " Mb/s" : Math.round(bps / 1e3) + " kb/s";
 }
 
-async function pathOf(pc) {
-  const stats = await pc.getStats();
-  const all = new Map();
-  stats.forEach((r) => all.set(r.id, r));
-  for (const r of all.values()) {
-    if (r.type === "candidate-pair" && r.state === "succeeded" && r.nominated) {
-      const local = all.get(r.localCandidateId);
-      const rtt = r.currentRoundTripTime;
-      return {
-        type: local?.candidateType ?? "?",
-        rtt: rtt != null ? Math.round(rtt * 1000) : null,
-      };
-    }
+function push(id, bps) {
+  let a = hist.get(id);
+  if (!a) hist.set(id, (a = []));
+  a.push(Math.max(0, bps || 0));
+  if (a.length > WAVE_LEN) a.shift();
+  const tile = tiles.get(id);
+  if (tile) drawWave(tile);
+}
+
+function sizeWave(tile, w) {
+  const c = tile.querySelector(".wave");
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  const pw = Math.max(1, Math.round(w * dpr));
+  const ph = Math.round(WAVE_H * dpr);
+  if (c.width === pw && c.height === ph) return;
+  c.width = pw;
+  c.height = ph;
+  drawWave(tile);
+}
+
+// Escala pelo pico da própria janela: a fita conta a forma da variação, não o
+// valor absoluto — esse já está escrito ao lado, em kb/s.
+function drawWave(tile) {
+  const c = tile.querySelector(".wave");
+  const data = hist.get(tile.dataset.id);
+  const dpr = c.height / WAVE_H;
+  const g = c.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const w = c.width / dpr;
+  g.clearRect(0, 0, w, WAVE_H);
+  if (!data?.length) return;
+
+  accent ||= getComputedStyle(document.documentElement)
+    .getPropertyValue("--accent").trim() || "#58c8b4";
+  const peak = Math.max(...data, 1);
+  const step = w / WAVE_LEN;
+  // Teto na largura da barra: num tile largo, 1/60 da largura viraria bloco.
+  // Barra fina e centrada na fatia lê como fita de instrumento.
+  const bar = Math.max(1, Math.min(6, step - 1));
+  for (let i = 0; i < data.length; i++) {
+    const h = Math.max(1, (data[i] / peak) * (WAVE_H - 3));
+    g.globalAlpha = i === data.length - 1 ? 1 : 0.34;
+    g.fillStyle = accent;
+    g.fillRect(w - (data.length - i) * step + (step - bar) / 2, WAVE_H - h, bar, h);
   }
-  return null;
+  g.globalAlpha = 1;
 }
 
 setInterval(async () => {
@@ -572,6 +955,7 @@ setInterval(async () => {
     const el = tile.querySelector(".path");
     el.textContent = path ? `${path.type} · ${path.rtt ?? "--"}ms` : "negociando";
     el.className = "path " + (path?.type === "relay" ? "warn" : path ? "hi" : "");
+    push(id, bps);
   }
 
   // Tile próprio: agrega upload de todos os peers
@@ -596,8 +980,26 @@ setInterval(async () => {
     self.querySelector(".size").textContent =
       capTxt + `${sending.size} destino${sending.size > 1 ? "s" : ""}`;
     self.querySelector(".path").textContent = "";
+    push(myId, total);
   }
 }, 1000);
+
+async function pathOf(pc) {
+  const stats = await pc.getStats();
+  const all = new Map();
+  stats.forEach((r) => all.set(r.id, r));
+  for (const r of all.values()) {
+    if (r.type === "candidate-pair" && r.state === "succeeded" && r.nominated) {
+      const local = all.get(r.localCandidateId);
+      const rtt = r.currentRoundTripTime;
+      return {
+        type: local?.candidateType ?? "?",
+        rtt: rtt != null ? Math.round(rtt * 1000) : null,
+      };
+    }
+  }
+  return null;
+}
 
 boot();
 </script>

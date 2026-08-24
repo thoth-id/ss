@@ -93,6 +93,45 @@ set, rather than waiting for `connectionstatechange`.
 
 The socket `close` handler must free the sharer slot — that is the tab-close path.
 
+### Client layout is computed in JS, on purpose
+
+`main` is a fixed-height stage (`flex: 1; min-height: 0; overflow: hidden`) and
+`layout()` positions every tile inside it in pixels. The page never scrolls.
+
+The old CSS grid sized tiles by width alone (`width: 100%` + `aspect-ratio:
+16/9`), so on a wide window a single tile grew taller than the viewport, the body
+scrolled and the telemetry strip fell below the fold. Do not put it back.
+
+Three things the math depends on:
+
+- **`STRIP = 40` must equal the CSS strip height** (`.wave` 16 + `.fields` 24).
+  Tile borders are `box-shadow: inset` and not real borders precisely so they add
+  no height — a 1px border would make every tile overflow its slot by 2px.
+- **Rows are justified**: every tile in a row shares one height, widths come from
+  each tile's real aspect ratio (1600×900 and 1440×900 coexist in one room), and
+  the row's height ceiling is `H/rows`, which is what guarantees the block always
+  fits. Column count is whichever maximizes total video area — not
+  `ceil(sqrt(n))`, which ignores the aspect ratios and the stage shape.
+- **Tiles never change parent.** Focus mode only resizes and repositions them;
+  moving a `<video>` with a live `srcObject` in the DOM makes it flicker.
+
+Aspect ratio comes from `video.videoWidth/videoHeight`, so `layout()` re-runs on
+`loadedmetadata` and on the video's `resize` event (the sharer can switch the
+captured window mid-call), plus a `ResizeObserver` on the stage.
+
+### Focus mode
+
+Click a tile (or its `focar` button) to give it the whole stage; the others
+become `.mini` thumbnails in a rail — right side when there is width, bottom when
+there is not. `esc` exits, a header chip shows what is focused, and each tile has
+a `tela cheia` button that fullscreens the `.frame` (the `:fullscreen` rule
+overrides the JS-set height, which is why the height lives in `--vh` in the
+stylesheet instead of an inline style on the video).
+
+The per-tile signal ribbon (`.wave`) is 60 samples of measured bitrate, one per
+second, drawn on a canvas. It is telemetry, not decoration: a link degrading
+shows up as a falling tape before the single instantaneous number explains why.
+
 ### Client reconnect
 
 The WebSocket reconnects every 1.5s. On `joined`, if `myId` changed, the client
@@ -128,6 +167,16 @@ second machine. The client JS can only be syntax-checked:
 ```bash
 python3 -c "import re;h=open('public/index.html').read();open('/tmp/c.js','w').write(re.search(r'<script>(.*)</script>',h,re.S).group(1))" && node --check /tmp/c.js
 ```
+
+The **layout** can be verified headless, unlike WebRTC. Drive Chrome over CDP,
+then inject fake sharers into the live page — `canvas.captureStream()` fed to
+`attachTile(id, stream)` exercises the real code path, aspect ratios included,
+because everything in the client script is a global. The assertion that matters
+is `document.documentElement.scrollHeight === innerHeight` in every case (one
+tile, two tiles with different aspect ratios, focus mode, 430px wide): the tile
+fit exists to keep the page from scrolling. Screenshots caught two things numbers
+did not — a ragged row of tiles centered per cell, and a header wrapping to three
+lines on a phone.
 
 ICE over `100.x` **has been exercised once**, over `tailscale serve` HTTPS: video
 flowed at 979 kb/s, 1920×1200, 30fps, on a `prflx` candidate pair at 15ms RTT.
