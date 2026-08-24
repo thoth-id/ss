@@ -46,7 +46,10 @@ bun bin/cli.ts --help       # CLI flags: -p/--port, --stun-port, --peers,
 `MAX_SHARERS`, `MAX_CAPTURE_PIXELS`) and imports `server.ts` — running the
 server directly with `bun run server.ts` still works standalone, with the same
 env vars, no CLI in the loop. `--bg` backgrounds the process, writes a pidfile
-and log to `$TMPDIR/screen-share-<port>.{pid,log}`, and only reports success
+and log to `$XDG_RUNTIME_DIR/screen-share/screen-share-<port>.{pid,log}`
+(falling back to a 0700 `screen-share-<uid>/` under the temp dir, refused if
+someone else owns it — never `$TMPDIR` directly, whose 1777 mode lets any user
+plant a pidfile in the path), and only reports success
 once the child's own `/config` answers (it checks the child is alive *before*
 probing HTTP, so an already-occupied port doesn't get misreported as success).
 `--stop` reads that pidfile and kills it.

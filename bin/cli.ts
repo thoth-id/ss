@@ -21,6 +21,7 @@ import {
   unlinkSync,
   writeSync,
 } from "node:fs";
+import { createSocket } from "node:dgram";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -42,7 +43,8 @@ const AJUDA = `screen-share ${VERSAO} — compartilhamento de tela P2P, sem cont
   bunx @thoth-dev/screen-share [flags]
 
   -p, --port <n>       porta HTTP (padrão 3000)
-      --stun-port <n>  porta UDP do STUN (padrão 3478)
+      --stun-port <n>  porta UDP do STUN (padrão 3478). Uma segunda instância
+                       precisa desta TAMBÉM diferente, não só de --port
       --peers <n>      teto de peers por sala (padrão 5)
       --sharers <n>    quantos transmitem ao mesmo tempo (padrão 3)
       --pixels <n>     teto de pixels da captura (padrão 1440000, = 1600×900)
@@ -301,6 +303,20 @@ function sondarPorta(port: number): Promise<string | null> {
   });
 }
 
+/* A porta do STUN é UDP e é a outra metade da mesma pergunta. Sondar só a TCP
+   deixava passar o caso mais provável de todos: duas instâncias, --port
+   diferente e --stun-port igual, porque o padrão 3478 é um só. O filho morria
+   de EADDRINUSE no dgram e a mensagem mandava trocar --port, que estava livre.
+   O bind é em 0.0.0.0 porque é onde o stun.ts binda — sondar 127.0.0.1 não
+   veria um ocupante preso a outra interface. */
+function sondarUdp(port: number): Promise<string | null> {
+  return new Promise((resolve) => {
+    const s = createSocket("udp4");
+    s.once("error", (e: NodeJS.ErrnoException) => resolve(e.code ?? "EDESCONHECIDO"));
+    s.bind(port, "0.0.0.0", () => s.close(() => resolve(null)));
+  });
+}
+
 if (bg) {
   // A sonda vem antes de mexer no pidfile e antes de abrir o log: assim o
   // perdedor de uma corrida não trunca o log do vencedor nem apaga o registro
@@ -316,6 +332,19 @@ if (bg) {
       falha === "EADDRINUSE"
         ? `a porta ${opts.port} já está ocupada.${dica}\nUse --port com outro número.\n`
         : `não consegui bindar a porta ${opts.port} (${falha}).\n`
+    );
+    process.exit(1);
+  }
+
+  // A outra metade da mesma pergunta. O --stun-port padrão é um só, então duas
+  // instâncias com --port diferente colidem aqui e em nenhum outro lugar.
+  const falhaUdp = await sondarUdp(opts.stunPort);
+  if (falhaUdp) {
+    process.stderr.write(
+      falhaUdp === "EADDRINUSE"
+        ? `a porta UDP ${opts.stunPort}, do STUN, já está ocupada.\n` +
+          `Cada instância precisa da sua: use --stun-port com outro número.\n`
+        : `não consegui bindar a porta UDP ${opts.stunPort} (${falhaUdp}).\n`
     );
     process.exit(1);
   }

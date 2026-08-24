@@ -62,8 +62,12 @@ bunx @thoth-dev/screen-share [flags]
 | `-h, --help` | — | mostra a ajuda |
 | `-v, --version` | — | mostra a versão |
 
-Com `--bg`, o pidfile e o log ficam em `$TMPDIR/screen-share-<porta>.pid` e
-`$TMPDIR/screen-share-<porta>.log`. O comando só reporta sucesso depois que o
+Com `--bg`, o pidfile e o log ficam em `$XDG_RUNTIME_DIR/screen-share/` —
+`screen-share-<porta>.pid` e `screen-share-<porta>.log` — ou, sem
+`XDG_RUNTIME_DIR`, num `screen-share-<uid>/` dentro do diretório temporário,
+criado com modo 0700 e recusado se pertencer a outra pessoa. Não é `$TMPDIR`
+direto de propósito: ali o modo 1777 deixa qualquer usuário da máquina plantar
+um pidfile no caminho. O comando só reporta sucesso depois que o
 `/config` do processo filho responde — isto é, depois que ele de fato bindou a
 porta, não só depois de ter sido lançado. `--stop --port <n>` encerra o que
 está registrado naquele pidfile.

@@ -487,8 +487,10 @@ ou segundo (`--bg`/`--stop`), e repassa a configuração ao `server.ts` por
 variável de ambiente — nenhuma lógica de servidor mora ali. Flags: `-p/--port`
 (3000), `--stun-port` (3478), `--peers` (5), `--sharers` (3), `--pixels`
 (1440000), `--bg`, `--stop`, `-h/--help`, `-v/--version`. `--bg` grava pidfile
-em `$TMPDIR/screen-share-<porta>.pid` e log em
-`$TMPDIR/screen-share-<porta>.log`, e só reporta sucesso depois que o
+em `$XDG_RUNTIME_DIR/screen-share/screen-share-<porta>.pid` e log ao lado
+(sem `XDG_RUNTIME_DIR`, um `screen-share-<uid>/` de modo 0700 no diretório
+temporário, recusado se for de outra pessoa — nunca `$TMPDIR` direto, cujo
+modo 1777 permite plantar um pidfile no caminho), e só reporta sucesso depois que o
 `/config` do processo filho responder com a config *dele* — checando primeiro
 que o filho segue vivo, e só então sondando o HTTP, porque uma porta já
 ocupada por outro processo também responde 200 e um sondador que olhasse só o
@@ -496,9 +498,18 @@ HTTP daria o servidor como no ar com o nosso processo já morto de
 `EADDRINUSE`. `--stop` lê o pidfile e mata o processo registrado nele.
 
 **`server.ts` passou a ler os três limites do ambiente**, com os mesmos
-números medidos como padrão: `MAX_PEERS = process.env.MAX_PEERS ?? 5`,
-`MAX_SHARERS = process.env.MAX_SHARERS ?? 3`,
-`MAX_CAPTURE_PIXELS = process.env.MAX_CAPTURE_PIXELS ?? 1_440_000`. Isso é o
+números medidos como padrão: `MAX_PEERS = int("MAX_PEERS", 5)`,
+`MAX_SHARERS = int("MAX_SHARERS", 3)`,
+`MAX_CAPTURE_PIXELS = int("MAX_CAPTURE_PIXELS", 1_440_000)`.
+
+**Nunca `process.env.X ?? padrão`**, que foi como isto nasceu e durou pouco:
+`??` não pega a string vazia, então `MAX_PEERS=` virava `Number("")` = 0 e
+trancava a sala inteira; e `Number("cinco")` é `NaN`, que faz `set.size >= MAX_*`
+ser *sempre falso* e apaga em silêncio o teto de sala e a arbitragem de quem
+transmite, enquanto o cliente segue desenhando "3/3" a partir do próprio padrão.
+`int(nome, padrão, max?)` recusa tudo que não seja inteiro positivo, cai no
+padrão medido e se identifica no stderr. Um árbitro que leu `NaN` não está
+arbitrando. Isso é
 que permite as flags do CLI sem duplicar a lógica dos limites em dois lugares:
 `bin/cli.ts` só seta `PORT`, `STUN_PORT`, `MAX_PEERS`, `MAX_SHARERS` e
 `MAX_CAPTURE_PIXELS` no ambiente do processo filho. Rodar `bun run server.ts`

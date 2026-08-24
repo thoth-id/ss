@@ -46,6 +46,20 @@ export function startStun(port = 3478) {
     sock.send(res, rinfo.port, rinfo.address);
   });
 
+  // Sem este handler o dgram emite 'error' sem ouvinte, o processo morre com
+  // `bind EADDRINUSE 0.0.0.0` — sem número de porta — e quem lê o log conclui
+  // que o problema é a porta HTTP, que estava livre. Uma segunda instância
+  // precisa de --stun-port próprio, e é isso que a mensagem tem que dizer.
+  sock.on("error", (err: NodeJS.ErrnoException) => {
+    process.stderr.write(
+      err.code === "EADDRINUSE"
+        ? `STUN: a porta UDP ${port} já está em uso.\n` +
+          `Outra instância do screen-share? Cada uma precisa do seu --stun-port.\n`
+        : `STUN: falha ao bindar a porta UDP ${port}: ${err.message}\n`,
+    );
+    process.exit(1);
+  });
+
   sock.bind(port);
   return sock;
 }
