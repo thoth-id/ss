@@ -1,13 +1,33 @@
 import type { ServerWebSocket } from "bun";
+import nodePath from "node:path";
 import { startStun } from "./stun";
+
+// Resolvido contra o módulo, nunca contra o cwd: instalado como pacote, o
+// processo roda do diretório de quem chamou, e "./public" apontaria para o
+// nada. Foi assim que a página sumiu no primeiro teste de instalação real.
+const PUBLIC_DIR = nodePath.join(import.meta.dir, "public");
+
+/** Caminho absoluto dentro de public/, ou null se a rota tenta escapar dele. */
+function resolverEstatico(pathname: string): string | null {
+  let rel: string;
+  try {
+    rel = decodeURIComponent(pathname);
+  } catch {
+    return null; // %-encoding quebrado
+  }
+  if (rel === "/" || rel === "") rel = "/index.html";
+  const alvo = nodePath.resolve(PUBLIC_DIR, "." + nodePath.posix.normalize(rel));
+  if (alvo !== PUBLIC_DIR && !alvo.startsWith(PUBLIC_DIR + nodePath.sep)) return null;
+  return alvo;
+}
 
 const PORT = Number(process.env.PORT ?? 3000);
 const STUN_PORT = Number(process.env.STUN_PORT ?? 3478);
 
-// Teto de peers por sala. O 6º recebe `denied` e não entra.
-const MAX_PEERS = 5;
+// Teto de peers por sala (flag --peers). O 6º recebe `denied` e não entra.
+const MAX_PEERS = Number(process.env.MAX_PEERS ?? 5);
 
-// Quantas pessoas podem transmitir ao mesmo tempo. Vira 1 trocando o número.
+// Quantas pessoas podem transmitir ao mesmo tempo (flag --sharers).
 // O servidor é o único ponto que vê a sala inteira, então a decisão mora aqui:
 // dois cliques simultâneos em máquinas diferentes só são serializáveis num lugar.
 //
@@ -17,15 +37,15 @@ const MAX_PEERS = 5;
 // Medido: 4 destinos custam ~2 cores de 12, e receber um segundo stream soma
 // 0,18. Ver a tabela no CLAUDE.md. 3 é onde a medição limpa termina; 4 e 5 não
 // foram medidos porque 5 Chromes não cabem numa caixa de 12 cores.
-const MAX_SHARERS = 3;
+const MAX_SHARERS = Number(process.env.MAX_SHARERS ?? 3);
 
 // Teto de pixels da captura (equivalente a 1600×900). Acima de 1920×1080 o
 // WebRTC passa a usar ~8 threads de encode por PeerConnection em vez de ~3, e
 // com vários destinos isso satura a CPU: medido em bancada com 4 destinos,
 // 1920×1080 custou 10,12 cores de 12 e entregou 6–9 fps, enquanto 1600×900
-// custou 1,95 cores com 30 fps cheios. É constante pelo mesmo motivo que
-// MAX_SHARERS: ajustar o limite mexe num número só, num lugar só.
-const MAX_CAPTURE_PIXELS = 1_440_000;
+// custou 1,95 cores com 30 fps cheios. O padrão é o número medido; a flag
+// --pixels existe para quem quiser testar outro, não para uso rotineiro.
+const MAX_CAPTURE_PIXELS = Number(process.env.MAX_CAPTURE_PIXELS ?? 1_440_000);
 
 // Teto do nome escolhido por cada peer. Só cosmético: quem não escolher aparece
 // pelo id, que é o que o servidor garante ser único.
@@ -100,8 +120,9 @@ Bun.serve<Client>({
       return Response.json({ stunPort: STUN_PORT, maxPeers: MAX_PEERS, maxSharers: MAX_SHARERS, maxCapturePixels: MAX_CAPTURE_PIXELS });
     }
 
-    const path = url.pathname === "/" ? "/index.html" : url.pathname;
-    const file = Bun.file("./public" + path);
+    const alvo = resolverEstatico(url.pathname);
+    if (!alvo) return new Response("not found", { status: 404 });
+    const file = Bun.file(alvo);
     return (await file.exists())
       ? new Response(file)
       : new Response("not found", { status: 404 });

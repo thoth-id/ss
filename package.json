@@ -1,12 +1,32 @@
 {
-  "name": "tela",
+  "name": "screen-share",
   "version": "0.1.0",
-  "description": "Compartilhamento de tela P2P dentro de um tailnet Tailscale. Sem SFU, sem TURN, sem conta.",
-  "private": true,
+  "description": "Compartilhamento de tela P2P entre navegadores. Sem SFU, sem TURN, sem conta, sem dependência.",
+  "keywords": [
+    "screen-sharing",
+    "webrtc",
+    "p2p",
+    "tailscale",
+    "stun",
+    "bun"
+  ],
+  "license": "MIT",
   "type": "module",
+  "bin": {
+    "screen-share": "bin/cli.ts"
+  },
+  "files": [
+    "bin/cli.ts",
+    "server.ts",
+    "stun.ts",
+    "public/",
+    "README.md"
+  ],
+  "engines": {
+    "bun": ">=1.1.0"
+  },
   "scripts": {
     "start": "bun run server.ts",
     "test": "(bun run server.ts > /tmp/tela-test.log 2>&1 & echo $! > /tmp/tela-test.pid); sleep 2; bun run test.ts; rc=$?; kill \"$(cat /tmp/tela-test.pid)\" 2>/dev/null; exit $rc"
-  },
-  "license": "UNLICENSED"
+  }
 }
