@@ -12,6 +12,14 @@ const MAX_PEERS = 5;
 // dois cliques simultâneos em máquinas diferentes só são serializáveis num lugar.
 const MAX_SHARERS = 2;
 
+// Teto de pixels da captura (equivalente a 1600×900). Acima de 1920×1080 o
+// WebRTC passa a usar ~8 threads de encode por PeerConnection em vez de ~3, e
+// com vários destinos isso satura a CPU: medido em bancada com 4 destinos,
+// 1920×1080 custou 10,12 cores de 12 e entregou 6–9 fps, enquanto 1600×900
+// custou 1,95 cores com 30 fps cheios. É constante pelo mesmo motivo que
+// MAX_SHARERS: ajustar o limite mexe num número só, num lugar só.
+const MAX_CAPTURE_PIXELS = 1_440_000;
+
 type Client = { id: string; room: string };
 type Socket = ServerWebSocket<Client>;
 
@@ -53,7 +61,7 @@ Bun.serve<Client>({
     }
 
     if (url.pathname === "/config") {
-      return Response.json({ stunPort: STUN_PORT, maxPeers: MAX_PEERS, maxSharers: MAX_SHARERS });
+      return Response.json({ stunPort: STUN_PORT, maxPeers: MAX_PEERS, maxSharers: MAX_SHARERS, maxCapturePixels: MAX_CAPTURE_PIXELS });
     }
 
     const path = url.pathname === "/" ? "/index.html" : url.pathname;

@@ -59,11 +59,21 @@ As PeerConnections são **direcionais**: `sending` e `receiving` são maps
 separados e nunca existe uma PC bidirecional. Cada PC tem um offerer único, o
 que elimina glare e dispensa perfect negotiation. Não unifique os dois maps.
 
-Os params de encoding são idênticos em todos os peers, mas **não presuma que
-isso faz o Chrome reaproveitar uma única instância de encoder** — o
-comportamento usual é um encoder por PeerConnection. Isso nunca foi medido
-aqui. Se capacidade importar, meça CPU com 4 destinos e compare com 1 antes de
-decidir qualquer coisa.
+É **um encoder por PeerConnection**, e isso foi medido. O custo de CPU de quem
+compartilha não é curva, é degrau: com 4 destinos, capturar em 1920×1080 come
+10,1 cores de 12 e entrega 6–9 fps, enquanto 1600×900 custa 2,0 cores com 30 fps
+cheios. Até 1856×1044 — só 7% menos pixels que 1080p — já cai pra 3,8 cores.
+
+A causa é oversubscription de thread, não custo de pixel: o WebRTC dá ~8 threads
+de encode por PeerConnection a partir de 1920×1080 e ~3 abaixo disso. Contado no
+`/proc`, o renderer de quem compartilha carrega 51 threads em 1920×1080 contra
+33 em 1600×900. Com 4 encoders são 32 threads de encode disputando 12 lógicas.
+
+Por isso existe `MAX_CAPTURE_PIXELS`: o cliente reduz o track capturado pra caber
+no orçamento de pixels preservando o aspecto real da tela (1920×1200 vira
+1518×948). O corte é **na fonte, uma vez só**, e não por conexão — os N encoders
+leem o mesmo track. Qualquer teto novo precisa ficar abaixo de 1920×1080 pixels
+(2.073.600), senão o degrau volta.
 
 Com `MAX_SHARERS = 2` o pior caso são 2 sharers × 4 viewers = 8 conexões e 2
 encoders por máquina que transmite. Se um dia N pessoas compartilharem ao mesmo
@@ -127,8 +137,8 @@ A sala vem do hash da URL: `/#retro`, `/#pair`. Sem hash, cai em `sala`.
 | `PORT` | 3000 | HTTP + WebSocket de signaling |
 | `STUN_PORT` | 3478 | STUN UDP |
 
-`GET /config` devolve `stunPort`, `maxPeers` e `maxSharers` pro cliente, então
-os limites não ficam duplicados no HTML.
+`GET /config` devolve `stunPort`, `maxPeers`, `maxSharers` e `maxCapturePixels`
+pro cliente, então os limites não ficam duplicados no HTML.
 
 ## Segurança
 
@@ -142,7 +152,13 @@ quebra a premissa do STUN e passa a exigir TURN.
 - `contentHint = "detail"` já está setado: prioriza nitidez de texto sobre fluidez.
   Se for compartilhar vídeo em vez de código, troque para `"motion"`.
 - `degradationPreference = "maintain-resolution"` mantém a resolução e derruba
-  o framerate sob pressão. Para código é o que você quer.
+  o framerate sob pressão. Para código é o que você quer. Trocar por `"balanced"`
+  foi medido e **não** alivia CPU com vários destinos (10,4 cores contra 10,1);
+  baixar o framerate também foi medido e **piora** (11,2 cores a 15fps). Quem
+  resolve é o teto de pixels.
+- `MAX_CAPTURE_PIXELS` (em `server.ts`, servido no `/config`) é o teto de pixels
+  da captura, 1.440.000 por padrão — equivalente a 1600×900. Subir esse número
+  acima de 2.073.600 traz de volta o colapso de CPU descrito em Topologia.
 - A faixa de telemetria embaixo de cada tile mostra bitrate, resolução, fps,
   tipo de candidate e RTT. Se aparecer `host` em vez de `srflx`, os dois peers
   estão na mesma LAN física e o STUN nem foi necessário.

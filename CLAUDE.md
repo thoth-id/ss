@@ -29,7 +29,7 @@ do not survive, so start the server and run the suite in **one** shell command:
   timeout 90 bun run test.ts; kill $(cat /tmp/p)
 ```
 
-`test.ts` is a hand-rolled suite (74 assertions), not `bun test`. There is **no
+`test.ts` is a hand-rolled suite (75 assertions), not `bun test`. There is **no
 filter flag** — to run a subset, comment out entries in the `/* ---------- run
 ---------- */` block at the bottom of `test.ts`.
 
@@ -77,6 +77,13 @@ Do not unify these maps.
 server owns both decisions — it is the only place that sees a whole room, so
 simultaneous clicks on different machines are only serializable there. Changing
 `MAX_SHARERS` to 1 requires editing only that number.
+
+`MAX_CAPTURE_PIXELS` lives there too and is served by `/config`. It is the
+capture pixel budget: the client scales the captured track down to fit it,
+preserving the screen's real aspect ratio, so 1920×1200 becomes 1518×948. The
+cut happens **once at the source, not once per PeerConnection** — all N encoders
+read the same track. See the measured numbers below for why the budget is
+1,440,000 and not something larger.
 
 `sharers` broadcast is **state-based, not event-based**: the full set goes to the
 whole room on every change, plus a snapshot to each peer on join. That makes it
@@ -135,13 +142,47 @@ Still open: that run was **not confirmed to be cross-machine** rather than two
 tabs on the host, so re-verify with two distinct tailnet machines. Read the path
 field in each tile's telemetry strip — `relay` would mean the STUN path failed.
 
-## Do not trust this claim
+## Encoder cost per destination — measured, no longer a guess
 
-An earlier version of the README asserted that identical encoding parameters
-across peers make Chrome reuse a single encoder instance instead of one per
-connection. **That is unverified and probably wrong** — the usual behavior is one
-encoder per PeerConnection. Do not use it as a basis for capacity decisions. If
-it matters, measure CPU with 4 destinations against 1.
+The old claim that identical encoding parameters make Chrome reuse one encoder
+was wrong. There is **one encoder per PeerConnection**, and the cost does not
+grow linearly — it falls off a cliff.
+
+Measured on a Core 7 150U (12 logical CPUs), Chrome headless *and* headed (both
+agreed within 2%), realistic screen content, encoder `libvpx` VP8 **in software**
+(`powerEfficientEncoder: false` — this machine exposes no hardware video encode
+under Linux). Sharer CPU with 4 destinations:
+
+| capture | sharer CPU | fps delivered per stream |
+|---|---|---|
+| 1920×1200 | 9.9 cores | 7–11 |
+| 1920×1080 | 10.1 cores | 6–9 |
+| 1856×1044 | 3.8 cores | 30 |
+| 1600×900 | 2.0 cores | 30 |
+| 1440×810 | 1.5 cores | 30 |
+
+Scaling by destination count at 1920×1080: 1 → 0.8 cores, **2 → 5.9**, 3 → 9.6,
+4 → 10.1. The collapse happens between the first and the second destination.
+
+**The mechanism is thread oversubscription, not pixel cost.** WebRTC gives each
+VP8 encoder ~8 worker threads at or above 1920×1080 and ~3 below it. Counted in
+`/proc`: the sharer's renderer carries **51 threads at 1920×1080 against 33 at
+1600×900** (an idle renderer has 18). Four encoders × 8 threads is 32 encode
+threads fighting over 12 logical CPUs. That is why 1856×1044 — only 7% fewer
+pixels than 1080p — costs 3.8 cores instead of 10.1.
+
+Two fixes that do **not** work, both measured: lowering the framerate made it
+*worse* (11.2 cores at 15fps against 10.1 at 30fps in 1080p), and
+`degradationPreference: "balanced"` changed nothing (10.4 against 10.1). Do not
+reach for either.
+
+Any capture cap must stay **below 1920×1080 pixels (2,073,600)** or the cliff
+comes back. Viewers are not the problem: 4 simultaneous decodes cost 0.2–0.5
+cores.
+
+Caveat on these numbers: capture was a fake device fed from a file, not real
+`getDisplayMedia`. Real screen capture **adds** cost, so a real machine is worse
+than the table, never better.
 
 ## Out of scope
 

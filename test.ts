@@ -84,6 +84,11 @@ async function testStatic() {
   eq("/config devolve stunPort", json.stunPort, 3478);
   eq("/config devolve maxPeers", json.maxPeers, MAX_PEERS);
   eq("/config devolve maxSharers", json.maxSharers, MAX_SHARERS);
+  ok(
+    "/config devolve maxCapturePixels como número > 0",
+    typeof json.maxCapturePixels === "number" && json.maxCapturePixels > 0,
+    json.maxCapturePixels,
+  );
 
   const miss = await fetch(HTTP + "/nao-existe");
   eq("rota inexistente dá 404", miss.status, 404);

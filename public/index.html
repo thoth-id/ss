@@ -132,6 +132,7 @@ let sharers = new Set();          // quem está transmitindo, segundo o servidor
 let localStream = null;
 let iceServers = [];
 let maxSharers = 2;
+let maxCapturePixels = 1_440_000; // teto de pixels na captura; ver startShare()
 let myId = null;
 let ws = null;
 let dead = false;                 // recebeu `denied`: para de reconectar
@@ -141,8 +142,9 @@ let dead = false;                 // recebeu `denied`: para de reconectar
 async function boot() {
   const cfg = await fetch("/config")
     .then((r) => r.json())
-    .catch(() => ({ stunPort: 3478, maxSharers: 2 }));
+    .catch(() => ({ stunPort: 3478, maxSharers: 2, maxCapturePixels: 1_440_000 }));
   maxSharers = cfg.maxSharers ?? 2;
+  maxCapturePixels = cfg.maxCapturePixels ?? 1_440_000;
   // Avisa de cara, em vez de deixar a pessoa clicar num botão que não faz nada.
   if (!canShare()) notice(whyCantShare());
   render();
@@ -393,11 +395,22 @@ async function startShare() {
   }
 
   notice("");
+
+  // Dica de teto já no picker, derivada do orçamento de pixels assumindo 16:9
+  // (1.440.000 px dá 1600×900). É só dica: captura de tela costuma vir na
+  // resolução nativa mesmo assim, por isso o ajuste exato vem depois, no track.
+  const hintW = Math.round(Math.sqrt((maxCapturePixels * 16) / 9) / 2) * 2;
+  const hintH = Math.round((hintW * 9) / 16 / 2) * 2;
+
   let stream;
   try {
     // O picker precisa do gesto do usuário, então vem antes do round-trip.
     stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: CAP_FRAMERATE },
+      video: {
+        frameRate: CAP_FRAMERATE,
+        width: { max: hintW },
+        height: { max: hintH },
+      },
       audio: false,
     });
   } catch (err) {
@@ -413,6 +426,28 @@ async function startShare() {
   const track = stream.getVideoTracks()[0];
   track.contentHint = "detail"; // prioriza nitidez de texto sobre fluidez
   track.onended = stopShare;
+
+  // Corte de resolução na FONTE, não por PeerConnection. O custo de CPU de quem
+  // compartilha não é curva, é degrau: o WebRTC usa ~8 threads de encode por PC
+  // acima de 1920×1080 e ~3 abaixo. Medido no renderer do sharer: 51 threads em
+  // 1920×1080 contra 33 em 1600×900 (ocioso 18). Com 4 destinos são 32 threads
+  // disputando 12 lógicas — oversubscription de thread, não custo de pixel.
+  // Com 4 destinos, libvpx/VP8 em software: 1920×1080 come 10,12 cores de 12 e
+  // entrega 6–9 fps; 1600×900 custa 1,95 cores com 30 fps cheios. Até 1856×1044,
+  // só 7% menos pixels que 1080p, já custa 3,75 cores.
+  // Cortar aqui é UMA redução, compartilhada pelos N encoders; cortar por
+  // PeerConnection seriam N reduções, uma por conexão, e o degrau é do encoder.
+  // Medidos e descartados: baixar framerate PIOROU (11,15 cores a 15fps contra
+  // 10,12 a 30fps) e degradationPreference "balanced" não mudou nada (10,44).
+  const s = track.getSettings();
+  if (s.width && s.height && s.width * s.height > maxCapturePixels) {
+    // Escala preservando o aspecto real da tela, que pode não ser 16:9
+    // (1920×1200 é 16:10). Dimensões pares: encoders trabalham em macroblocos.
+    const k = Math.sqrt(maxCapturePixels / (s.width * s.height));
+    const w = Math.round((s.width * k) / 2) * 2;
+    const h = Math.round((s.height * k) / 2) * 2;
+    try { await track.applyConstraints({ width: w, height: h }); } catch {}
+  }
 
   attachTile(myId, stream, true);
   // Nada é enviado até o servidor confirmar a vaga via broadcast `sharers`.
@@ -552,8 +587,14 @@ setInterval(async () => {
         }
       });
     }
+    // Resolução de captura efetiva ao lado do número de destinos: deixa o cap
+    // auditável a olho. Se o Chrome ignorar o applyConstraints numa tela real,
+    // aparece aqui na hora, em vez de virar CPU a 100% sem explicação.
+    const cap = localStream?.getVideoTracks()[0]?.getSettings();
+    const capTxt = cap?.width && cap?.height ? `${cap.width}×${cap.height} · ` : "";
     self.querySelector(".rate").textContent = "↑ " + (fmt(total) || "--");
-    self.querySelector(".size").textContent = `${sending.size} destino${sending.size > 1 ? "s" : ""}`;
+    self.querySelector(".size").textContent =
+      capTxt + `${sending.size} destino${sending.size > 1 ? "s" : ""}`;
     self.querySelector(".path").textContent = "";
   }
 }, 1000);
