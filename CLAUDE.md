@@ -375,6 +375,37 @@ time. The list came back empty only on a **stopped** transceiver, where
 itself doing the one thing `setParameters` genuinely rejects (changing the
 length). It is gone; `encodings[0]` is indexed directly.
 
+**That refutation measured Chrome, and Chrome only — and the field then pointed
+at Safari.** On 2026-08-24, sharing from **Safari** on macOS to Chrome on Linux
+over the tailnet, the receiver read `640×360 · 30fps` while the sharer's own
+capture was `1600×900`: full framerate, collapsed resolution, the exact
+signature of the policy not being in force. With the fixed client served from
+this repo, the same pair delivered **`1600×900 · 9fps`** — the opposite trade,
+which is `maintain-resolution` doing its job — and the sharer's strip showed no
+policy warning, meaning `degradationPreference` read back fine there.
+
+So "the spec guarantees `encodings[0]`" is established for Chrome and for the
+spec text; it is **not** established for WebKit, which is the one browser where
+the symptom appears. Do not read the paragraph above as closing the question for
+Safari.
+
+**Two things still open, both cheap:**
+
+- The good run was **not confirmed to be a cold first share.** The same user
+  found that a *second* share comes out at full resolution even on the old
+  code, because the bandwidth estimate is already warm — libwebrtc starts at
+  300 kb/s, and the resolution ladder's first rung follows the estimate. A
+  fresh page sharing on the first try is what separates "the fix worked" from
+  "the connection was warm".
+- Nobody has read `getParameters()` **inside Safari**. One line in its console
+  on the sharing tab answers it:
+  `[...sending.values()][0].getSenders().find(s => s.track).getParameters()` —
+  `encodings.length` and `degradationPreference` are the two fields that matter.
+
+Related, and measured on the same day: **macOS allows only one screen capture at
+a time.** Starting a share in a second Safari tab kills the first one's capture
+(the first tile goes black). That is the platform, not this project.
+
 **And `83 kb/s` is not the free-standing fact it was written as.** This file
 used to say static screen content costs ~80–100 kb/s in VP8 at *any*
 resolution. Measured, it scales with pixels: static content redrawn identically
