@@ -8,10 +8,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Tailscale tailnet. Bun + TypeScript, **zero dependencies**, no build step, no
 `npm install`. Four source files total.
 
-It is packaged for npm as **`@thoth-dev/screen-share`**, runnable with `bunx
-@thoth-dev/screen-share` — **once published, which has not happened yet**.
-Nothing about the stack changed for that: the package still ships `.ts` as
-written, and Bun still runs it directly — no transpilation, no `dist/`.
+It is published on npm as **`@thoth-dev/screen-share`**, runnable with `bunx
+@thoth-dev/screen-share`. Nothing about the stack changed for that: the package
+still ships `.ts` as written, and Bun still runs it directly — no
+transpilation, no `dist/`.
 `bin/cli.ts` is the published entry point (`bin.screen-share` in
 `package.json`); it only parses flags and hands the real work to `server.ts`.
 
