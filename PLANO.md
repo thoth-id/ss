@@ -14,16 +14,20 @@ signaling por WebSocket, e responde STUN. Ele **nunca** toca em mídia.
 
 ## 2. Stack e layout
 
-Bun + TypeScript, sem dependências externas. Nada de npm install.
+Bun + TypeScript, sem dependências externas. Nada de npm install para
+desenvolver o projeto em si — ver seção 11 sobre o pacote publicado.
 
 ```
+bin/cli.ts       CLI: flags, --bg/--stop, repassa config por env pro server.ts
 server.ts        Bun.serve: estático + /config + WebSocket de signaling
 stun.ts          servidor STUN mínimo (~50 linhas, node:dgram)
 public/
   index.html     cliente inteiro: HTML + CSS + JS, arquivo único
 ```
 
-Rodar: `bun run server.ts`. Sobe HTTP em `:3000` e STUN em UDP `:3478`.
+Rodar direto do repo: `bun run server.ts`. Sobe HTTP em `:3000` e STUN em UDP
+`:3478`. Empacotado para o npm sob o nome `@thoth-dev/screen-share`; publicado, o comando
+passa a ser `bunx @thoth-dev/screen-share` (seção 11).
 
 ## 3. Estado atual
 
@@ -192,9 +196,29 @@ cert Let's Encrypt válido para o nome `.ts.net`.
 
 Executar em ordem. T0 vem antes de qualquer código.
 
-### T0 — Validar o baseline (bloqueia todo o resto)
+### T0 — Validar o baseline (bloqueia todo o resto) — FEITO em 24/08/2026
 
-Sem isso, as tarefas seguintes podem estar polindo algo que não conecta.
+Rodado entre um MacBook e a máquina Linux, os dois no tailnet, sobre
+`tailscale serve` HTTPS. As tiras de telemetria leram `srflx · 28ms`,
+`srflx · 33ms` e `prflx · 26/30ms`: caminho direto, sem relay, entre máquinas
+distintas. O aceite abaixo pedia `host` ou `srflx`; `prflx` (peer-reflexive)
+também é caminho direto — o candidate foi aprendido durante os testes de
+conectividade em vez de ser reunido antes, que é o esperado quando o WireGuard
+entrega pacotes de um endereço que não estava no conjunto reunido. **Não pedir
+esta verificação de novo.**
+
+Um achado saiu junto e está registrado no `CLAUDE.md`: a resolução entregue
+caía para 640×360 a 30fps a partir de uma captura de 1600×900. Não é tamanho de
+captura, é o degrau ½ da escada de adaptação do encoder, e ela só existe quando
+`degradationPreference: "maintain-resolution"` não está em vigor. O
+`applyEncoding` do cliente foi corrigido para não engolir a falha e para ler o
+`degradationPreference` de volta em vez de confiar que o `setParameters`
+resolveu. (Uma versão anterior deste parágrafo também culpava um
+`params.encodings = [{}]`; isso foi **refutado** — a spec garante que a entrada
+existe e o Chrome devolve `length === 1` em todos os estados vivos medidos. Ver
+o `CLAUDE.md`.)
+
+O procedimento original fica abaixo, para quando for preciso repetir.
 
 1. `bun run server.ts` numa máquina do tailnet.
 2. `tailscale serve --bg 3000` (HTTPS precisa estar habilitado no admin console
@@ -212,7 +236,7 @@ aparecem candidates com nome terminando em `.local` e o pair nunca chega a
 `succeeded`. Nesse caso confirmar que a UDP 3478 está acessível pelo 100.x
 (`nc -zvu <ip-tailnet> 3478`) e que o firewall local não está bloqueando.
 
-**Não prosseguir para T1 enquanto T0 não passar.**
+**Não prosseguir para T1 enquanto T0 não passar.** (Passou.)
 
 ---
 
@@ -412,8 +436,9 @@ Duas pontas soltas:
 2. O mesmo cenário (P=5, S=1) mediu 2,31 numa rodada e 1,87 em outra. Trate tudo
    nesta seção como ±20%.
 
-Fechar as duas exige o que o T0 já pede: duas ou três máquinas de verdade do
-tailnet.
+Fechar as duas exige máquinas de verdade do tailnet, uma por peer. O T0 já foi
+feito (MacBook + Linux, 24/08/2026) e **não fecha estas duas**: ele provou o
+caminho de ICE, não custo de CPU com três sharers. Isto continua aberto.
 
 ### Por que `MAX_SHARERS` virou 3, e não 5
 
@@ -439,3 +464,85 @@ sofrem**: a rota até o `100.x` deles sai pela `tailscale0` e a origem sai certa
 Só quebra com cliente na mesma máquina — que é exatamente o caso "duas abas no
 host", e é candidato concreto a explicar por que a única rodada real de ICE
 voltou `prflx` em vez do `srflx` que o T0 esperava. Não corrigido; registrado.
+
+---
+
+## 11. Empacotamento npm
+
+O projeto virou publicável no registry do npm sob o nome **`@thoth-dev/screen-share`**.
+Isso mudou só a forma de distribuir e invocar; não mudou o stack. Uma spec e
+um plano mais ambiciosos foram escritos antes disso e avaliaram portar o
+servidor para `node:http` com um WebSocket escrito à mão, para tirar a
+dependência do Bun (`docs/superpowers/specs/2026-08-24-pacote-npm-design.md`
+e `docs/superpowers/plans/2026-08-24-pacote-npm.md`). **Esse porte não foi o
+caminho seguido.** O que foi implementado manteve Bun e TypeScript ponta a
+ponta: `bin/cli.ts`, `server.ts` e `stun.ts` são publicados como escritos, sem
+transpilação e sem `dist/`, e é o Bun que os executa direto — os dois
+documentos acima registram uma exploração descartada, não o desenho atual.
+
+**Como se roda.** `bunx @thoth-dev/screen-share [flags]`. O shebang do `bin/cli.ts` é
+`#!/usr/bin/env bun`. Quem roda `npx @thoth-dev/screen-share` numa máquina sem Bun recebe
+`env: bun: No such file or directory` — seco, mas nomeia o que falta; com Bun
+instalado, `npx` funciona igual a `bunx`.
+
+**CLI.** `bin/cli.ts` só faz três coisas: parseia flags, decide primeiro plano
+ou segundo (`--bg`/`--stop`), e repassa a configuração ao `server.ts` por
+variável de ambiente — nenhuma lógica de servidor mora ali. Flags: `-p/--port`
+(3000), `--stun-port` (3478), `--peers` (5), `--sharers` (3), `--pixels`
+(1440000), `--bg`, `--stop`, `-h/--help`, `-v/--version`. `--bg` grava pidfile
+em `$XDG_RUNTIME_DIR/screen-share/screen-share-<porta>.pid` e log ao lado
+(sem `XDG_RUNTIME_DIR`, um `screen-share-<uid>/` de modo 0700 no diretório
+temporário, recusado se for de outra pessoa — nunca `$TMPDIR` direto, cujo
+modo 1777 permite plantar um pidfile no caminho), e só reporta sucesso depois que o
+`/config` do processo filho responder com a config *dele* — checando primeiro
+que o filho segue vivo, e só então sondando o HTTP, porque uma porta já
+ocupada por outro processo também responde 200 e um sondador que olhasse só o
+HTTP daria o servidor como no ar com o nosso processo já morto de
+`EADDRINUSE`. `--stop` lê o pidfile e mata o processo registrado nele.
+
+**`server.ts` passou a ler os três limites do ambiente**, com os mesmos
+números medidos como padrão: `MAX_PEERS = int("MAX_PEERS", 5)`,
+`MAX_SHARERS = int("MAX_SHARERS", 3)`,
+`MAX_CAPTURE_PIXELS = int("MAX_CAPTURE_PIXELS", 1_440_000)`.
+
+**Nunca `process.env.X ?? padrão`**, que foi como isto nasceu e durou pouco:
+`??` não pega a string vazia, então `MAX_PEERS=` virava `Number("")` = 0 e
+trancava a sala inteira; e `Number("cinco")` é `NaN`, que faz `set.size >= MAX_*`
+ser *sempre falso* e apaga em silêncio o teto de sala e a arbitragem de quem
+transmite, enquanto o cliente segue desenhando "3/3" a partir do próprio padrão.
+`int(nome, padrão, max?)` recusa tudo que não seja inteiro positivo, cai no
+padrão medido e se identifica no stderr. Um árbitro que leu `NaN` não está
+arbitrando. Isso é
+que permite as flags do CLI sem duplicar a lógica dos limites em dois lugares:
+`bin/cli.ts` só seta `PORT`, `STUN_PORT`, `MAX_PEERS`, `MAX_SHARERS` e
+`MAX_CAPTURE_PIXELS` no ambiente do processo filho. Rodar `bun run server.ts`
+direto do repo continua funcionando sozinho, com as mesmas variáveis, sem o
+CLI no meio.
+
+**Dois bugs que só apareceram numa instalação de verdade, os dois corrigidos
+aqui:**
+
+1. Os estáticos resolviam `"./public"` contra o cwd do processo. Instalado
+   como pacote, o processo roda do diretório de quem chamou `bunx`, então
+   `/config` respondia mas a própria página dava "not found". Agora
+   `resolverEstatico()`, em `server.ts`, resolve contra `import.meta.dir` e
+   guarda contra traversal (`../`, `%2e%2e`, barras codificadas — tudo 404
+   agora, verificado).
+2. `--bg` reportava sucesso mesmo com a porta já ocupada: sondava `/config`
+   antes de checar se o processo filho seguia vivo, e qualquer 200 satisfazia
+   a checagem, inclusive o de quem já ocupava a porta. Agora a checagem de
+   vida vem primeiro, o corpo da resposta é validado como sendo do próprio
+   filho (compara `stunPort`), e o `EADDRINUSE` do filho é impresso a partir
+   do arquivo de log em vez de o comando morrer em silêncio.
+
+**Verificado:** suíte de 97 asserções verde contra o `server.ts` modificado, e
+empacotar + instalar + rodar a partir de um diretório de consumidor separado
+serve a página real.
+
+**O que não muda.** `PLANO.md` continua descrevendo o projeto pelo nome
+interno `tela` — repositório, UI e este documento seguem `tela`; só o pacote
+publicado, `@thoth-dev/screen-share`, e o comando de CLI, `screen-share`
+(inalterado — `bin` é chaveado pelo nome do comando, não do pacote), saem
+desse padrão. As seções 5 (invariantes) e
+9–10 (medições de CPU) descrevem `server.ts`/`stun.ts` e continuam valendo sem
+alteração — nada no empacotamento toca em signaling, mídia ou STUN.

@@ -508,15 +508,55 @@ async function flush(pc) {
 // Params idênticos em todos os peers. NÃO assuma que isso faz o Chrome
 // reaproveitar uma única instância de encoder — o comportamento usual é um
 // encoder por PeerConnection. Se capacidade importar, medir CPU com 4 destinos.
+//
+// O que importa aqui é `maintain-resolution`. Sem ela o encoder troca pixels
+// por quadros: desce uma escada de frações da captura (¼, ⅜, ½, ¾) e demora
+// para voltar — medido, 30 a 40s para subir de volta num loopback de 1ms sem
+// perda, e com conteúdo em movimento não subiu nenhum degrau em 90s. Com ela em
+// vigor a resolução não se mexe nem quando o fps cai para 2. Um vídeo chegando
+// em 640×360 a 30fps é exatamente esta política ausente: 640×360 é o degrau ½
+// de 1280×720, não um tamanho de captura.
+//
+// `encodings[0]` sempre existe: a spec (WebRTC 1.0 § 5.2, *create an
+// RTCRtpSender*, passo 11) manda criar uma entrada quando `sendEncodings` vem
+// vazio, e nenhum algoritmo dela esvazia a lista depois. Já houve aqui um
+// `if (!params.encodings?.length) params.encodings = [{}]` para "garantir" esse
+// slot; ele mudava o comprimento de `encodings`, que é justamente o que o
+// `setParameters` recusa com `InvalidModificationError`. Defesa que só podia
+// causar o dano que dizia evitar. Se um dia a lista vier vazia de verdade, é
+// bug de browser e o `catch` abaixo mostra.
+//
+// O que vale mesmo é não engolir a falha: o `catch {}` que estava aqui
+// transformava "a política não entrou" em "o vídeo está estranho" descoberto
+// dias depois. E `setParameters` resolver não prova que o campo pegou — o
+// `degradationPreference` é lido de volta.
 async function applyEncoding(pc) {
   const sender = pc.getSenders().find((s) => s.track?.kind === "video");
   if (!sender) return;
+
   const params = sender.getParameters();
-  if (!params.encodings?.length) params.encodings = [{}];
   params.encodings[0].maxBitrate = CAP_BITRATE;
   params.encodings[0].maxFramerate = CAP_FRAMERATE;
   params.degradationPreference = "maintain-resolution";
-  try { await sender.setParameters(params); } catch {}
+
+  try {
+    await sender.setParameters(params);
+  } catch (err) {
+    pc.policy = `política recusada: ${err?.name || err}`;
+    console.warn("applyEncoding falhou", err);
+    return;
+  }
+
+  const got = sender.getParameters();
+  pc.policy =
+    got.degradationPreference === "maintain-resolution"
+      ? null
+      : "política não confirmada";
+  if (pc.policy) {
+    console.warn(
+      `applyEncoding: degradationPreference voltou ${JSON.stringify(got.degradationPreference)}`,
+    );
+  }
 }
 
 async function openSend(id) {
@@ -575,6 +615,47 @@ async function route(from, data) {
 
 /* ---------- compartilhar ---------- */
 
+// Geometria REAL da fonte, tirada do primeiro quadro.
+//
+// `track.getSettings()` logo após o `getDisplayMedia` não serve para isto: se a
+// fonte for maior que a caixa pedida, ele devolve o ECO DA CAIXA — as dimensões
+// que nós mesmos pedimos — e não o que a fonte tem. Medido: numa tela 1920×1200
+// com caixa 1838×1034, `getSettings()` responde 1838×1034, aspecto 16:9, quando
+// a fonte é 16:10. Calcular o corte a partir daí é calcular a partir do próprio
+// palpite, e foi por isso que a captura continuou saindo em 90% do orçamento
+// mesmo depois de a caixa ser corrigida.
+//
+// O primeiro quadro é melhor, não perfeito: medido, ele às vezes chega num
+// tamanho transitório (56px mais alto que a fonte em quatro geometrias da
+// bancada), e é isso que explica as linhas que assentam em 96% em vez de 99%.
+// Esperar mais quadros trocaria esses pontos percentuais por atraso no início
+// do compartilhamento; não vale.
+//
+// O timeout existe para que uma fonte que nunca produza quadro não trave o
+// compartilhamento: nesse caso cai no `getSettings()`, que é o que havia antes.
+function geometriaReal(track) {
+  return new Promise((resolve) => {
+    const v = document.createElement("video");
+    let pronto = false;
+    const responde = () => {
+      if (pronto) return;
+      pronto = true;
+      const g =
+        v.videoWidth && v.videoHeight
+          ? { width: v.videoWidth, height: v.videoHeight }
+          : track.getSettings();
+      v.srcObject = null;
+      resolve(g);
+    };
+    v.muted = true;
+    v.playsInline = true;
+    v.onloadedmetadata = responde;
+    v.srcObject = new MediaStream([track]);
+    v.play().catch(() => {});
+    setTimeout(responde, 500);
+  });
+}
+
 async function startShare() {
   if (!canShare()) {
     notice(whyCantShare());
@@ -583,10 +664,43 @@ async function startShare() {
 
   notice("");
 
-  // Dica de teto já no picker, derivada do orçamento de pixels assumindo 16:9
-  // (1.440.000 px dá 1600×900). É só dica: captura de tela costuma vir na
-  // resolução nativa mesmo assim, por isso o ajuste exato vem depois, no track.
-  const hintW = Math.round(Math.sqrt((maxCapturePixels * 16) / 9) / 2) * 2;
+  // Teto pedido ao picker. Ele NÃO é o orçamento: é o orçamento com folga, e a
+  // folga é o ponto. Quem faz o corte exato é o `applyConstraints` logo abaixo,
+  // que conhece o aspecto real do que chegou — mas ele só encolhe, então
+  // precisa que a captura chegue ACIMA do orçamento para ter o que cortar.
+  //
+  // Era exatamente isso que estava quebrado. A caixa saía com a área exata do
+  // orçamento (1600×900), e o navegador honra o pedido encaixando a fonte nela
+  // preservando o aspecto DELA, nunca recortando. Então qualquer fonte que não
+  // fosse 16:9 chegava ABAIXO do teto — 90% em 16:10, 84% em 3:2, 75% em 4:3,
+  // 70% em 5:4 — e o ajuste abaixo nunca rodava, porque nunca havia excesso
+  // para cortar. Quem aplicava o teto era esta caixa, sozinha, e aplicava
+  // errado. O bloco de ajuste era código morto sempre que o navegador
+  // respeitava o pedido.
+  //
+  // Com 32% de folga a fonte chega acima do orçamento em todo aspecto usual e o
+  // corte a leva ao teto exato: 100% em 16:9, 16:10 e 3:2, 99% em 4:3, 98% em
+  // 21:9. Nenhum aspecto de fonte ficou pior do que era.
+  //
+  // A caixa é 16:9 fixa de propósito, e não derivada de `screen`. Tentar seguir
+  // o aspecto do monitor foi medido e é pior: `screen` descreve o MONITOR, não
+  // a fonte escolhida no picker, e num monitor retrato compartilhando uma
+  // janela 16:9 a caixa vira 900×1600 e entrega 31% do orçamento. O aspecto do
+  // monitor não prevê o da fonte; a folga não precisa prever nada.
+  //
+  // A folga é sempre 32%, sem teto absoluto. Houve aqui um `Math.min(..., 2e6)`
+  // para prometer que a captura nunca alcança o degrau de CPU de 2.073.600 px —
+  // promessa que se desfazia sozinha: com `--pixels` acima de 2.000.000 a conta
+  // colapsava para a área exata, folga zero, e o corte abaixo voltava a ser o
+  // código morto que esta caixa existe para matar. Uma garantia que evapora
+  // justamente quando alguém mexe no número é pior que garantia nenhuma.
+  //
+  // O que vale é a aritmética do padrão: 1.440.000 × 1,32 = 1.900.800, abaixo
+  // dos 2.073.600 onde o encode salta de ~2 para ~10 cores (medido, ver
+  // CLAUDE.md). Quem sobe `--pixels` sai dessa faixa — mas já saiu ao subir o
+  // orçamento, que é o número que governa o encoder de verdade.
+  const areaCaixa = maxCapturePixels * 1.32;
+  const hintW = Math.round(Math.sqrt((areaCaixa * 16) / 9) / 2) * 2;
   const hintH = Math.round((hintW * 9) / 16 / 2) * 2;
 
   let stream;
@@ -626,14 +740,40 @@ async function startShare() {
   // PeerConnection seriam N reduções, uma por conexão, e o degrau é do encoder.
   // Medidos e descartados: baixar framerate PIOROU (11,15 cores a 15fps contra
   // 10,12 a 30fps) e degradationPreference "balanced" não mudou nada (10,44).
-  const s = track.getSettings();
-  if (s.width && s.height && s.width * s.height > maxCapturePixels) {
-    // Escala preservando o aspecto real da tela, que pode não ser 16:9
-    // (1920×1200 é 16:10). Dimensões pares: encoders trabalham em macroblocos.
-    const k = Math.sqrt(maxCapturePixels / (s.width * s.height));
+  // Este é o corte que vale: a caixa acima só garante que a captura chegue
+  // acima do orçamento, e é aqui que ela desce até ele preservando o aspecto
+  // REAL da fonte. Dimensões pares porque encoders trabalham em macroblocos.
+  //
+  // O fator é limitado a 1 porque isto só encolhe: crescer além do que a fonte
+  // entrega seria upscale, que gasta banda para inventar pixel. E a comparação
+  // é entre as dimensões calculadas e as atuais, não entre área e orçamento —
+  // a versão antiga perguntava `área > orçamento`, o que deixava passar o caso
+  // em que a área bate exatamente no teto, e chamava à toa quando não precisava.
+  const s = await geometriaReal(track);
+
+  // Parar de compartilhar durante o await acima deixava um rastro: o
+  // `share-stop` saía antes do `share-start`, o servidor via a ordem invertida,
+  // a vaga de sharer ficava queimada e quem assistia travava em "conectando…"
+  // para sempre. Reproduzido parando aos 200ms. `stopShare` zera `localStream`,
+  // então essa comparação é a pergunta "ainda é o meu compartilhamento?".
+  if (localStream !== stream) return;
+
+  if (s.width && s.height) {
+    const k = Math.min(1, Math.sqrt(maxCapturePixels / (s.width * s.height)));
     const w = Math.round((s.width * k) / 2) * 2;
     const h = Math.round((s.height * k) / 2) * 2;
-    try { await track.applyConstraints({ width: w, height: h }); } catch {}
+    if (w !== s.width || h !== s.height) {
+      try {
+        await track.applyConstraints({ width: w, height: h });
+      } catch (err) {
+        // Falhar aqui significa encodar a fonte inteira. Numa tela 4K isso é o
+        // penhasco de CPU (~2 cores viram ~10), então não pode morrer calado.
+        console.warn(
+          `applyConstraints falhou: captura segue em ${s.width}×${s.height}`,
+          err,
+        );
+      }
+    }
   }
 
   attachTile(myId, stream, true);
@@ -1229,7 +1369,7 @@ setInterval(async () => {
         if (r.frameWidth) size = `${r.frameWidth}×${r.frameHeight}`;
       }
     });
-    const path = await pathOf(pc);
+    const path = pathOf(stats);
     tile.querySelector(".rate").textContent = "↓ " + (fmt(bps) || "--");
     tile.querySelector(".size").textContent = size ? `${size} · ${fps}fps` : "";
     const el = tile.querySelector(".path");
@@ -1241,36 +1381,66 @@ setInterval(async () => {
   // Tile próprio: agrega upload de todos os peers
   const self = tiles.get(myId);
   if (self && !self.classList.contains("peer") && sending.size) {
-    let total = 0;
+    let total = 0, saiW = 0, saiH = 0, limite = "", politica = "";
     for (const [id, pc] of sending) {
       const stats = await pc.getStats();
       stats.forEach((r) => {
         if (r.type === "outbound-rtp" && r.kind === "video") {
           const b = rate("tx:" + id, r.bytesSent || 0);
           if (b) total += b;
+          // O pior destino é o que interessa: um encoder que desceu de degrau é
+          // o que quem compartilha precisa ver, mesmo que os outros estejam bem.
+          // O motivo vem do MESMO destino que a resolução, não do último que
+          // aparecer no laço — senão a tira mistura o tamanho de um com a
+          // explicação de outro.
+          if (r.frameWidth && (!saiW || r.frameWidth < saiW)) {
+            saiW = r.frameWidth;
+            saiH = r.frameHeight;
+            limite =
+              r.qualityLimitationReason && r.qualityLimitationReason !== "none"
+                ? r.qualityLimitationReason
+                : "";
+          }
         }
       });
+      if (pc.policy) politica = pc.policy;
     }
     // Resolução de captura efetiva ao lado do número de destinos: deixa o cap
     // auditável a olho. Se o Chrome ignorar o applyConstraints numa tela real,
     // aparece aqui na hora, em vez de virar CPU a 100% sem explicação.
+    //
+    // E ao lado dela o que está de fato *saindo* do encoder, mas só quando
+    // difere — captura certa com saída um degrau abaixo é o diagnóstico
+    // inteiro, e quem causava o colapso era justamente quem não o via: o
+    // recebedor enxergava 640×360, o sharer só enxergava a própria captura.
+    // `qualityLimitationReason` diz de quem é a culpa, banda ou CPU.
     const cap = localStream?.getVideoTracks()[0]?.getSettings();
-    const capTxt = cap?.width && cap?.height ? `${cap.width}×${cap.height} · ` : "";
+    const capTxt = cap?.width && cap?.height ? `${cap.width}×${cap.height}` : "";
+    const caiu = saiW && cap?.width && saiW < cap.width;
+    const detalhe = (caiu ? ` → ${saiW}×${saiH}` : "") + (limite ? ` ${limite}` : "");
     self.querySelector(".rate").textContent = "↑ " + (fmt(total) || "--");
-    self.querySelector(".size").textContent =
-      capTxt + `${sending.size} destino${sending.size > 1 ? "s" : ""}`;
-    self.querySelector(".path").textContent = "";
+    const size = self.querySelector(".size");
+    size.textContent =
+      (capTxt ? capTxt + detalhe + " · " : "") +
+      `${sending.size} destino${sending.size > 1 ? "s" : ""}`;
+    size.className = "size" + (caiu || limite ? " warn" : "");
+    // O campo de caminho não serve para o tile próprio (não há par ICE do qual
+    // falar), então é onde a política de encoding cabe sem custar layout.
+    const via = self.querySelector(".path");
+    via.textContent = politica || "";
+    via.className = "path" + (politica ? " warn" : "");
     push(myId, total);
   }
 }, 1000);
 
-async function pathOf(pc) {
-  const stats = await pc.getStats();
-  const all = new Map();
-  stats.forEach((r) => all.set(r.id, r));
-  for (const r of all.values()) {
+// Recebe o relatório em vez de pedir o seu: chamada uma vez por tile por
+// segundo, `getStats()` era feito duas vezes para o mesmo peer, uma aqui e uma
+// no laço. E `RTCStatsReport` já é maplike — o `new Map()` que existia aqui
+// copiava o relatório inteiro só para usar o `.get`.
+function pathOf(stats) {
+  for (const r of stats.values()) {
     if (r.type === "candidate-pair" && r.state === "succeeded" && r.nominated) {
-      const local = all.get(r.localCandidateId);
+      const local = stats.get(r.localCandidateId);
       const rtt = r.currentRoundTripTime;
       return {
         type: local?.candidateType ?? "?",

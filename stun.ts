@@ -43,9 +43,40 @@ export function startStun(port = 3478) {
       ((+octets[0] << 24) | (+octets[1] << 16) | (+octets[2] << 8) | +octets[3]) >>> 0;
     res.writeUInt32BE((addr ^ MAGIC) >>> 0, 28);
 
-    sock.send(res, rinfo.port, rinfo.address);
+    // Callback presente para que uma falha de envio vire 'error' tratado em vez
+    // de exceção não capturada. Um peer que sumiu não derruba o servidor.
+    sock.send(res, rinfo.port, rinfo.address, () => {});
   });
 
-  sock.bind(port);
+  // Sem este handler o dgram emite 'error' sem ouvinte, o processo morre com
+  // `bind EADDRINUSE 0.0.0.0` — sem número de porta — e quem lê o log conclui
+  // que o problema é a porta HTTP, que estava livre. Uma segunda instância
+  // precisa de --stun-port próprio, e é isso que a mensagem tem que dizer.
+  //
+  // A string EADDRINUSE fica na mensagem de propósito: o `--bg` do cli.ts
+  // procura por ela no log do filho para detectar sucesso falso (camada 3).
+  // Uma mensagem só em português, mais bonita, cegava essa camada — e a
+  // primeira versão deste handler fez exatamente isso.
+  //
+  // E só falha de bind é fatal. Antes, qualquer 'error' do socket derrubava o
+  // servidor inteiro dizendo "falha ao bindar": um ICMP de volta de um peer que
+  // sumiu vira EPERM ou ENETUNREACH aqui, e derrubar a sala por causa disso é
+  // trocar um pacote perdido por uma reunião perdida.
+  let bindado = false;
+  sock.on("error", (err: NodeJS.ErrnoException) => {
+    if (bindado) {
+      process.stderr.write(`STUN: erro no socket (${err.code}): ${err.message}\n`);
+      return;
+    }
+    process.stderr.write(
+      err.code === "EADDRINUSE"
+        ? `STUN: EADDRINUSE na porta UDP ${port} — já está em uso.\n` +
+          `Outra instância do screen-share? Cada uma precisa do seu --stun-port.\n`
+        : `STUN: falha ao bindar a porta UDP ${port} (${err.code}): ${err.message}\n`,
+    );
+    process.exit(1);
+  });
+
+  sock.bind(port, () => { bindado = true; });
   return sock;
 }

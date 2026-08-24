@@ -6,7 +6,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `tela` — browser-to-browser screen sharing (no audio) for a small group inside a
 Tailscale tailnet. Bun + TypeScript, **zero dependencies**, no build step, no
-`npm install`. Three source files total.
+`npm install`. Four source files total.
+
+It is packaged for npm as **`@thoth-dev/screen-share`**, runnable with `bunx
+@thoth-dev/screen-share` — **once published, which has not happened yet**.
+Nothing about the stack changed for that: the package still ships `.ts` as
+written, and Bun still runs it directly — no transpilation, no `dist/`.
+`bin/cli.ts` is the published entry point (`bin.screen-share` in
+`package.json`); it only parses flags and hands the real work to `server.ts`.
+
+Three names, three jobs: the project's internal name stays `tela` — repo, UI
+strings and `PLANO.md` keep saying `tela`. The **package name**,
+`@thoth-dev/screen-share`, is what `npm install`, `bun add` and `bunx` take, and
+what appears in the npmjs.com URL — the org scope exists because a plain
+`screen-share` collided with existing package names on the registry. The
+**command name**, `screen-share`, is unchanged and unscoped, because `bin` is
+keyed by the command, not the package: once installed, the executable on
+`PATH` is `screen-share`, and the CLI's own `--help`, `--stop` and pidfiles all
+refer to itself that way. Only the not-yet-installed, run-once-via-`bunx` case
+needs the package name; everything downstream of installation uses the command
+name. Be consistent about which is which when writing docs.
 
 `PLANO.md` is the authoritative spec and task list. Read it before changing
 behavior — it records why each design decision exists, and section 5 lists
@@ -19,7 +38,21 @@ when editing.
 
 ```bash
 bun run server.ts          # HTTP+WS on :3000, STUN on UDP :3478
+bun bin/cli.ts --help       # CLI flags: -p/--port, --stun-port, --peers,
+                             # --sharers, --pixels, --bg, --stop, -h, -v
 ```
+
+`bin/cli.ts` just sets environment variables (`PORT`, `STUN_PORT`, `MAX_PEERS`,
+`MAX_SHARERS`, `MAX_CAPTURE_PIXELS`) and imports `server.ts` — running the
+server directly with `bun run server.ts` still works standalone, with the same
+env vars, no CLI in the loop. `--bg` backgrounds the process, writes a pidfile
+and log to `$XDG_RUNTIME_DIR/screen-share/screen-share-<port>.{pid,log}`
+(falling back to a 0700 `screen-share-<uid>/` under the temp dir, refused if
+someone else owns it — never `$TMPDIR` directly, whose 1777 mode lets any user
+plant a pidfile in the path), and only reports success
+once the child's own `/config` answers (it checks the child is alive *before*
+probing HTTP, so an already-occupied port doesn't get misreported as success).
+`--stop` reads that pidfile and kills it.
 
 Tests need a live server. Background processes from a separate tool invocation
 do not survive, so start the server and run the suite in **one** shell command:
@@ -50,6 +83,7 @@ tailscale serve --bg 3000   # persists across restarts; only the Bun process nee
 ## Architecture
 
 ```
+bin/cli.ts       CLI: flags, --bg/--stop, env handoff to server.ts
 server.ts        Bun.serve: static files + /config + WebSocket signaling + room/sharer state
 stun.ts          ~50-line STUN server (node:dgram), Binding Request → XOR-MAPPED-ADDRESS
 public/index.html  the entire client: HTML + CSS + JS in one file
@@ -93,11 +127,32 @@ Do not unify these maps.
 
 ### The server is the arbiter
 
-`MAX_PEERS` and `MAX_SHARERS` are constants at the top of `server.ts`, and the
-server owns both decisions — it is the only place that sees a whole room, so
-simultaneous clicks on different machines are only serializable there. Changing
-`MAX_SHARERS` requires editing only that number — `test.ts` derives its T2 room
-size from the same constant.
+`MAX_PEERS` and `MAX_SHARERS` live at the top of `server.ts`, and the server
+owns both decisions — it is the only place that sees a whole room, so
+simultaneous clicks on different machines are only serializable there. All
+three limits (`MAX_PEERS`, `MAX_SHARERS`, `MAX_CAPTURE_PIXELS`) read the
+environment so the CLI's `--peers`/`--sharers`/`--pixels` flags can override
+them; the measured defaults did not change.
+
+They read it through **`int(name, default, max?)`, never `Number(env ?? d)`**.
+`??` does not catch the empty string, so `MAX_PEERS=` became 0 and locked
+everyone out, and `Number("cinco")` is `NaN` — which makes `set.size >= MAX_*`
+*always false*, deleting the room ceiling and the sharer arbitration in silence
+while the client kept rendering "3/3" off its own default. Anything that is not
+a positive integer falls back to the measured default and names itself on
+stderr. An arbiter that read `NaN` is not arbitrating.
+
+`test.ts` derives `MAX_PEERS`/`MAX_SHARERS` from `/config` rather than keeping
+literals, so an exported `MAX_PEERS` in the shell cannot fail the suite for a
+defect that is not there — that mistake cost 8 false failures before it was
+fixed. Its `/config` assertions therefore check shape, not value.
+
+Static files resolve against `import.meta.dir`, not the process cwd — installed
+as a package, the process runs from whatever directory invoked `bunx`, and
+`"./public"` pointed at nothing there (that is how the page first went missing
+in a real install). `resolverEstatico()` in `server.ts` does that resolution
+and also guards against path traversal (`../`, encoded slashes) — keep new
+static-file logic going through it rather than building paths ad hoc.
 
 **`MAX_SHARERS` does not govern encoder count, and never did.** A sharer opens
 one PC per destination, so it runs `MAX_PEERS - 1` encoders whether it is the
@@ -265,18 +320,107 @@ instead of 120) and the video box is off its aspect ratio, so `object-fit:
 contain` letterboxes it. That produces both false failures and screenshots of a
 layout that never renders. Wait ~320ms — twice the transition — then measure.
 
-ICE over `100.x` **has been exercised once**, over `tailscale serve` HTTPS: video
-flowed at 979 kb/s, 1920×1200, 30fps, on a `prflx` candidate pair at 15ms RTT.
+ICE over `100.x` **is verified cross-machine, and T0 is closed.** Run on
+2026-08-24 between a MacBook and this Linux box, both on the tailnet, over
+`tailscale serve` HTTPS: the telemetry strips read `srflx · 28ms`,
+`srflx · 33ms` and `prflx · 26/30ms`. Direct, no relay, between distinct
+machines — which is what T0 asked for. Do not ask for this verification again.
+
+An earlier single run had shown 979 kb/s at 1920×1200, 30fps on a `prflx` pair
+at 15ms RTT, but was never confirmed to be cross-machine rather than two tabs on
+the host. That doubt is what the 2026-08-24 run settled.
 
 `prflx` (peer-reflexive) is a **direct** path — the candidate was learned during
 connectivity checks instead of being gathered up front, which is what you expect
 when WireGuard delivers packets from an address that was not in the gathered set.
 `PLANO.md` T0 anticipated `host` or `srflx` and never listed `prflx`, but it
-satisfies the intent: direct, no TURN, no relay.
+satisfies the intent: direct, no TURN, no relay. Read the path field in each
+tile's telemetry strip — `relay` would mean the STUN path failed.
 
-Still open: that run was **not confirmed to be cross-machine** rather than two
-tabs on the host, so re-verify with two distinct tailnet machines. Read the path
-field in each tile's telemetry strip — `relay` would mean the STUN path failed.
+### The encoder's resolution ladder, and why the policy must not fail quietly
+
+That same cross-machine run delivered **640×360 at 30fps** from a 1600×900
+capture. Measured on a CDP bench driving the real client (only `getDisplayMedia`
+swapped for `canvas.captureStream`), 13 runs of 90–100s: **640×360 is not a
+capture size, it is a rung.** When the encoder is allowed to trade pixels for
+frames it descends a ladder of capture fractions — ¼, ⅜, ½, ¾, 1 — and 640×360
+is the ½ rung of 1280×720. Climbing back took 30–40s on a 1ms lossless loopback,
+and with moving content it did not climb a single rung in 90s.
+
+`degradationPreference: "maintain-resolution"` is what forbids that ladder. With
+it in force the resolution never moved in any run, **even at 2fps**; with it
+gone, 1600×900 became 400×225 at 30fps and stayed there, reporting
+`qualityLimitationReason: "bandwidth"` for 99.96% of the session while the
+estimate said 3.77 Mb/s was available. The symptom's signature is therefore
+**full framerate with collapsed resolution** — the opposite trade from the one
+this client asks for.
+
+The lesson that survived: **never swallow the failure.** The old `catch {}`
+turned "the policy did not apply" into "the video looks strange" discovered days
+later. And `setParameters` resolving is not proof that the field took —
+`degradationPreference` is read back.
+
+**A correction, because this file was wrong about it for a while.** An earlier
+version of this section claimed `params.encodings = [{}]` — filling in an empty
+`encodings` list — was the mechanism, destroying the policy on a "strict
+browser". That claim was refuted by measurement and by the spec. WebRTC 1.0
+§ 5.2 (*create an RTCRtpSender*, step 11) requires a single encoding entry to
+exist when `sendEncodings` is empty, and no algorithm in the spec empties it
+afterwards. Chrome 151 measured across seven live states — before negotiation,
+`addTrack`, `addTransceiver`, explicit `sendEncodings: []`, no track,
+`recvonly`, after offer, after answer — returned `encodings.length === 1` every
+time. The list came back empty only on a **stopped** transceiver, where
+`setParameters` already rejects with `InvalidStateError` before it ever looks at
+`encodings`. So the line was defending against a state the spec forbids, while
+itself doing the one thing `setParameters` genuinely rejects (changing the
+length). It is gone; `encodings[0]` is indexed directly.
+
+**That refutation measured Chrome, and Chrome only — and the field then pointed
+at Safari.** On 2026-08-24, sharing from **Safari** on macOS to Chrome on Linux
+over the tailnet, the receiver read `640×360 · 30fps` while the sharer's own
+capture was `1600×900`: full framerate, collapsed resolution, the exact
+signature of the policy not being in force. With the fixed client served from
+this repo, the same pair delivered **`1600×900 · 9fps`** — the opposite trade,
+which is `maintain-resolution` doing its job — and the sharer's strip showed no
+policy warning, meaning `degradationPreference` read back fine there.
+
+So "the spec guarantees `encodings[0]`" is established for Chrome and for the
+spec text; it is **not** established for WebKit, which is the one browser where
+the symptom appears. Do not read the paragraph above as closing the question for
+Safari.
+
+**Two things still open, both cheap:**
+
+- The good run was **not confirmed to be a cold first share.** The same user
+  found that a *second* share comes out at full resolution even on the old
+  code, because the bandwidth estimate is already warm — libwebrtc starts at
+  300 kb/s, and the resolution ladder's first rung follows the estimate. A
+  fresh page sharing on the first try is what separates "the fix worked" from
+  "the connection was warm".
+- Nobody has read `getParameters()` **inside Safari**. One line in its console
+  on the sharing tab answers it:
+  `[...sending.values()][0].getSenders().find(s => s.track).getParameters()` —
+  `encodings.length` and `degradationPreference` are the two fields that matter.
+
+Related, and measured on the same day: **macOS allows only one screen capture at
+a time.** Starting a share in a second Safari tab kills the first one's capture
+(the first tile goes black). That is the platform, not this project.
+
+**And `83 kb/s` is not the free-standing fact it was written as.** This file
+used to say static screen content costs ~80–100 kb/s in VP8 at *any*
+resolution. Measured, it scales with pixels: static content redrawn identically
+at 30fps, `lim: "none"`, 15s after the estimate settles, costs **30.5 kb/s at
+640×360**, 72.8 at 1600×900 and 269.9 at 1920×1080. The ~80 kb/s figure matches
+1600×900, not "any resolution" — the original comparison put a degraded stream
+(bitrate set by the bandwidth estimate) next to a static one (set by pixels).
+The usable version: a low bitrate alone still does not prove a thin link, but
+compare it against the cost *at that resolution*, and 83 kb/s at 640×360 is 2.7×
+the static cost, which is a real signal rather than noise.
+
+The sharer's own strip now shows the outbound resolution when it differs from
+the capture, plus `qualityLimitationReason`, plus the encoding-policy state in
+the (otherwise unused) path field. Before that, whoever caused the collapse was
+the one person who could not see it.
 
 ## Encoder cost per destination — measured, no longer a guess
 
