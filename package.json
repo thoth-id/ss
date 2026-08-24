@@ -11,6 +11,15 @@
     "bun"
   ],
   "license": "MIT",
+  "author": "Gabriel Andreello",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thoth-id/ss.git"
+  },
+  "homepage": "https://github.com/thoth-id/ss#readme",
+  "bugs": {
+    "url": "https://github.com/thoth-id/ss/issues"
+  },
   "type": "module",
   "bin": {
     "screen-share": "bin/cli.ts"
@@ -20,7 +29,8 @@
     "server.ts",
     "stun.ts",
     "public/",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "bun": ">=1.1.0"
