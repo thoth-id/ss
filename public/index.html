@@ -1369,7 +1369,7 @@ setInterval(async () => {
         if (r.frameWidth) size = `${r.frameWidth}×${r.frameHeight}`;
       }
     });
-    const path = await pathOf(pc);
+    const path = pathOf(stats);
     tile.querySelector(".rate").textContent = "↓ " + (fmt(bps) || "--");
     tile.querySelector(".size").textContent = size ? `${size} · ${fps}fps` : "";
     const el = tile.querySelector(".path");
@@ -1390,12 +1390,16 @@ setInterval(async () => {
           if (b) total += b;
           // O pior destino é o que interessa: um encoder que desceu de degrau é
           // o que quem compartilha precisa ver, mesmo que os outros estejam bem.
+          // O motivo vem do MESMO destino que a resolução, não do último que
+          // aparecer no laço — senão a tira mistura o tamanho de um com a
+          // explicação de outro.
           if (r.frameWidth && (!saiW || r.frameWidth < saiW)) {
             saiW = r.frameWidth;
             saiH = r.frameHeight;
-          }
-          if (r.qualityLimitationReason && r.qualityLimitationReason !== "none") {
-            limite = r.qualityLimitationReason;
+            limite =
+              r.qualityLimitationReason && r.qualityLimitationReason !== "none"
+                ? r.qualityLimitationReason
+                : "";
           }
         }
       });
@@ -1429,13 +1433,14 @@ setInterval(async () => {
   }
 }, 1000);
 
-async function pathOf(pc) {
-  const stats = await pc.getStats();
-  const all = new Map();
-  stats.forEach((r) => all.set(r.id, r));
-  for (const r of all.values()) {
+// Recebe o relatório em vez de pedir o seu: chamada uma vez por tile por
+// segundo, `getStats()` era feito duas vezes para o mesmo peer, uma aqui e uma
+// no laço. E `RTCStatsReport` já é maplike — o `new Map()` que existia aqui
+// copiava o relatório inteiro só para usar o `.get`.
+function pathOf(stats) {
+  for (const r of stats.values()) {
     if (r.type === "candidate-pair" && r.state === "succeeded" && r.nominated) {
-      const local = all.get(r.localCandidateId);
+      const local = stats.get(r.localCandidateId);
       const rtt = r.currentRoundTripTime;
       return {
         type: local?.candidateType ?? "?",

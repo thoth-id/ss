@@ -16,7 +16,6 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
-  rmdirSync,
   statSync,
   unlinkSync,
   writeSync,
@@ -25,7 +24,7 @@ import { createSocket } from "node:dgram";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 type Opts = {
   port: number;
@@ -35,10 +34,15 @@ type Opts = {
   maxCapturePixels?: number;
 };
 
-const RAIZ = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const VERSAO: string = JSON.parse(readFileSync(path.join(RAIZ, "package.json"), "utf8")).version;
+// `import.meta.dir` é o idioma já usado no server.ts para a mesma pergunta.
+const RAIZ = path.join(import.meta.dir, "..");
 
-const AJUDA = `screen-share ${VERSAO} — compartilhamento de tela P2P, sem conta e sem servidor de mídia
+// Lido sob demanda: só --help e --version querem a versão, e antes disso todo
+// `screen-share --bg` pagava um readFileSync mais um JSON.parse para nada.
+const versao = (): string =>
+  JSON.parse(readFileSync(path.join(RAIZ, "package.json"), "utf8")).version;
+
+const ajuda = () => `screen-share ${versao()} — compartilhamento de tela P2P, sem conta e sem servidor de mídia
 
   bunx @thoth-dev/screen-share [flags]
 
@@ -72,6 +76,11 @@ const ILIMITADO = Number.MAX_SAFE_INTEGER;
    quanto: `--port 99999` passava, o Bun clampava para 65535, e o banner
    anunciava uma porta em que ninguém escutava enquanto o pidfile ficava
    chaveado pelo número impossível. */
+// Gêmeo de `int()` no server.ts, de propósito: mesma regra, dois lados da mesma
+// fronteira — aqui valida argumento de linha de comando, lá valida ambiente, e
+// as mensagens de erro precisam falar de coisas diferentes. Um quinto arquivo
+// para 15 linhas custaria mais ao projeto do que a duplicação. Se a regra mudar
+// num, mude no outro.
 function num(valor: string, flag: string, min: number, max = ILIMITADO): number {
   const limpo = valor.trim();
   const n = Number(limpo);
@@ -101,8 +110,8 @@ for (let i = 0; i < argv.length; i++) {
     }
     return v;
   };
-  if (a === "-h" || a === "--help") { process.stdout.write(AJUDA + "\n"); process.exit(0); }
-  else if (a === "-v" || a === "--version") { process.stdout.write(VERSAO + "\n"); process.exit(0); }
+  if (a === "-h" || a === "--help") { process.stdout.write(ajuda() + "\n"); process.exit(0); }
+  else if (a === "-v" || a === "--version") { process.stdout.write(versao() + "\n"); process.exit(0); }
   else if (a === "-p" || a === "--port") opts.port = num(proximo(), a, 1, 65535);
   else if (a === "--stun-port") opts.stunPort = num(proximo(), a, 1, 65535);
   else if (a === "--peers") opts.maxPeers = num(proximo(), a, 1);
@@ -168,9 +177,19 @@ function dirEstado(): string {
   return dir;
 }
 
-const DIR_ESTADO = dirEstado();
-const pidfile = path.join(DIR_ESTADO, `screen-share-${opts.port}.pid`);
-const logPath = path.join(DIR_ESTADO, `screen-share-${opts.port}.log`);
+/* Preparado sob demanda, não no carregamento do módulo. `dirEstado()` aborta
+   quando o diretório de estado é de outra pessoa ou está com modo frouxo — o
+   que é a decisão certa para --bg e --stop, que gravam ali, e a errada para uma
+   subida em primeiro plano, que não toca no diretório e morria por causa dele.
+   Reproduzido: `XDG_RUNTIME_DIR` frouxo derrubava `screen-share` sem nenhuma
+   flag, por permissão de um caminho que aquela execução nunca usaria. */
+let pidfile = "";
+let logPath = "";
+function prepararEstado() {
+  const dir = dirEstado();
+  pidfile = path.join(dir, `screen-share-${opts.port}.pid`);
+  logPath = path.join(dir, `screen-share-${opts.port}.log`);
+}
 
 /** Pid registrado para esta porta, ou null se não há registro utilizável. */
 function lerPid(): number | null {
@@ -204,23 +223,22 @@ function nosso(pid: number): boolean | null {
   return cmdline.split("\0").some((arg) => arg.endsWith("server.ts"));
 }
 
-/* Tira do caminho o que estiver ocupando o lugar do registro. Chamado só quando
-   a porta já se provou livre, e portanto qualquer registro dela é obsoleto.
-   Trata o diretório plantado explicitamente: sem isso o unlink falha calado, o
-   O_EXCL lá na frente esbarra no EEXIST, e o CLI sobe um servidor só para
-   matá-lo em seguida. */
+/* Única forma de apagar o registro — havia três, duas com contratos opostos.
+   Ausente é sucesso: quem chama quer o caminho livre, não o arquivo morto.
+   Qualquer outra falha é fatal, porque o O_EXCL lá na frente esbarraria no
+   EEXIST e o CLI subiria um servidor só para matá-lo em seguida.
+
+   Não trata mais o caso de diretório plantado no lugar do arquivo: `dirEstado()`
+   já garante um diretório 0700 de dono conferido, então plantar ali exigiria ser
+   o próprio dono — que não precisa de armadilha para se sabotar. */
 function limparRegistro() {
   try {
     unlinkSync(pidfile);
-    return;
   } catch (e: any) {
     if (e?.code === "ENOENT") return;
-    if (e?.code === "EISDIR" || e?.code === "EPERM") {
-      try { rmdirSync(pidfile); return; } catch {}
-    }
-  }
-  if (existsSync(pidfile)) {
-    process.stderr.write(`não consegui limpar o registro em ${pidfile}; remova-o à mão.\n`);
+    process.stderr.write(
+      `não consegui limpar o registro em ${pidfile} (${e?.code}); remova-o à mão.\n`,
+    );
     process.exit(1);
   }
 }
@@ -236,6 +254,7 @@ function lerLog(): string {
 /* ---------- --stop ---------- */
 
 if (stop) {
+  prepararEstado();
   const pid = lerPid();
   if (pid === null) {
     process.stderr.write(`nada rodando em segundo plano na porta ${opts.port}\n`);
@@ -250,7 +269,7 @@ if (stop) {
       `o pid ${pid} registrado para a porta ${opts.port} não é um screen-share; não vou encerrá-lo.\n` +
       `Limpando o registro.\n`
     );
-    try { unlinkSync(pidfile); } catch {}
+    limparRegistro();
     process.exit(0);
   }
   if (identidade === null && !forcar) {
@@ -267,7 +286,7 @@ if (stop) {
   } catch {
     process.stdout.write(`pid ${pid} já não existia; limpando o registro\n`);
   }
-  try { unlinkSync(pidfile); } catch {}
+  limparRegistro();
   process.exit(0);
 }
 
@@ -275,8 +294,10 @@ if (stop) {
 
 // O server.ts lê tudo do ambiente. Passar por env em vez de argumento mantém
 // `bun run server.ts` funcionando sozinho, sem o CLI no meio.
+// Só o delta. Copiar `process.env` inteiro aqui e depois reescrevê-lo sobre si
+// mesmo no caminho de primeiro plano custava ~228 setenv para mudar de duas a
+// cinco variáveis.
 const env: Record<string, string> = {
-  ...(process.env as Record<string, string>),
   PORT: String(opts.port),
   STUN_PORT: String(opts.stunPort),
 };
@@ -318,6 +339,7 @@ function sondarUdp(port: number): Promise<string | null> {
 }
 
 if (bg) {
+  prepararEstado();
   // A sonda vem antes de mexer no pidfile e antes de abrir o log: assim o
   // perdedor de uma corrida não trunca o log do vencedor nem apaga o registro
   // dele, e sai com a mensagem certa em vez da cauda do log alheio.
@@ -466,7 +488,7 @@ if (bg) {
 
 /* ---------- primeiro plano ---------- */
 
-for (const [k, v] of Object.entries(env)) process.env[k] = v;
+Object.assign(process.env, env);
 // pathToFileURL, não o caminho cru: import() de caminho absoluto funciona no
 // Bun sobre POSIX e é acidente, não contrato — a forma portátil é uma URL.
 await import(pathToFileURL(alvoServidor).href);

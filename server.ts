@@ -34,6 +34,8 @@ function resolverEstatico(pathname: string): string | null {
    silêncio enquanto a UI continuava anunciando "3/3". O servidor é o árbitro;
    um árbitro que leu NaN não arbitra. Só inteiro positivo passa; o resto cai no
    padrão medido e diz no stderr qual variável foi ignorada. */
+// Gêmeo de `num()` em bin/cli.ts — mesma regra, dois lados da mesma fronteira.
+// Se a regra mudar aqui, mude lá.
 function int(nome: string, padrao: number, max = Number.MAX_SAFE_INTEGER): number {
   const bruto = process.env[nome];
   if (bruto === undefined) return padrao;

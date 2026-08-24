@@ -109,21 +109,17 @@ async function testStatic() {
   eq("/config devolve stunPort", json.stunPort, STUN_PORT);
   // Forma, não valor: o valor é justamente o que a suíte derivou daqui, então
   // compará-lo consigo mesmo não afirmaria nada.
-  ok(
-    "/config devolve maxPeers como inteiro > 0",
-    Number.isInteger(json.maxPeers) && json.maxPeers > 0,
-    json.maxPeers,
-  );
-  ok(
-    "/config devolve maxSharers como inteiro > 0",
-    Number.isInteger(json.maxSharers) && json.maxSharers > 0,
-    json.maxSharers,
-  );
-  ok(
-    "/config devolve maxCapturePixels como número > 0",
-    typeof json.maxCapturePixels === "number" && json.maxCapturePixels > 0,
-    json.maxCapturePixels,
-  );
+  // Os três são inteiros positivos pela mesma regra — o `int()` do server.ts
+  // não devolve outra coisa. Três predicados diferentes para uma regra só
+  // convidavam a divergirem.
+  const inteiroPositivo = (v: unknown) => Number.isInteger(v) && (v as number) > 0;
+  for (const campo of ["maxPeers", "maxSharers", "maxCapturePixels"]) {
+    ok(
+      `/config devolve ${campo} como inteiro > 0`,
+      inteiroPositivo(json[campo]),
+      json[campo],
+    );
+  }
 
   const miss = await fetch(HTTP + "/nao-existe");
   eq("rota inexistente dá 404", miss.status, 404);
