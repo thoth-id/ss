@@ -196,9 +196,26 @@ cert Let's Encrypt válido para o nome `.ts.net`.
 
 Executar em ordem. T0 vem antes de qualquer código.
 
-### T0 — Validar o baseline (bloqueia todo o resto)
+### T0 — Validar o baseline (bloqueia todo o resto) — FEITO em 24/08/2026
 
-Sem isso, as tarefas seguintes podem estar polindo algo que não conecta.
+Rodado entre um MacBook e a máquina Linux, os dois no tailnet, sobre
+`tailscale serve` HTTPS. As tiras de telemetria leram `srflx · 28ms`,
+`srflx · 33ms` e `prflx · 26/30ms`: caminho direto, sem relay, entre máquinas
+distintas. O aceite abaixo pedia `host` ou `srflx`; `prflx` (peer-reflexive)
+também é caminho direto — o candidate foi aprendido durante os testes de
+conectividade em vez de ser reunido antes, que é o esperado quando o WireGuard
+entrega pacotes de um endereço que não estava no conjunto reunido. **Não pedir
+esta verificação de novo.**
+
+Um achado saiu junto e está registrado no `CLAUDE.md`: a resolução entregue
+caía para 640×360 a 30fps a partir de uma captura de 1600×900. Não é tamanho de
+captura, é o degrau ½ da escada de adaptação do encoder, e ela só existe quando
+`degradationPreference: "maintain-resolution"` não está em vigor. O
+`applyEncoding` do cliente foi corrigido para não fabricar `encodings` (o que
+rendia `InvalidModificationError` em browser estrito e derrubava a política
+inteira) e para não engolir a falha.
+
+O procedimento original fica abaixo, para quando for preciso repetir.
 
 1. `bun run server.ts` numa máquina do tailnet.
 2. `tailscale serve --bg 3000` (HTTPS precisa estar habilitado no admin console
@@ -216,7 +233,7 @@ aparecem candidates com nome terminando em `.local` e o pair nunca chega a
 `succeeded`. Nesse caso confirmar que a UDP 3478 está acessível pelo 100.x
 (`nc -zvu <ip-tailnet> 3478`) e que o firewall local não está bloqueando.
 
-**Não prosseguir para T1 enquanto T0 não passar.**
+**Não prosseguir para T1 enquanto T0 não passar.** (Passou.)
 
 ---
 
@@ -416,8 +433,9 @@ Duas pontas soltas:
 2. O mesmo cenário (P=5, S=1) mediu 2,31 numa rodada e 1,87 em outra. Trate tudo
    nesta seção como ±20%.
 
-Fechar as duas exige o que o T0 já pede: duas ou três máquinas de verdade do
-tailnet.
+Fechar as duas exige máquinas de verdade do tailnet, uma por peer. O T0 já foi
+feito (MacBook + Linux, 24/08/2026) e **não fecha estas duas**: ele provou o
+caminho de ICE, não custo de CPU com três sharers. Isto continua aberto.
 
 ### Por que `MAX_SHARERS` virou 3, e não 5
 

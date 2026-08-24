@@ -317,18 +317,61 @@ instead of 120) and the video box is off its aspect ratio, so `object-fit:
 contain` letterboxes it. That produces both false failures and screenshots of a
 layout that never renders. Wait ~320ms — twice the transition — then measure.
 
-ICE over `100.x` **has been exercised once**, over `tailscale serve` HTTPS: video
-flowed at 979 kb/s, 1920×1200, 30fps, on a `prflx` candidate pair at 15ms RTT.
+ICE over `100.x` **is verified cross-machine, and T0 is closed.** Run on
+2026-08-24 between a MacBook and this Linux box, both on the tailnet, over
+`tailscale serve` HTTPS: the telemetry strips read `srflx · 28ms`,
+`srflx · 33ms` and `prflx · 26/30ms`. Direct, no relay, between distinct
+machines — which is what T0 asked for. Do not ask for this verification again.
+
+An earlier single run had shown 979 kb/s at 1920×1200, 30fps on a `prflx` pair
+at 15ms RTT, but was never confirmed to be cross-machine rather than two tabs on
+the host. That doubt is what the 2026-08-24 run settled.
 
 `prflx` (peer-reflexive) is a **direct** path — the candidate was learned during
 connectivity checks instead of being gathered up front, which is what you expect
 when WireGuard delivers packets from an address that was not in the gathered set.
 `PLANO.md` T0 anticipated `host` or `srflx` and never listed `prflx`, but it
-satisfies the intent: direct, no TURN, no relay.
+satisfies the intent: direct, no TURN, no relay. Read the path field in each
+tile's telemetry strip — `relay` would mean the STUN path failed.
 
-Still open: that run was **not confirmed to be cross-machine** rather than two
-tabs on the host, so re-verify with two distinct tailnet machines. Read the path
-field in each tile's telemetry strip — `relay` would mean the STUN path failed.
+### The encoder's resolution ladder, and why the policy must not fail quietly
+
+That same cross-machine run delivered **640×360 at 30fps** from a 1600×900
+capture. Measured on a CDP bench driving the real client (only `getDisplayMedia`
+swapped for `canvas.captureStream`), 13 runs of 90–100s: **640×360 is not a
+capture size, it is a rung.** When the encoder is allowed to trade pixels for
+frames it descends a ladder of capture fractions — ¼, ⅜, ½, ¾, 1 — and 640×360
+is the ½ rung of 1280×720. Climbing back took 30–40s on a 1ms lossless loopback,
+and with moving content it did not climb a single rung in 90s.
+
+`degradationPreference: "maintain-resolution"` is what forbids that ladder. With
+it in force the resolution never moved in any run, **even at 2fps**; with it
+gone, 1600×900 became 400×225 at 30fps and stayed there, reporting
+`qualityLimitationReason: "bandwidth"` for 99.96% of the session while the
+estimate said 3.77 Mb/s was available. The symptom's signature is therefore
+**full framerate with collapsed resolution** — the opposite trade from the one
+this client asks for.
+
+Two client-side lessons, both now encoded in `applyEncoding`:
+
+- **Never fabricate `encodings`.** `params.encodings = [{}]` when
+  `getParameters()` returns an empty list changes the length of `encodings`,
+  which is precisely what the spec makes `setParameters` reject with
+  `InvalidModificationError`. The line existed to guarantee the policy and was
+  what destroyed it on a strict browser. Chrome is not strict here, which is why
+  the bench could not reproduce the symptom with the product intact.
+- **Never swallow the failure.** The old `catch {}` turned "the policy did not
+  apply" into "the video looks strange" discovered days later. And
+  `setParameters` resolving is not proof: read `degradationPreference` back.
+
+Also: **`83 kb/s` in the strip is not evidence of a thin link.** Static screen
+content costs ~80–100 kb/s in VP8 at *any* resolution — the bench delivered the
+same 83 kb/s at 6.2× the pixels. Do not diagnose bandwidth from that number.
+
+The sharer's own strip now shows the outbound resolution when it differs from
+the capture, plus `qualityLimitationReason`, plus the encoding-policy state in
+the (otherwise unused) path field. Before that, whoever caused the collapse was
+the one person who could not see it.
 
 ## Encoder cost per destination — measured, no longer a guess
 

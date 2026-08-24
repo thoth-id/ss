@@ -232,6 +232,13 @@ quebra a premissa do STUN e passa a exigir TURN.
 - A faixa de telemetria embaixo de cada tile mostra bitrate, resolução, fps,
   tipo de candidate e RTT. Se aparecer `host` em vez de `srflx`, os dois peers
   estão na mesma LAN física e o STUN nem foi necessário.
+- No seu próprio tile a faixa mostra a resolução **capturada**. Se o encoder
+  estiver mandando menos que isso, aparece a resolução real ao lado
+  (`1600×900 → 640×360 bandwidth`) — captura certa com saída num degrau abaixo
+  é o diagnóstico inteiro. E se a política de encoding não tiver entrado no seu
+  browser, o texto `política recusada` ou `política não confirmada` aparece no
+  lugar do campo de caminho. Sem ela o encoder troca resolução por framerate e
+  desce uma escada que demora dezenas de segundos para subir de volta — ou não sobe.
 - O medidor de barras é o bitrate do último minuto, uma barra por segundo. Queda
   de link aparece nele antes de o número instantâneo explicar o motivo. Em tile
   largo ele fica no fim da linha de telemetria; em tile estreito, numa faixa de
