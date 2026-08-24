@@ -15,17 +15,45 @@ function resolverEstatico(pathname: string): string | null {
   } catch {
     return null; // %-encoding quebrado
   }
+  // Byte nulo antes de qualquer resolução: `normalize` e `resolve` preservam o
+  // \0, o startsWith aprova o caminho, e é o Bun.file() lá na frente que lança.
+  // Não chega a ser traversal — nenhum arquivo é lido — mas a exceção virava a
+  // página de erro do Bun, 67 KB com o caminho da instalação e as linhas do
+  // fonte, a partir de 20 bytes de requisição.
+  if (rel.includes("\0")) return null;
   if (rel === "/" || rel === "") rel = "/index.html";
   const alvo = nodePath.resolve(PUBLIC_DIR, "." + nodePath.posix.normalize(rel));
   if (alvo !== PUBLIC_DIR && !alvo.startsWith(PUBLIC_DIR + nodePath.sep)) return null;
   return alvo;
 }
 
-const PORT = Number(process.env.PORT ?? 3000);
-const STUN_PORT = Number(process.env.STUN_PORT ?? 3478);
+/* Ambiente é entrada não confiável, e `Number()` aceita coisas que não são
+   número: `MAX_PEERS=` (vazio) virava 0 e trancava a sala para todo mundo,
+   `MAX_PEERS=cinco` virava NaN — e com NaN as comparações `set.size >= MAX_*`
+   são sempre falsas, então o teto de sala e a arbitragem de sharers sumiam em
+   silêncio enquanto a UI continuava anunciando "3/3". O servidor é o árbitro;
+   um árbitro que leu NaN não arbitra. Só inteiro positivo passa; o resto cai no
+   padrão medido e diz no stderr qual variável foi ignorada. */
+function int(nome: string, padrao: number, max = Number.MAX_SAFE_INTEGER): number {
+  const bruto = process.env[nome];
+  if (bruto === undefined) return padrao;
+  const limpo = bruto.trim();
+  const n = Number(limpo);
+  // A regex é o que recusa " 0x10 ", "1e3", "2.5" e "" — todos aceitos pelo
+  // Number() e nenhum deles um inteiro escrito como inteiro.
+  if (!/^\d+$/.test(limpo) || !Number.isSafeInteger(n) || n < 1 || n > max) {
+    const faixa = max === Number.MAX_SAFE_INTEGER ? "inteiro positivo" : `inteiro entre 1 e ${max}`;
+    process.stderr.write(`${nome}=${JSON.stringify(bruto)} não é ${faixa}; usando ${padrao}\n`);
+    return padrao;
+  }
+  return n;
+}
+
+const PORT = int("PORT", 3000, 65535);
+const STUN_PORT = int("STUN_PORT", 3478, 65535);
 
 // Teto de peers por sala (flag --peers). O 6º recebe `denied` e não entra.
-const MAX_PEERS = Number(process.env.MAX_PEERS ?? 5);
+const MAX_PEERS = int("MAX_PEERS", 5);
 
 // Quantas pessoas podem transmitir ao mesmo tempo (flag --sharers).
 // O servidor é o único ponto que vê a sala inteira, então a decisão mora aqui:
@@ -37,7 +65,7 @@ const MAX_PEERS = Number(process.env.MAX_PEERS ?? 5);
 // Medido: 4 destinos custam ~2 cores de 12, e receber um segundo stream soma
 // 0,18. Ver a tabela no CLAUDE.md. 3 é onde a medição limpa termina; 4 e 5 não
 // foram medidos porque 5 Chromes não cabem numa caixa de 12 cores.
-const MAX_SHARERS = Number(process.env.MAX_SHARERS ?? 3);
+const MAX_SHARERS = int("MAX_SHARERS", 3);
 
 // Teto de pixels da captura (equivalente a 1600×900). Acima de 1920×1080 o
 // WebRTC passa a usar ~8 threads de encode por PeerConnection em vez de ~3, e
@@ -45,7 +73,7 @@ const MAX_SHARERS = Number(process.env.MAX_SHARERS ?? 3);
 // 1920×1080 custou 10,12 cores de 12 e entregou 6–9 fps, enquanto 1600×900
 // custou 1,95 cores com 30 fps cheios. O padrão é o número medido; a flag
 // --pixels existe para quem quiser testar outro, não para uso rotineiro.
-const MAX_CAPTURE_PIXELS = Number(process.env.MAX_CAPTURE_PIXELS ?? 1_440_000);
+const MAX_CAPTURE_PIXELS = int("MAX_CAPTURE_PIXELS", 1_440_000);
 
 // Teto do nome escolhido por cada peer. Só cosmético: quem não escolher aparece
 // pelo id, que é o que o servidor garante ser único.
@@ -105,6 +133,17 @@ function publishNames(room: string) {
 
 Bun.serve<Client>({
   port: PORT,
+
+  /* Rede de segurança para o handler inteiro, não só para o byte nulo. Sem
+     `error()` o Bun responde a página de debug dele — e o padrão é modo
+     development, porque `NODE_ENV !== "production"` em qualquer `bunx
+     screen-share`. São 67 KB com o caminho absoluto da instalação e trechos do
+     fonte, disparáveis por qualquer um que alcance a porta. O stack fica no
+     servidor, onde serve para depurar; o cliente recebe cinco palavras. */
+  error(err) {
+    console.error(err);
+    return new Response("internal error", { status: 500 });
+  },
 
   async fetch(req, server) {
     const url = new URL(req.url);
