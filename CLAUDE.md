@@ -168,6 +168,42 @@ tile size. Below it there is no room for both on one line, so the gauge takes a
 full-width band above the text and the slot stretches to fill it. Either way the
 bars touch, which is what makes it read as a tape.
 
+### Presence plates
+
+Every peer in the room gets a tile. Whoever is not sharing gets a **monogram
+plate** (`.tile.peer`) instead of a video. This needed **no server or protocol
+change**: `peers`, `names` and `sharers` already arrive complete, so
+`syncRoster()` — called at the top of `render()` — derives the roster from them.
+No second map to drift. It cannot use `attachTile`/`dropTile`, which call
+`render()` back.
+
+Plates **never compete with video for grid area**. They are a bottom rail capped
+at `min(max(64, H*0.22), H*0.4, PRES_RAIL)` (132), and only inherit the stage
+when no video tile exists at all, capped at `PRES_SOLO` (220). The reason is the
+whole point of the feature: a monogram carries almost no information per pixel,
+while a shared screen shrunk to a third of the stage stops being readable text.
+Six equal grid cells — 2 sharers + 4 plates, the room's ceiling — would do
+exactly that. Do not give plates a full grid cell.
+
+Being alone with nobody sharing is the one state that keeps the old empty card:
+**a roster of one is not a roster**, so when `peers` is empty no plate is built,
+`tiles.size` stays 0 and `idle` means exactly what it always meant.
+
+ids are 8 hex chars (`3f9a1b2c`), so an unnamed peer has no initial worth
+showing — `3` is nobody. That plate shows `_`, the prompt cursor waiting to be
+typed, on a dashed frame; the label is the id. A named peer shows the first
+**grapheme** (`[...name][0]`, not `slice(0,1)` — a name may start with an emoji)
+uppercased. A peer who is in `sharers` but whose video has not arrived yet gets
+`conectando…` in accent; before this, that person was invisible.
+
+The plate is the same shell as a video tile, so the px fit, the label ruler and
+the focus rail all work unchanged — but it has no `.wave`, no `.ctl` and is not
+focusable. `sizeWave()`, `tick()` and the band toggle skip it, and `place()`
+leaves it out of `minTile` so a plate can never force the telemetry band. Its
+face is `--panel`, not `--void`: a video tile is a screen, a plate is interface,
+and the colour says which before the label is read. `attachTile` discards the
+plate for that id before building the video tile — same `tiles` map, same key.
+
 ### Client reconnect
 
 The WebSocket reconnects every 1.5s. On `joined`, if `myId` changed, the client
@@ -213,6 +249,13 @@ tile, two tiles with different aspect ratios, focus mode, 430px wide): the tile
 fit exists to keep the page from scrolling. Screenshots caught two things numbers
 did not — a ragged row of tiles centered per cell, and a header wrapping to three
 lines on a phone.
+
+**Settle the transitions before measuring.** `.tile` transitions `left/top/width`
+over .16s and `.frame video` transitions `height`. Measuring two rAFs after
+`render()` reads the geometry in flight: plates land overlapping (65px apart
+instead of 120) and the video box is off its aspect ratio, so `object-fit:
+contain` letterboxes it. That produces both false failures and screenshots of a
+layout that never renders. Wait ~320ms — twice the transition — then measure.
 
 ICE over `100.x` **has been exercised once**, over `tailscale serve` HTTPS: video
 flowed at 979 kb/s, 1920×1200, 30fps, on a `prflx` candidate pair at 15ms RTT.

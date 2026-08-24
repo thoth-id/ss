@@ -180,8 +180,14 @@ quebra a premissa do STUN e passa a exigir TURN.
   guardado no `localStorage` do navegador e reenviado no reconnect. Quem deixar
   em branco aparece pelo id. É só rótulo — não há login nem identidade nenhuma
   por trás dele.
+- Quem está na sala e não está transmitindo aparece numa placa com a inicial do
+  nome, numa trilha embaixo das telas. Quem não escolheu nome mostra `_` e o id:
+  o id é hex, e a inicial de `3f9a1b2c` não é ninguém. Quem pediu para
+  compartilhar e ainda está negociando aparece como `conectando…`. A trilha tem
+  teto de altura de propósito — placa não carrega informação por pixel, e o
+  palco é área de vídeo. Com ninguém transmitindo, as placas herdam o palco.
 - Clique numa tela (ou no botão `focar`) para jogá-la no palco inteiro; as outras
-  viram miniaturas numa trilha. `esc` sai do foco. `tela cheia` usa a API de
-  fullscreen do navegador e some com toda a interface.
+  viram miniaturas numa trilha — as placas de presença também. `esc` sai do foco.
+  `tela cheia` usa a API de fullscreen do navegador e some com toda a interface.
 - A página nunca rola: o palco tem a altura que sobra e cada tile é encaixado
   dentro dela, na proporção real da tela compartilhada. Nada é cortado.

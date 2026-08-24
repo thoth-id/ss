@@ -78,6 +78,19 @@ maior incógnita do projeto e ainda não foi exercitada uma única vez.**
 - Campo de nome no cabeçalho: opcional, guardado no `localStorage`, mandado no
   `join` e por `rename` com debounce de 400ms (blur e Enter mandam na hora).
   Quem não escolhe nome aparece pelo id em toda a interface (`nameOf`).
+- Placa de presença: quem está na sala e não transmite ganha um tile com
+  monograma (`.tile.peer`), derivado de `peers`/`names`/`sharers` em
+  `syncRoster()`, sem mudança nenhuma no servidor nem no protocolo — o cliente
+  já sabia quem estava lá. **As placas não disputam área com o vídeo**: ficam
+  numa trilha embaixo com teto de 132px, e só herdam o palco quando não há
+  nenhum tile de vídeo (teto de 220px). Dar célula cheia de grid pra elas
+  colocaria a tela compartilhada em um terço do palco, que é onde o texto dela
+  deixa de ser legível — foi medido a olho nas capturas. Sozinho não há roster
+  (uma placa só não informa nada), então `tiles.size` continua 0 e o card de
+  vazio aparece como antes. Sem nome escolhido a placa mostra `_`, o cursor do
+  prompt, porque o id é hex e a inicial dele não diz nada. Quem está em
+  `sharers` mas cujo vídeo ainda não chegou aparece como `conectando…` — antes
+  essa pessoa era invisível.
 
 ### Lacunas reais
 

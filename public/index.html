@@ -187,6 +187,39 @@
   .tile.mini .path,
   .tile.mini .full { display: none; }
 
+  /* Placa de presença: quem está na sala e não transmite. Mesma casca do tile
+     de vídeo — o encaixe em px, a faixa de rótulo e a trilha do foco valem
+     igual —, com um monograma no lugar do quadro. Quadrada e com hairline, não
+     redonda com gradiente: a linguagem daqui é terminal, não rede social.
+     A face é --panel, não --void: tile de vídeo é tela, placa é superfície de
+     interface, e a cor diz qual é qual antes de o rótulo ser lido. */
+  .tile.peer .frame {
+    height: var(--vh, 96px); cursor: default; background: var(--panel);
+    display: flex; align-items: center; justify-content: center;
+  }
+  /* Placa não é alvo de clique: não acende no hover como o tile de vídeo. */
+  .tile.peer:hover { box-shadow: inset 0 0 0 1px var(--line); }
+  /* A inicial acompanha a altura da placa, então a mesma regra serve pra
+     miniatura na trilha e pra placa no palco inteiro sem o JS medir letra. */
+  .tile.peer .glyph {
+    font-size: min(calc(var(--vh, 96px) * .44), 84px); line-height: 1;
+    color: var(--fg); letter-spacing: .02em; user-select: none;
+  }
+  .tile.peer .fields { padding: 0 8px; justify-content: center; }
+  /* Sem nome escolhido não há inicial que signifique nada: o id é hex, e "3"
+     não é ninguém. A placa mostra o cursor do prompt esperando ser digitado, e
+     o tracejado é o slot vazio. Borda de verdade não soma altura aqui — .frame
+     tem altura própria e box-sizing é border-box. */
+  .tile.peer.anon .frame { border: 1px dashed var(--line-hi); }
+  .tile.peer.anon .glyph { color: var(--dim); transform: translateY(-.32em); }
+  /* Pediu a vaga de sharer e o vídeo ainda não chegou. Antes essa pessoa era
+     invisível: nem tile, nem linha em lugar nenhum. */
+  .tile.peer.wait .frame {
+    border: 1px solid var(--accent); animation: pulse 1.8s ease-in-out infinite;
+  }
+  .tile.peer.wait .glyph, .tile.peer.wait .who { color: var(--accent); }
+  @keyframes pulse { 50% { opacity: .5; } }
+
   /* Antes de qualquer coisa no ar, a tela mostra o que ela sabe da sala. É a
      mesma linguagem da faixa de telemetria: rótulo apagado, valor aceso. */
   .empty {
@@ -215,6 +248,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .tile, .frame video, .ctl { transition: none; }
+    .tile.peer.wait .frame { animation: none; }
   }
 </style>
 </head>
@@ -624,6 +658,13 @@ let focusId = null;               // tile no palco inteiro, ou null
 
 function attachTile(id, stream, isSelf = false) {
   let tile = tiles.get(id);
+  // A placa de presença mora no mesmo mapa, sob o mesmo id. Descarta antes de
+  // montar o tile de vídeo — placa não tem srcObject, então nada pisca.
+  if (tile && tile.classList.contains("peer")) {
+    tile.remove();
+    tiles.delete(id);
+    tile = null;
+  }
   if (!tile) {
     tile = document.createElement("div");
     tile.className = "tile" + (isSelf ? " self" : "");
@@ -680,6 +721,39 @@ function toggleFocus(id) {
   render();
 }
 
+// Presença: quem está na sala aparece mesmo sem transmitir. Sai de `peers` e
+// `sharers`, como todo o resto — não existe um segundo mapa pra dessincronizar.
+// Placa não tem controles: focar num monograma não leva a nada.
+function plate(id) {
+  let tile = tiles.get(id);
+  if (tile) return tile;
+  tile = document.createElement("div");
+  tile.className = "tile peer";
+  tile.dataset.id = id;
+  tile.innerHTML =
+    '<div class="frame"><span class="glyph" aria-hidden="true"></span></div>' +
+    '<div class="meta"><div class="fields"><span class="who"></span></div></div>';
+  tiles.set(id, tile);
+  $("stage").append(tile);
+  return tile;
+}
+
+// Sozinho não há roster: uma placa só não informa nada, e o palco vazio é o que
+// deixa o card de "nada no ar" aparecer. Chamado no início de render(), então
+// não pode usar attachTile/dropTile — os dois chamam render() de volta.
+function syncRoster() {
+  const want = peers.size ? new Set([myId, ...peers]) : new Set();
+  for (const id of want) {
+    // Quem já tem vídeo no palco não ganha placa: o tile dele é a presença.
+    if (!tiles.has(id) || tiles.get(id).classList.contains("peer")) plate(id);
+  }
+  for (const [id, tile] of [...tiles]) {
+    if (!tile.classList.contains("peer") || want.has(id)) continue;
+    tile.remove();
+    tiles.delete(id);
+  }
+}
+
 /* ---------- layout ---------- */
 
 // O encaixe é calculado aqui, em px, não pelo CSS. Motivo: o palco tem altura
@@ -699,6 +773,12 @@ const WAVE_LINE_H = 14;
 const WAVE_BAND_H = 16;
 const WAVE_SLOT = 3;              // px por amostra na linha: barra de 2 + 1 de ar
 const WAVE_LEN = 60;              // amostras guardadas, uma por segundo
+// Placa de presença: quadrada, e com teto de altura. O teto é o ponto todo —
+// monograma não carrega informação por pixel e o palco é área de vídeo, onde
+// encolher custa legibilidade do texto que está sendo compartilhado.
+const PRES_AR = 1;
+const PRES_RAIL = 132;            // teto na trilha, com vídeo no palco
+const PRES_SOLO = 220;            // teto quando o palco é só de placas
 
 // Vale para todos os tiles do layout atual: régua desalinhada entre tiles lado
 // a lado é pior que medidor em faixa num tile que teria largura pra linha.
@@ -717,6 +797,7 @@ function relayout() {
 
 function arOf(tile) {
   const v = tile.querySelector("video");
+  if (!v) return PRES_AR;
   return v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 16 / 9;
 }
 
@@ -727,7 +808,7 @@ function fitBox(ar, W, H, strip) {
 }
 
 function place(tile, x, y, w, h, mini) {
-  if (!mini) minTile = Math.min(minTile, w);
+  if (!mini && !tile.classList.contains("peer")) minTile = Math.min(minTile, w);
   tile.classList.toggle("mini", mini);
   tile.style.left = Math.round(x) + "px";
   tile.style.top = Math.round(y) + "px";
@@ -744,10 +825,22 @@ function layout() {
 
   const list = [...tiles.values()];
   const focused = focusId ? tiles.get(focusId) : null;
+  const isPlate = (t) => t.classList.contains("peer");
+  const vids = list.filter((t) => !isPlate(t));
+  const plates = list.filter(isPlate);
   const fit = () => {
     minTile = Infinity;
+    // No foco as placas entram na trilha como qualquer miniatura: o roster não
+    // desaparece justo quando alguém está olhando uma tela de perto.
     if (focused && list.length > 1) fitFocus(list, focused, PAD, PAD, W, H);
-    else fitGrid(list, PAD, PAD, W, H);
+    else if (!vids.length) fitRoster(plates, PAD, PAD, W, H, PRES_SOLO);
+    else if (!plates.length) fitGrid(vids, PAD, PAD, W, H);
+    else {
+      // O piso de 64 não pode comer o palco numa janela baixa, daí o 0.4.
+      const rail = Math.min(Math.max(64, H * 0.22), H * 0.4, PRES_RAIL);
+      fitGrid(vids, PAD, PAD, W, H - rail - GAP);
+      fitRoster(plates, PAD, PAD + H - rail, W, rail, PRES_RAIL);
+    }
   };
 
   // Primeiro passe otimista, com o medidor na linha. Se algum tile ficou
@@ -759,8 +852,10 @@ function layout() {
     strip = STRIP_BAND;
     fit();
   }
-  for (const tile of list) tile.classList.toggle("band", strip === STRIP_BAND);
-  for (const tile of list) sizeWave(tile, tile.offsetWidth);
+  for (const tile of vids) {
+    tile.classList.toggle("band", strip === STRIP_BAND);
+    sizeWave(tile, tile.offsetWidth);
+  }
 }
 
 // Escolhe o número de colunas que maximiza a área total de vídeo. Não é
@@ -813,6 +908,24 @@ function fitGrid(list, X, Y, W, H) {
       x += ws[k] + GAP;
     });
     y += row.h + strip + GAP;
+  }
+}
+
+// Uma linha de placas, altura com teto: quando há vídeo no palco a trilha é o
+// resto do espaço até o teto, quando não há as placas herdam o palco e crescem.
+// A faixa de rótulo é sempre STRIP_LINE — placa não tem medidor, então nunca
+// vira faixa junto com os tiles de vídeo.
+function fitRoster(list, X, Y, W, H, cap) {
+  const k = list.length;
+  const slot = (W - GAP * (k - 1)) / k;
+  const h = Math.max(24, Math.min(H - STRIP_LINE, cap - STRIP_LINE, slot / PRES_AR));
+  const w = h * PRES_AR;
+  const total = k * w + GAP * (k - 1);
+  let x = X + Math.max(0, (W - total) / 2);
+  const y = Y + Math.max(0, (H - h - STRIP_LINE) / 2);
+  for (const tile of list) {
+    place(tile, x, y, w, h, false);
+    x += w + GAP;
   }
 }
 
@@ -935,6 +1048,9 @@ nameField.onkeydown = (e) => {
 function render() {
   const n = peers.size;
   const tight = innerWidth < 560;   // rótulos curtos, cabeçalho em duas linhas
+  // Antes de qualquer coisa que conte tiles: `idle` e o encaixe dependem de o
+  // roster já estar montado.
+  syncRoster();
   // Mostra a ocupação de sharers junto: é a resposta pra "por que o botão
   // está bloqueado?" sem precisar passar o mouse em cima.
   const ocupacao = sharers.size
@@ -964,6 +1080,21 @@ function render() {
   nameField.placeholder = myId || "seu nome";
 
   for (const [id, tile] of tiles) {
+    if (tile.classList.contains("peer")) {
+      const named = names.has(id);
+      const waiting = sharers.has(id);
+      tile.classList.toggle("anon", !named);
+      tile.classList.toggle("wait", waiting);
+      // Primeiro grafema, não primeiro char: nome pode começar com emoji, e
+      // slice(0,1) partiria o par surrogate no meio.
+      tile.querySelector(".glyph").textContent =
+        named ? [...nameOf(id)][0].toUpperCase() : "_";
+      tile.querySelector(".who").textContent =
+        waiting ? "conectando…" : id === myId ? "você" : nameOf(id);
+      // Dois homônimos na sala só se distinguem pelo id.
+      tile.title = named ? `${nameOf(id)} · ${id}` : id;
+      continue;
+    }
     const on = id === focusId;
     tile.classList.toggle("focused", on);
     const who = id === myId ? "sua tela" : nameOf(id);
@@ -1038,6 +1169,7 @@ function waveH() {
 
 function sizeWave(tile, tileW) {
   const c = tile.querySelector(".wave");
+  if (!c) return;
   const band = strip === STRIP_BAND;
   // Na linha, largura própria com teto de um minuto; na faixa, a do tile.
   const cssW = band
@@ -1086,7 +1218,8 @@ setInterval(async () => {
   // Tiles recebidos
   for (const [id, pc] of receiving) {
     const tile = tiles.get(id);
-    if (!tile) continue;
+    // Placa: a PC existe mas o vídeo ainda não chegou, e placa não tem faixa.
+    if (!tile || tile.classList.contains("peer")) continue;
     const stats = await pc.getStats();
     let bps = null, size = "", fps = 0;
     stats.forEach((r) => {
@@ -1107,7 +1240,7 @@ setInterval(async () => {
 
   // Tile próprio: agrega upload de todos os peers
   const self = tiles.get(myId);
-  if (self && sending.size) {
+  if (self && !self.classList.contains("peer") && sending.size) {
     let total = 0;
     for (const [id, pc] of sending) {
       const stats = await pc.getStats();
