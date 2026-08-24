@@ -1,260 +1,257 @@
 # tela
 
-Compartilhamento de tela P2P entre navegadores, sem áudio, para um grupo
-pequeno dentro de uma rede que você já confia (ex.: um tailnet Tailscale). Sem
-TURN, sem SFU, sem conta, sem servidor de mídia: o servidor só faz relay de
-signaling e responde STUN — o vídeo vai direto de um navegador a outro.
+Browser-to-browser screen sharing, no audio, for a small group on a network you
+already trust (a Tailscale tailnet, for instance). No TURN, no SFU, no accounts,
+no media server. The server does three things: serve the page, relay signaling,
+answer STUN. The video goes straight from one browser to another.
 
-Publicado no npm sob o nome **`@thoth-dev/screen-share`**.
+Published on npm as **`@thoth-dev/screen-share`**.
 
-## Instalar e rodar
+## Install and run
 
-Exige [Bun](https://bun.sh) instalado na máquina que sobe o servidor: o
-pacote publica `bin/cli.ts`, `server.ts` e `stun.ts` como escritos, sem build
-e sem `dist/`, e é o Bun que os executa direto.
+Needs [Bun](https://bun.sh) on the machine that runs the server. The package
+ships `bin/cli.ts`, `server.ts` and `stun.ts` exactly as written, with no build
+step and no `dist/`, and Bun runs them directly.
 
 ```bash
 bunx @thoth-dev/screen-share
 ```
 
-Sobe HTTP + WebSocket de signaling em `:3000` e STUN em UDP `:3478`.
-`npx @thoth-dev/screen-share` também funciona **se** Bun já estiver instalado na máquina;
-sem Bun, o shebang (`#!/usr/bin/env bun`) falha com
-`env: bun: No such file or directory` — seco, mas nomeia o que falta.
+That brings up HTTP plus the signaling WebSocket on `:3000`, and STUN on UDP
+`:3478`. `npx @thoth-dev/screen-share` also works **if** Bun is already
+installed on the machine. Without Bun the shebang (`#!/usr/bin/env bun`) fails
+with `env: bun: No such file or directory`, which is terse but names what is
+missing.
 
-Depois, na mesma máquina:
+Then, on the same machine:
 
 ```bash
 tailscale serve --bg 3000
 ```
 
-Isso publica `https://<maquina>.<tailnet>.ts.net` com cert válido do Let's Encrypt,
-acessível só de dentro do tailnet. **Esse passo não é opcional:** `getDisplayMedia`
-só existe em secure context, então servir em `http://100.64.x.y:3000` faz a API
-sumir do `navigator.mediaDevices`.
+This publishes `https://<machine>.<tailnet>.ts.net` with a real Let's Encrypt
+certificate, reachable only from inside the tailnet. **This step is not
+optional:** `getDisplayMedia` exists only in a secure context, so serving on
+`http://100.64.x.y:3000` makes the API disappear from `navigator.mediaDevices`.
 
-O `tailscale serve` precisa que HTTPS esteja habilitado no tailnet
-(admin console → **DNS → Enable HTTPS**). Sem isso, `tailscale cert` responde
-`HTTPS cert support is not enabled` e o serve não sobe.
+`tailscale serve` needs HTTPS enabled on the tailnet first (admin console,
+**DNS → Enable HTTPS**). Without it, `tailscale cert` answers `HTTPS cert
+support is not enabled` and serve never comes up.
 
-O STUN roda em UDP 3478 direto no IP do tailnet, fora do `tailscale serve`
-(que só proxia TCP). Se você tem ACL restritiva no tailnet, libere 3478/udp.
+STUN runs on UDP 3478 directly on the tailnet IP, outside `tailscale serve`,
+which proxies TCP only. If your tailnet has restrictive ACLs, open 3478/udp.
 
-## Flags
+## Flags and configuration
 
 ```bash
 bunx @thoth-dev/screen-share [flags]
 ```
 
-| flag | padrão | o que faz |
-|---|---|---|
-| `-p, --port <n>` | 3000 | porta HTTP + WebSocket de signaling |
-| `--stun-port <n>` | 3478 | porta UDP do STUN |
-| `--peers <n>` | 5 | teto de peers por sala |
-| `--sharers <n>` | 3 | quantos transmitem ao mesmo tempo |
-| `--pixels <n>` | 1440000 | teto de pixels da captura (= 1600×900) |
-| `--bg` | — | sobe em segundo plano |
-| `--stop` | — | encerra o que está em segundo plano na mesma porta |
-| `-h, --help` | — | mostra a ajuda |
-| `-v, --version` | — | mostra a versão |
+| flag | env | default | what it does |
+|---|---|---|---|
+| `-p, --port <n>` | `PORT` | 3000 | HTTP and signaling WebSocket |
+| `--stun-port <n>` | `STUN_PORT` | 3478 | STUN UDP port |
+| `--peers <n>` | `MAX_PEERS` | 5 | peers per room; the 6th gets `denied` and stays out |
+| `--sharers <n>` | `MAX_SHARERS` | 3 | how many transmit at once; the 4th attempt gets `share-denied` |
+| `--pixels <n>` | `MAX_CAPTURE_PIXELS` | 1440000 | capture pixel budget (1600×900) |
+| `--bg` | | | run in the background |
+| `--stop` | | | stop whatever runs in the background on the same port |
+| `-h, --help` | | | print the help |
+| `-v, --version` | | | print the version |
 
-Com `--bg`, o pidfile e o log ficam em `$XDG_RUNTIME_DIR/screen-share/` —
-`screen-share-<porta>.pid` e `screen-share-<porta>.log` — ou, sem
-`XDG_RUNTIME_DIR`, num `screen-share-<uid>/` dentro do diretório temporário,
-criado com modo 0700 e recusado se pertencer a outra pessoa. Não é `$TMPDIR`
-direto de propósito: ali o modo 1777 deixa qualquer usuário da máquina plantar
-um pidfile no caminho. O comando só reporta sucesso depois que o
-`/config` do processo filho responde — isto é, depois que ele de fato bindou a
-porta, não só depois de ter sido lançado. `--stop --port <n>` encerra o que
-está registrado naquele pidfile.
+The CLI only forwards these to `server.ts` through the environment, which keeps
+`bun run server.ts` working on its own, with the same variables and no CLI in
+the loop. `GET /config` hands `stunPort`, `maxPeers`, `maxSharers` and
+`maxCapturePixels` to the client, so no limit is duplicated in the HTML.
 
-## Testar (a partir do repositório)
+The server stays the sole authority over the room limits. It is the only place
+that sees a whole room, so two simultaneous clicks on different machines can
+only be serialized there.
 
-```bash
-(bun run server.ts > /tmp/s.log 2>&1 & echo $! > /tmp/p); sleep 2; \
-  timeout 90 bun run test.ts; kill $(cat /tmp/p)
-```
+### Background mode
 
-Cobre estático, signaling, teto de peers, arbitragem de sharers e o wire format
-do STUN — tudo headless, sem browser. **WebRTC não é coberto:** ICE fechando
-sobre IPs 100.x só se verifica com duas máquinas de verdade no tailnet e
-`chrome://webrtc-internals`.
+With `--bg`, the pidfile and the log live in `$XDG_RUNTIME_DIR/screen-share/`,
+as `screen-share-<port>.pid` and `screen-share-<port>.log`. Without
+`XDG_RUNTIME_DIR` they fall back to a `screen-share-<uid>/` directory inside the
+temp dir, created with mode 0700 and refused if it belongs to somebody else. Not
+`$TMPDIR` itself, on purpose: its 1777 mode lets any user on the machine plant a
+pidfile in the path. The command reports success only once the child's own
+`/config` answers, which means after it actually bound the port, not merely
+after it was spawned. `--stop --port <n>` kills whatever that pidfile registers.
 
-## Por que tem um STUN aqui
+## Rooms
 
-O Chrome esconde host candidates de IP privado atrás de nomes mDNS (`.local`),
-e IP de Tailscale cai na faixa CGNAT 100.64/10, que ele trata como privado.
-mDNS depende de multicast, multicast não atravessa o tailnet, o peer remoto
-nunca resolve o nome e o ICE falha em silêncio.
+The room comes from the URL hash: `/#retro`, `/#pair`. With no hash it falls
+back to `sala`.
 
-Um STUN dentro do tailnet devolve o 100.x do peer como srflx candidate, que não
-sofre obfuscation. São ~50 linhas em `stun.ts` e é o que faz a coisa conectar.
+## Why there is a STUN server here
 
-## Topologia
+Chrome hides private-IP host candidates behind mDNS names (`.local`), and a
+Tailscale address falls in the CGNAT range 100.64/10, which it treats as
+private. mDNS needs multicast, multicast does not cross the tailnet, the remote
+peer never resolves the name, and ICE fails in silence.
 
-Star por sharer, não mesh. Quem compartilha abre um `RTCPeerConnection` por
-viewer. Com 1 sharer e 4 viewers: 4 conexões, upload = 4 × bitrate.
+A STUN server inside the tailnet returns the peer's 100.x as an srflx candidate,
+which is not obfuscated. It is about 50 lines in `stun.ts`, and it is what makes
+the thing connect.
 
-`CAP_BITRATE` está em 1.5 Mbps por peer (~6 Mbps de upload com 4 viewers).
+## Topology
 
-As PeerConnections são **direcionais**: `sending` e `receiving` são maps
-separados e nunca existe uma PC bidirecional. Cada PC tem um offerer único, o
-que elimina glare e dispensa perfect negotiation. Não unifique os dois maps.
+Star per sharer, not mesh. Whoever shares opens one `RTCPeerConnection` per
+viewer. With 1 sharer and 4 viewers that is 4 connections and an upload of
+4 × bitrate. `CAP_BITRATE` is 1.5 Mbps per peer, so roughly 6 Mbps of upload
+with 4 viewers.
 
-É **um encoder por PeerConnection**, e isso foi medido. O custo de CPU de quem
-compartilha não é curva, é degrau: com 4 destinos, capturar em 1920×1080 come
-10,1 cores de 12 e entrega 6–9 fps, enquanto 1600×900 custa 2,0 cores com 30 fps
-cheios. Até 1856×1044 — só 7% menos pixels que 1080p — já cai pra 3,8 cores.
+PeerConnections are **directional**: `sending` and `receiving` are separate maps
+and a bidirectional PC never exists. Each PC has exactly one offerer, which
+removes glare and makes perfect negotiation unnecessary. Do not unify the two
+maps.
 
-A causa é oversubscription de thread, não custo de pixel: o WebRTC dá ~8 threads
-de encode por PeerConnection a partir de 1920×1080 e ~3 abaixo disso. Contado no
-`/proc`, o renderer de quem compartilha carrega 51 threads em 1920×1080 contra
-33 em 1600×900. Com 4 encoders são 32 threads de encode disputando 12 lógicas.
+### The sharer's CPU cost is a step, not a curve
 
-Por isso existe o teto de pixels da captura (`--pixels`, padrão 1.440.000): o
-cliente reduz o track capturado pra caber no orçamento preservando o aspecto
-real da tela (1920×1200 vira 1518×948). O corte é **na fonte, uma vez só**, e
-não por conexão — os N encoders leem o mesmo track. Qualquer teto novo precisa
-ficar abaixo de 1920×1080 pixels (2.073.600), senão o degrau volta.
+There is **one encoder per PeerConnection**, and that was measured. With 4
+destinations, capturing at 1920×1080 eats 10.1 cores out of 12 and delivers 6 to
+9 fps, while 1600×900 costs 2.0 cores at a full 30 fps. Even 1856×1044, only 7%
+fewer pixels than 1080p, already drops to 3.8 cores.
 
-Com `--sharers 3` (padrão) o pior caso da sala são 3 sharers × 4 destinos = 12
-PeerConnections. Mas repare em qual limite manda no quê: **quem transmite abre
-uma PC por destino, ou seja `--peers - 1` = 4 encoders**, e esse número não
-muda se uma segunda ou terceira pessoa também começar a transmitir. O que
-`--sharers` controla é quantos streams cada máquina *decodifica*, e decode é
-barato — 0,18 core por stream, medido. Foi por isso que o teto subiu de 2 para
-3: o medo era de CPU e estava no eixo errado.
+The cause is thread oversubscription, not pixel cost. WebRTC gives each
+PeerConnection around 8 encode threads at 1920×1080 and above, around 3 below
+it. Counted in `/proc`, the sharer's renderer carries 51 threads at 1920×1080
+against 33 at 1600×900. Four encoders means 32 encode threads fighting over 12
+logical CPUs.
 
-O que continua valendo o cuidado é o número de pessoas na sala, não o de
-transmissores. Se um dia `--peers` crescer muito, vira N² e você precisa de um
-SFU (mediasoup, LiveKit).
+That is why the capture budget exists (`--pixels`, 1,440,000 by default). The
+client scales the captured track down to fit the budget while preserving the
+screen's real aspect ratio, so 1920×1200 becomes 1518×948. The cut happens
+**once at the source**, not once per connection: the N encoders all read the
+same track. Any new budget has to stay below 1920×1080 pixels (2,073,600) or the
+step comes back.
 
-## Limites
+### Which limit governs what
 
-Os três limites (`--peers`, `--sharers`, `--pixels`) partem de constantes no
-topo do `server.ts` que agora leem do ambiente (`PORT`, `STUN_PORT`,
-`MAX_PEERS`, `MAX_SHARERS`, `MAX_CAPTURE_PIXELS`), e o CLI só os repassa. O
-servidor continua sendo a única autoridade: é o único ponto que vê a sala
-inteira, então dois cliques simultâneos em máquinas diferentes só são
-serializáveis lá.
+With `--sharers 3` the room's worst case is 3 sharers × 4 destinations = 12
+PeerConnections. But notice which limit drives which cost. **A sharer opens one
+PC per destination, that is `--peers - 1` = 4 encoders**, and that number does
+not change when a second or third person also starts transmitting. What
+`--sharers` controls is how many streams each machine *decodes*, and decoding is
+cheap: 0.18 core per stream, measured. That is why the cap went from 2 to 3. The
+fear was CPU and it was pointed at the wrong axis.
 
-| flag / env | valor padrão | o que faz |
-|---|---|---|
-| `--peers` / `MAX_PEERS` | 5 | 6º peer recebe `denied` e não entra na sala |
-| `--sharers` / `MAX_SHARERS` | 3 | 4ª tentativa de compartilhar recebe `share-denied` |
+What still deserves care is the number of people in the room, not the number of
+transmitters. If `--peers` ever grows much, it turns into N² and you need an SFU
+(mediasoup, LiveKit).
 
-Para permitir um sharer só, `bunx @thoth-dev/screen-share --sharers 1`. Nada mais muda.
+## Protocol
 
-## Protocolo
+JSON over WebSocket at `/ws`, discriminated by `t`.
 
-JSON sobre WebSocket em `/ws`, discriminado por `t`.
-
-Cliente → servidor:
+Client to server:
 
 ```jsonc
-{ "t": "join",   "room": "sala", "name": "gabriel" }   // name é opcional
+{ "t": "join",   "room": "sala", "name": "gabriel" }   // name is optional
 { "t": "rename", "name": "gabriel" }
-{ "t": "signal", "to": "<peerId>", "data": { /* opaco */ } }
+{ "t": "signal", "to": "<peerId>", "data": { /* opaque */ } }
 { "t": "share-start" }
 { "t": "share-stop" }
 ```
 
-Servidor → cliente:
+Server to client:
 
 ```jsonc
-{ "t": "joined",       "id": "<meuId>", "peers": ["<id>", ...] }
+{ "t": "joined",       "id": "<myId>", "peers": ["<id>", ...] }
 { "t": "denied",       "reason": "room-full" }
 { "t": "peer-joined",  "id": "<id>" }
 { "t": "peer-left",    "id": "<id>" }
 { "t": "names",        "map": { "<id>": "gabriel", ... } }
 { "t": "sharers",      "ids": ["<id>", ...] }
 { "t": "share-denied", "reason": "limit" }
-{ "t": "signal",       "from": "<id>", "data": { /* opaco */ } }
+{ "t": "signal",       "from": "<id>", "data": { /* opaque */ } }
 ```
 
-`sharers` é broadcast **baseado em estado**: manda o conjunto inteiro toda vez
-que ele muda, mais um snapshot pra quem acabou de entrar. É idempotente,
-sobrevive a reconnect e o cliente nunca precisa reconstruir estado a partir de
-deltas. Quem sai do conjunto tem tile e PC derrubados na hora, sem esperar o
-`connectionstatechange`.
+`sharers` is a **state-based** broadcast: the whole set goes out on every
+change, plus a snapshot for whoever just joined. That makes it idempotent, it
+survives a reconnect, and the client never has to rebuild state from deltas. An
+id that leaves the set has its tile and its PC torn down at once, without
+waiting for `connectionstatechange`.
 
-`names` segue a mesma ideia e é **derivado dos sockets**: o nome mora no socket
-do peer, não num `Map` à parte, e o mapa publicado é montado percorrendo a sala
-na hora. Sair da sala apaga o nome sozinho, sem um segundo caminho de limpeza
-pra divergir do `close`. Nome é opcional e só cosmético — quem não escolher
-aparece pelo id. O servidor colapsa espaços, apara e corta em 24 caracteres;
-nome vazio depois disso não entra no mapa, que é como se apaga o próprio nome.
+`names` follows the same idea and is **derived from the sockets**: the name
+lives on the peer's socket rather than in a separate `Map`, and the published
+map is built by walking the room at publish time. Leaving the room erases the
+name by itself, with no second cleanup path to drift from `close`. A name is
+optional and purely cosmetic, so whoever picks none shows up by id. The server
+collapses whitespace, trims, and cuts at 24 characters. A name that is empty
+after that gets no entry in the map, which is also how you erase your own.
 
-O servidor **nunca** olha dentro de `data`. É essa regra que permite mudar a
-negociação sem tocar no backend. O nome, por isso mesmo, viaja em campo próprio
-(`join`/`rename`) e nunca dentro de `data`.
+The server **never** looks inside `data`. That rule is what allows the
+negotiation to change without touching the backend. The name travels in a field
+of its own (`join`/`rename`) for the same reason, never inside `data`.
 
-## Salas
+## Security
 
-A sala vem do hash da URL: `/#retro`, `/#pair`. Sem hash, cai em `sala`.
+There is no authentication, and that is deliberate: **the tailnet is the auth
+layer**. Do not add Funnel, port forwarding or a public bind without real auth
+first. Outside the tailnet, peers also stop sharing a network, which breaks the
+STUN premise and starts requiring TURN.
 
-## Configuração
+## The interface
 
-| env | default | o que faz |
-|---|---|---|
-| `PORT` | 3000 | HTTP + WebSocket de signaling |
-| `STUN_PORT` | 3478 | STUN UDP |
-| `MAX_PEERS` | 5 | teto de peers por sala |
-| `MAX_SHARERS` | 3 | quantos transmitem ao mesmo tempo |
-| `MAX_CAPTURE_PIXELS` | 1440000 | teto de pixels da captura |
+The UI is in Brazilian Portuguese, so the labels below are quoted as they
+appear.
 
-Rodando via `bunx @thoth-dev/screen-share`, essas variáveis são as flags da seção acima —
-o CLI só as repassa por ambiente ao `server.ts`, o que mantém `bun run
-server.ts` funcionando sozinho, sem o CLI no meio.
+- The telemetry strip under each tile shows bitrate, resolution, fps, candidate
+  type and RTT. `host` instead of `srflx` means both peers are on the same
+  physical LAN and STUN was never needed.
+- On your own tile the strip shows the **captured** resolution. If the encoder
+  is sending less than that, the real resolution appears beside it
+  (`1600×900 → 640×360 bandwidth`): a correct capture with the output one rung
+  down is the whole diagnosis. And if the encoding policy did not take in your
+  browser, `política recusada` or `política não confirmada` shows up in place of
+  the path field. Without that policy the encoder trades resolution for
+  framerate and walks down a ladder that takes tens of seconds to climb back, if
+  it climbs at all.
+- The bar meter is the last minute of bitrate, one bar per second. A link going
+  bad shows up there before the instantaneous number explains why. On a wide
+  tile it sits at the end of the telemetry line; on a narrow one it takes a
+  full-width band just above it.
+- The `eu/` field in the header is your name in the room: optional, up to 24
+  characters, kept in the browser's `localStorage` and resent on reconnect.
+  Leave it blank and you show up by id. It is a label and nothing more, with no
+  login or identity behind it.
+- Anyone in the room who is not transmitting appears on a plate with the initial
+  of their name, in a rail below the screens. Whoever picked no name shows `_`
+  and the id, because ids are hex and the initial of `3f9a1b2c` is nobody.
+  Whoever asked to share and is still negotiating shows up as `conectando…`. The
+  rail has a height cap on purpose: a plate carries almost no information per
+  pixel, and the stage is video area. With nobody transmitting, the plates
+  inherit the stage.
+- Click a screen (or its `focar` button) to give it the whole stage; the others
+  become thumbnails in a rail, presence plates included. `esc` leaves focus.
+  `tela cheia` uses the browser's fullscreen API and hides the interface.
+- The page never scrolls. The stage takes the height that is left and every tile
+  is fitted inside it at the real aspect ratio of the shared screen. Nothing is
+  cropped.
 
-`GET /config` devolve `stunPort`, `maxPeers`, `maxSharers` e `maxCapturePixels`
-pro cliente, então os limites não ficam duplicados no HTML.
+## Tuning worth knowing about
 
-## Segurança
+- `contentHint = "detail"` is already set: it favors text sharpness over
+  smoothness. To share video instead of code, switch it to `"motion"`.
+- `degradationPreference = "maintain-resolution"` holds the resolution and drops
+  the framerate under pressure. For code that is what you want. Switching to
+  `"balanced"` was measured and does **not** relieve CPU with several
+  destinations (10.4 cores against 10.1); lowering the framerate was measured
+  too and makes it **worse** (11.2 cores at 15fps). The pixel budget is what
+  actually helps.
+- Raising `--pixels` past 2,073,600 brings back the CPU collapse described under
+  Topology.
 
-Não há autenticação, e é intencional: **o tailnet é a camada de auth**. Não
-adicione Funnel, port forwarding ou bind público sem antes implementar auth de
-verdade. Fora do tailnet os peers também deixam de compartilhar rede, o que
-quebra a premissa do STUN e passa a exigir TURN.
+## Testing (from a clone of the repository)
 
-## Ajustes que valem a pena
+```bash
+(bun run server.ts > /tmp/s.log 2>&1 & echo $! > /tmp/p); sleep 2; \
+  timeout 90 bun run test.ts; kill $(cat /tmp/p)
+```
 
-- `contentHint = "detail"` já está setado: prioriza nitidez de texto sobre fluidez.
-  Se for compartilhar vídeo em vez de código, troque para `"motion"`.
-- `degradationPreference = "maintain-resolution"` mantém a resolução e derruba
-  o framerate sob pressão. Para código é o que você quer. Trocar por `"balanced"`
-  foi medido e **não** alivia CPU com vários destinos (10,4 cores contra 10,1);
-  baixar o framerate também foi medido e **piora** (11,2 cores a 15fps). Quem
-  resolve é o teto de pixels.
-- O teto de pixels da captura (`--pixels`, servido no `/config`) é 1.440.000
-  por padrão — equivalente a 1600×900. Subir esse número acima de 2.073.600
-  traz de volta o colapso de CPU descrito em Topologia.
-- A faixa de telemetria embaixo de cada tile mostra bitrate, resolução, fps,
-  tipo de candidate e RTT. Se aparecer `host` em vez de `srflx`, os dois peers
-  estão na mesma LAN física e o STUN nem foi necessário.
-- No seu próprio tile a faixa mostra a resolução **capturada**. Se o encoder
-  estiver mandando menos que isso, aparece a resolução real ao lado
-  (`1600×900 → 640×360 bandwidth`) — captura certa com saída num degrau abaixo
-  é o diagnóstico inteiro. E se a política de encoding não tiver entrado no seu
-  browser, o texto `política recusada` ou `política não confirmada` aparece no
-  lugar do campo de caminho. Sem ela o encoder troca resolução por framerate e
-  desce uma escada que demora dezenas de segundos para subir de volta — ou não sobe.
-- O medidor de barras é o bitrate do último minuto, uma barra por segundo. Queda
-  de link aparece nele antes de o número instantâneo explicar o motivo. Em tile
-  largo ele fica no fim da linha de telemetria; em tile estreito, numa faixa de
-  largura cheia logo acima dela.
-- O campo `eu/` no cabeçalho é o seu nome na sala: opcional, até 24 caracteres,
-  guardado no `localStorage` do navegador e reenviado no reconnect. Quem deixar
-  em branco aparece pelo id. É só rótulo — não há login nem identidade nenhuma
-  por trás dele.
-- Quem está na sala e não está transmitindo aparece numa placa com a inicial do
-  nome, numa trilha embaixo das telas. Quem não escolheu nome mostra `_` e o id:
-  o id é hex, e a inicial de `3f9a1b2c` não é ninguém. Quem pediu para
-  compartilhar e ainda está negociando aparece como `conectando…`. A trilha tem
-  teto de altura de propósito — placa não carrega informação por pixel, e o
-  palco é área de vídeo. Com ninguém transmitindo, as placas herdam o palco.
-- Clique numa tela (ou no botão `focar`) para jogá-la no palco inteiro; as outras
-  viram miniaturas numa trilha — as placas de presença também. `esc` sai do foco.
-  `tela cheia` usa a API de fullscreen do navegador e some com toda a interface.
-- A página nunca rola: o palco tem a altura que sobra e cada tile é encaixado
-  dentro dela, na proporção real da tela compartilhada. Nada é cortado.
+Covers static files, signaling, the room cap, sharer arbitration and the STUN
+wire format, all headless, with no browser. **WebRTC is not covered:** ICE
+closing over 100.x addresses can only be verified with two real machines on the
+tailnet and `chrome://webrtc-internals`.
