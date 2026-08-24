@@ -20,7 +20,11 @@ const MAX_SHARERS = 2;
 // MAX_SHARERS: ajustar o limite mexe num número só, num lugar só.
 const MAX_CAPTURE_PIXELS = 1_440_000;
 
-type Client = { id: string; room: string };
+// Teto do nome escolhido por cada peer. Só cosmético: quem não escolher aparece
+// pelo id, que é o que o servidor garante ser único.
+const MAX_NAME = 24;
+
+type Client = { id: string; room: string; name: string };
 type Socket = ServerWebSocket<Client>;
 
 const rooms = new Map<string, Set<Socket>>();
@@ -47,6 +51,31 @@ function publishSharers(room: string) {
   broadcast(room, { t: "sharers", ids: [...sharersOf(room)] });
 }
 
+// Saneamento num lugar só, no servidor: colapsa espaços, apara e corta em
+// MAX_NAME. Nome vazio depois disso não vira entrada no mapa — o cliente cai no
+// id. É também o caminho de apagar o próprio nome.
+function cleanName(raw: unknown) {
+  return String(raw ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_NAME);
+}
+
+// O mapa é derivado dos sockets da sala na hora de publicar, não guardado num
+// Map à parte. Assim sair da sala já apaga o nome, sem um segundo caminho de
+// limpeza que possa divergir do close. Mesmo motivo do broadcast por estado dos
+// sharers: o mapa inteiro vai junto toda vez, e nunca precisa ser reconstruído
+// de deltas do outro lado.
+function namesOf(room: string) {
+  const map: Record<string, string> = {};
+  for (const peer of rooms.get(room) ?? []) {
+    if (peer.data.name) map[peer.data.id] = peer.data.name;
+  }
+  return map;
+}
+
+function publishNames(room: string) {
+  if (!rooms.has(room)) return;
+  broadcast(room, { t: "names", map: namesOf(room) });
+}
+
 Bun.serve<Client>({
   port: PORT,
 
@@ -54,7 +83,7 @@ Bun.serve<Client>({
     const url = new URL(req.url);
 
     if (url.pathname === "/ws") {
-      const data: Client = { id: crypto.randomUUID().slice(0, 8), room: "" };
+      const data: Client = { id: crypto.randomUUID().slice(0, 8), room: "", name: "" };
       return server.upgrade(req, { data })
         ? undefined
         : new Response("upgrade failed", { status: 400 });
@@ -96,6 +125,7 @@ Bun.serve<Client>({
         }
 
         ws.data.room = room;
+        ws.data.name = cleanName(msg.name);
         const peers = [...set].map((p) => p.data.id);
         set.add(ws);
 
@@ -104,10 +134,22 @@ Bun.serve<Client>({
         // faz o broadcast por estado sobreviver a reconnect.
         ws.send(JSON.stringify({ t: "sharers", ids: [...sharersOf(room)] }));
         broadcast(room, { t: "peer-joined", id: ws.data.id }, ws);
+        // Nomes: snapshot pra quem chegou. Se ele trouxe nome, o mapa mudou pra
+        // sala inteira e um broadcast só atende os dois lados.
+        if (ws.data.name) publishNames(room);
+        else ws.send(JSON.stringify({ t: "names", map: namesOf(room) }));
         return;
       }
 
       if (!ws.data.room) return; // nada abaixo faz sentido fora de uma sala
+
+      if (msg.t === "rename") {
+        const name = cleanName(msg.name);
+        if (name === ws.data.name) return; // idempotente, não re-broadcasta
+        ws.data.name = name;
+        publishNames(ws.data.room);
+        return;
+      }
 
       if (msg.t === "share-start") {
         const set = sharersOf(ws.data.room);
@@ -151,6 +193,9 @@ Bun.serve<Client>({
 
       // Caminho do fechamento de aba: libera a vaga de sharer.
       const wasSharing = sharers.get(room)?.delete(ws.data.id);
+      // O nome mora no socket, então sair já o tirou do mapa; só falta contar
+      // pra sala. Quem saiu sem nome não muda nada e não gera broadcast à toa.
+      const hadName = !!ws.data.name;
 
       if (!set.size) {
         rooms.delete(room);
@@ -160,6 +205,7 @@ Bun.serve<Client>({
 
       broadcast(room, { t: "peer-left", id: ws.data.id });
       if (wasSharing) publishSharers(room);
+      if (hadName) publishNames(room);
     },
   },
 });

@@ -36,6 +36,8 @@ Suíte headless rodada contra o código atual (Bun 1.4), 0 falhas:
 - `peer-joined` chega nos demais; `peer-left` propaga no close
 - salas isoladas entre si
 - `signal` chega no destinatário certo e não ecoa no remetente
+- nomes de peers: `join`/`rename` saneados, `names` por estado, snapshot no
+  join, nome apagado ao sair da sala e nenhum vazamento entre salas
 - STUN devolve Binding Success Response com XOR-MAPPED-ADDRESS correto
   (testado com cliente `dgram` cru: transaction id espelhado, family IPv4,
   IP e porta decodificados batem)
@@ -73,6 +75,9 @@ maior incógnita do projeto e ainda não foi exercitada uma única vez.**
   "maintain-resolution"`, `contentHint = "detail"`.
 - Telemetria por tile a cada 1s: bitrate, resolução, fps, tipo de candidate, RTT.
 - Sala pelo hash da URL (`#nome`). Reconnect automático do WebSocket.
+- Campo de nome no cabeçalho: opcional, guardado no `localStorage`, mandado no
+  `join` e por `rename` com debounce de 400ms (blur e Enter mandam na hora).
+  Quem não escolhe nome aparece pelo id em toda a interface (`nameOf`).
 
 ### Lacunas reais
 
@@ -93,7 +98,8 @@ JSON sobre WebSocket em `/ws`. Campo discriminador é `t`.
 **Cliente → servidor**
 
 ```jsonc
-{ "t": "join",   "room": "sala" }
+{ "t": "join",   "room": "sala", "name": "gabriel" }   // name é opcional
+{ "t": "rename", "name": "gabriel" }
 { "t": "signal", "to": "<peerId>", "data": { /* opaco */ } }
 ```
 
@@ -103,8 +109,25 @@ JSON sobre WebSocket em `/ws`. Campo discriminador é `t`.
 { "t": "joined",      "id": "<meuId>", "peers": ["<id>", ...] }
 { "t": "peer-joined", "id": "<id>" }
 { "t": "peer-left",   "id": "<id>" }
+{ "t": "names",       "map": { "<id>": "gabriel", ... } }
 { "t": "signal",      "from": "<id>", "data": { /* opaco */ } }
 ```
+
+**Nomes.** São cosméticos: quem não escolher aparece pelo id, que é o único
+identificador que o servidor garante ser único. `peers` em `joined` continua
+sendo lista de ids crus, e o nome nunca viaja dentro de `data` — passaria pelo
+relay opaco, que por I2 o servidor não pode ler.
+
+O nome mora no socket (`ws.data.name`), não num `Map` à parte, e o mapa
+publicado é derivado dos sockets da sala na hora de publicar. Assim sair da sala
+já apaga o nome, sem um segundo caminho de limpeza que possa divergir do
+`close`. O broadcast é por estado, igual ao de `sharers`: o mapa inteiro vai
+junto a cada mudança, mais um snapshot pra quem acabou de entrar.
+
+Saneamento acontece no servidor, numa função só: espaços colapsados, aparado,
+cortado em 24 caracteres. Nome vazio depois disso não vira entrada no mapa — é
+também o caminho de apagar o próprio nome. `rename` com o mesmo nome não
+re-broadcasta, mesmo espírito do `share-start` idempotente.
 
 **Dentro de `data`** (o servidor nunca inspeciona isso):
 

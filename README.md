@@ -99,7 +99,8 @@ JSON sobre WebSocket em `/ws`, discriminado por `t`.
 Cliente → servidor:
 
 ```jsonc
-{ "t": "join",   "room": "sala" }
+{ "t": "join",   "room": "sala", "name": "gabriel" }   // name é opcional
+{ "t": "rename", "name": "gabriel" }
 { "t": "signal", "to": "<peerId>", "data": { /* opaco */ } }
 { "t": "share-start" }
 { "t": "share-stop" }
@@ -112,6 +113,7 @@ Servidor → cliente:
 { "t": "denied",       "reason": "room-full" }
 { "t": "peer-joined",  "id": "<id>" }
 { "t": "peer-left",    "id": "<id>" }
+{ "t": "names",        "map": { "<id>": "gabriel", ... } }
 { "t": "sharers",      "ids": ["<id>", ...] }
 { "t": "share-denied", "reason": "limit" }
 { "t": "signal",       "from": "<id>", "data": { /* opaco */ } }
@@ -123,8 +125,16 @@ sobrevive a reconnect e o cliente nunca precisa reconstruir estado a partir de
 deltas. Quem sai do conjunto tem tile e PC derrubados na hora, sem esperar o
 `connectionstatechange`.
 
+`names` segue a mesma ideia e é **derivado dos sockets**: o nome mora no socket
+do peer, não num `Map` à parte, e o mapa publicado é montado percorrendo a sala
+na hora. Sair da sala apaga o nome sozinho, sem um segundo caminho de limpeza
+pra divergir do `close`. Nome é opcional e só cosmético — quem não escolher
+aparece pelo id. O servidor colapsa espaços, apara e corta em 24 caracteres;
+nome vazio depois disso não entra no mapa, que é como se apaga o próprio nome.
+
 O servidor **nunca** olha dentro de `data`. É essa regra que permite mudar a
-negociação sem tocar no backend.
+negociação sem tocar no backend. O nome, por isso mesmo, viaja em campo próprio
+(`join`/`rename`) e nunca dentro de `data`.
 
 ## Salas
 
@@ -166,6 +176,10 @@ quebra a premissa do STUN e passa a exigir TURN.
   de link aparece nele antes de o número instantâneo explicar o motivo. Em tile
   largo ele fica no fim da linha de telemetria; em tile estreito, numa faixa de
   largura cheia logo acima dela.
+- O campo `eu/` no cabeçalho é o seu nome na sala: opcional, até 24 caracteres,
+  guardado no `localStorage` do navegador e reenviado no reconnect. Quem deixar
+  em branco aparece pelo id. É só rótulo — não há login nem identidade nenhuma
+  por trás dele.
 - Clique numa tela (ou no botão `focar`) para jogá-la no palco inteiro; as outras
   viram miniaturas numa trilha. `esc` sai do foco. `tela cheia` usa a API de
   fullscreen do navegador e some com toda a interface.

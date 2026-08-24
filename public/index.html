@@ -44,6 +44,23 @@
   .brand i.live { background: var(--accent); }
   .room { color: var(--dim); }
   .room b { color: var(--fg); font-weight: 400; }
+  /* Campo de nome: mesma linguagem da faixa de telemetria — rótulo apagado,
+     valor aceso. Sem caixa enquanto ninguém mexe nele, pra não competir com os
+     botões; a caixa aparece no hover e no foco. Largura fixa em ch porque
+     field-sizing: content ainda não é confiável e um campo elástico empurraria
+     as ações do cabeçalho pra outra linha a cada tecla. */
+  .me { color: var(--dim); }
+  .me input {
+    font: inherit; color: var(--fg); width: 13ch; padding: 2px 6px 2px 3px;
+    /* Desconta o padding esquerdo pra que, sem caixa, o nome fique colado no
+       "eu/" como o valor fica colado no "sala/". */
+    margin-left: -3px;
+    border: 1px solid transparent; border-radius: 4px; background: transparent;
+    transition: border-color .15s, background .15s;
+  }
+  .me input::placeholder { color: var(--dim); opacity: 1; }
+  .me input:hover { border-color: var(--line-hi); }
+  .me input:focus { border-color: var(--accent); background: var(--void); }
   .spacer { flex: 1; }
   .count { color: var(--dim); font-variant-numeric: tabular-nums; }
 
@@ -53,7 +70,7 @@
     transition: border-color .15s, color .15s, background .15s;
   }
   button:hover { border-color: var(--accent); color: var(--accent); }
-  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #08211d; }
   button.primary:hover { background: #6bd8c4; border-color: #6bd8c4; color: #08211d; }
   button.stop { border-color: var(--warn); color: var(--warn); background: transparent; }
@@ -72,6 +89,7 @@
   @media (max-width: 560px) {
     header { gap: 6px 10px; padding: 8px 12px; }
     header button { padding: 5px 10px; }
+    .me input { width: 11ch; }
     /* O espaçador vira a quebra: sala em cima, estado e ações embaixo. Sem
        isso o cabeçalho quebrava em três linhas e comia o palco. */
     .spacer { flex: 1 0 100%; height: 0; }
@@ -148,11 +166,14 @@
      uma faixa própria e aí sim estica, uma barra por fatia. */
   .tile.band .wave { position: static; width: 100%; height: 16px; }
   .tile.band .fields { padding-right: 9px; }
-  .fields .who { color: var(--fg); }
+  /* O nome tem até 24 caracteres e a faixa é flex com overflow escondido: sem
+     poder encolher, um nome longo empurraria bitrate, resolução e path pra fora
+     em vez de se cortar. */
+  .fields .who { color: var(--fg); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .fields .hi { color: var(--accent); }
   .fields .warn { color: var(--warn); }
 
-  /* Miniatura na trilha de foco: só o id cabe. */
+  /* Miniatura na trilha de foco: só cabe quem é, e ainda assim cortado. */
   .tile.mini .fields { height: 20px; font-size: 10.5px; padding: 0 7px; }
   /* Na miniatura o botão no canto tapava o vídeo: vira uma camada sobre o
      quadro todo, que é o alvo de clique de qualquer jeito. */
@@ -202,6 +223,8 @@
 <header>
   <span class="brand">tela<i id="live"></i></span>
   <span class="room">sala/<b id="roomName"></b></span>
+  <span class="me">eu/<input id="nameInput" maxlength="24" spellcheck="false"
+    autocomplete="off" aria-label="Seu nome nesta sala"></span>
   <button class="chip" id="focusChip" hidden></button>
   <span class="spacer"></span>
   <span class="count" id="count">conectando</span>
@@ -242,12 +265,14 @@ const peers = new Set();          // ids na sala
 const sending = new Map();        // peerId -> RTCPeerConnection (eu envio)
 const receiving = new Map();      // peerId -> RTCPeerConnection (eu recebo)
 const tiles = new Map();          // peerId -> elemento
+const names = new Map();          // peerId -> nome, segundo o servidor
 let sharers = new Set();          // quem está transmitindo, segundo o servidor
 let localStream = null;
 let iceServers = [];
 let maxSharers = 2;
 let maxCapturePixels = 1_440_000; // teto de pixels na captura; ver startShare()
 let myId = null;
+let myName = "";                  // nome escolhido aqui, já saneado
 let ws = null;
 let dead = false;                 // recebeu `denied`: para de reconectar
 
@@ -273,7 +298,9 @@ function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws`);
 
-  ws.onopen = () => ws.send(JSON.stringify({ t: "join", room: ROOM }));
+  // O nome vai no join, então o reconnect o restabelece sozinho: o servidor
+  // perdeu o socket antigo e com ele o nome, que morava lá.
+  ws.onopen = () => ws.send(JSON.stringify({ t: "join", room: ROOM, name: myName }));
   ws.onclose = () => {
     if (dead) return;
     $("count").textContent = "reconectando";
@@ -398,6 +425,17 @@ function handle(msg) {
     // Fui aceito como sharer: agora sim abre os envios.
     if (localStream && sharers.has(myId)) peers.forEach(openSend);
 
+    render();
+    return;
+  }
+
+  if (msg.t === "names") {
+    // Mapa inteiro toda vez, como os sharers: nada de deltas pra reconstruir.
+    names.clear();
+    for (const [id, raw] of Object.entries(msg.map || {})) {
+      const v = cleanName(raw);
+      if (v) names.set(id, v);
+    }
     render();
     return;
   }
@@ -604,7 +642,7 @@ function attachTile(id, stream, isSelf = false) {
         '<span class="size"></span><span class="path"></span></div>' +
       '</div>';
 
-    tile.querySelector(".who").textContent = isSelf ? "você" : id;
+    tile.querySelector(".who").textContent = isSelf ? "você" : nameOf(id);
     tile.querySelector(".frame").onclick = () => toggleFocus(id);
     tile.querySelector(".focus").onclick = (e) => {
       e.stopPropagation();
@@ -836,6 +874,62 @@ addEventListener("keydown", (e) => {
   }
 });
 
+/* ---------- nome ---------- */
+
+const NAME_KEY = "tela:nome";
+const nameField = $("nameInput");
+let renameTimer = 0;
+
+// Mesmo saneamento do servidor. Ele já corta em 24, mas o mapa chega de outra
+// máquina e o campo é digitado aqui: os dois lados cortam, ninguém confia.
+function cleanName(raw) {
+  return String(raw ?? "").replace(/\s+/g, " ").trim().slice(0, 24);
+}
+
+// Nome é opcional. Quem não escolheu aparece pelo id, que é o único
+// identificador que o servidor garante.
+function nameOf(id) {
+  return names.get(id) || id;
+}
+
+// localStorage lança em contexto restrito (cookies bloqueados, iframe sandbox).
+// Não lembrar o nome não é motivo pra derrubar a página.
+function loadName() {
+  try { return cleanName(localStorage.getItem(NAME_KEY)); } catch { return ""; }
+}
+
+function storeName(v) {
+  try { localStorage.setItem(NAME_KEY, v); } catch {}
+}
+
+// Uma mensagem por tecla seria desperdício: o broadcast atinge a sala inteira.
+// O debounce agrupa a digitação; blur e Enter mandam na hora.
+function pushName(now) {
+  const v = cleanName(nameField.value);
+  clearTimeout(renameTimer);
+  const go = () => {
+    if (v === myName) return;
+    myName = v;
+    storeName(v);
+    send({ t: "rename", name: v });
+  };
+  if (now) go();
+  else renameTimer = setTimeout(go, 400);
+}
+
+myName = loadName();
+nameField.value = myName;
+nameField.oninput = () => pushName(false);
+nameField.onblur = () => {
+  pushName(true);
+  nameField.value = myName;   // mostra o que a sala vê, já aparado
+};
+nameField.onkeydown = (e) => {
+  if (e.key !== "Enter") return;
+  pushName(true);
+  nameField.blur();
+};
+
 /* ---------- ui ---------- */
 
 function render() {
@@ -864,12 +958,18 @@ function render() {
   if (focusId && !tiles.has(focusId)) focusId = null;
   const chip = $("focusChip");
   chip.hidden = !focusId;
-  if (focusId) chip.textContent = tight ? "foco · esc" : `foco ${focusId === myId ? "você" : focusId} · esc`;
+  if (focusId) chip.textContent = tight ? "foco · esc" : `foco ${focusId === myId ? "você" : nameOf(focusId)} · esc`;
+
+  // O placeholder é o id: é o que a sala vê de quem não escolheu nome.
+  nameField.placeholder = myId || "seu nome";
 
   for (const [id, tile] of tiles) {
     const on = id === focusId;
     tile.classList.toggle("focused", on);
-    const who = id === myId ? "sua tela" : id;
+    const who = id === myId ? "sua tela" : nameOf(id);
+    // O nome pode mudar depois do tile existir, então a faixa é reescrita a
+    // cada render, não só na criação. textContent: nome é texto de terceiro.
+    tile.querySelector(".who").textContent = id === myId ? "você" : nameOf(id);
     const btn = tile.querySelector(".focus");
     btn.textContent = on ? "sair do foco" : "focar";
     btn.setAttribute("aria-label", on ? "Sair do foco" : `Focar em ${who}`);

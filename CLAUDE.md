@@ -29,7 +29,15 @@ do not survive, so start the server and run the suite in **one** shell command:
   timeout 90 bun run test.ts; kill $(cat /tmp/p)
 ```
 
-`test.ts` is a hand-rolled suite (75 assertions), not `bun test`. There is **no
+`test.ts` honours `PORT` and `STUN_PORT` too, so a suite run can dodge a server
+that is already up on 3000 — but the vars have to reach **both** processes:
+
+```bash
+(PORT=3200 STUN_PORT=3678 bun run server.ts > /tmp/s.log 2>&1 & echo $! > /tmp/p); sleep 2; \
+  PORT=3200 STUN_PORT=3678 timeout 90 bun run test.ts; kill $(cat /tmp/p)
+```
+
+`test.ts` is a hand-rolled suite (96 assertions), not `bun test`. There is **no
 filter flag** — to run a subset, comment out entries in the `/* ---------- run
 ---------- */` block at the bottom of `test.ts`.
 
@@ -59,6 +67,18 @@ JSON over WebSocket at `/ws`, discriminated by `t`. Full wire format is in
 The server **never inspects `msg.data`** — it only routes it to `msg.to`. This is
 what allows the WebRTC negotiation to change without touching the backend. Do
 not add validation, logging or transformation of `data`.
+
+Peer names (`join`'s optional `name`, `rename`, and the `names` broadcast) are
+**derived from the sockets**, not stored in a second map: the name lives in
+`ws.data.name` and `namesOf(room)` walks the room's socket set at publish time.
+Leaving the room therefore erases the name by itself, with no cleanup path that
+can drift from `close`. Same reasoning as the state-based `sharers` broadcast —
+the whole map ships on every change, plus a snapshot on join. Names are
+cosmetic: whoever picks none shows up by id, `joined.peers` stays an array of
+raw ids, and the name never travels inside `data` (the server could not read it
+there anyway). Sanitizing happens server-side in one function, `cleanName`:
+collapse whitespace, trim, cut at 24. Empty after that means no entry in the
+map, which is also how you erase your own name.
 
 ### Directional PeerConnections
 

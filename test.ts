@@ -1,5 +1,5 @@
 // Suíte headless. Cobre servidor estático, signaling, STUN, teto de peers (T1),
-// arbitragem de sharers (T2) e a parte servidor do reconnect (T3).
+// arbitragem de sharers (T2), nomes de peers e a parte servidor do reconnect (T3).
 //
 // WebRTC não é coberto aqui — precisa de browser e duas máquinas (T0).
 //
@@ -8,8 +8,13 @@
 
 import dgram from "node:dgram";
 
-const HTTP = "http://127.0.0.1:3000";
-const WS = "ws://127.0.0.1:3000/ws";
+// Mesmas variáveis que o servidor lê, pra poder subir a suíte numa porta livre
+// sem derrubar um servidor que já esteja rodando em 3000.
+const PORT = Number(process.env.PORT ?? 3000);
+const STUN_PORT = Number(process.env.STUN_PORT ?? 3478);
+
+const HTTP = `http://127.0.0.1:${PORT}`;
+const WS = `ws://127.0.0.1:${PORT}/ws`;
 
 const MAX_PEERS = 5;
 const MAX_SHARERS = 2;
@@ -42,7 +47,9 @@ async function peer(label: string) {
     ws.onerror = () => rej(new Error(`${label}: falha ao abrir`));
   });
   const send = (o: unknown) => ws.send(JSON.stringify(o));
-  const join = (room: string) => send({ t: "join", room });
+  // name é opcional no protocolo; só entra na mensagem quem passar.
+  const join = (room: string, name?: string) =>
+    send(name === undefined ? { t: "join", room } : { t: "join", room, name });
   const of = (t: string) => msgs.filter((m) => m.t === t);
   const first = (t: string) => of(t)[0];
   const last = (t: string) => of(t).at(-1);
@@ -81,7 +88,7 @@ async function testStatic() {
   const cfg = await fetch(HTTP + "/config");
   const json: any = await cfg.json();
   ok("GET /config responde 200", cfg.status === 200, cfg.status);
-  eq("/config devolve stunPort", json.stunPort, 3478);
+  eq("/config devolve stunPort", json.stunPort, STUN_PORT);
   eq("/config devolve maxPeers", json.maxPeers, MAX_PEERS);
   eq("/config devolve maxSharers", json.maxSharers, MAX_SHARERS);
   ok(
@@ -108,6 +115,7 @@ async function testJoin() {
   ok("joined traz um id", typeof joined?.id === "string" && joined.id.length > 0, joined?.id);
   eq("primeiro peer vê a sala vazia", joined?.peers, []);
   eq("primeiro peer recebe snapshot de sharers vazio", a.first("sharers")?.ids, []);
+  eq("primeiro peer recebe snapshot de names vazio", a.first("names")?.map, {});
 
   const b = await peer("b");
   b.join("r-join");
@@ -209,6 +217,7 @@ async function testMaxPeers() {
   eq("6º peer recebe denied", extra.first("denied")?.reason, "room-full");
   ok("6º peer não recebe joined", !extra.first("joined"), extra.msgs);
   ok("6º peer não recebe snapshot de sharers", !extra.first("sharers"));
+  ok("6º peer não recebe snapshot de names", !extra.first("names"));
 
   // Ninguém viu o sexto entrar: o primeiro peer só viu os outros 4.
   eq("6º não aparece na lista de ninguém", ps[0].of("peer-joined").length, MAX_PEERS - 1);
@@ -349,6 +358,116 @@ async function testShareBeforeJoin() {
   await settle();
 }
 
+/* ---------- nomes ---------- */
+
+/** Compara mapas de nome sem depender da ordem das chaves. */
+function eqMap(name: string, got: unknown, want: Record<string, string>) {
+  const norm = (o: any) => Object.entries(o ?? {}).sort(([x], [y]) => (x < y ? -1 : 1));
+  eq(name, norm(got), norm(want));
+}
+
+async function testNames() {
+  console.log("\nnomes de peers");
+
+  const a = await peer("a");
+  a.join("nomes", "gabriel");
+  await settle();
+  const aId = a.id()!;
+
+  eqMap("quem entra com nome já se vê no mapa", a.last("names")?.map, { [aId]: "gabriel" });
+
+  const b = await peer("b");
+  b.join("nomes");
+  await settle();
+  const bId = b.id()!;
+
+  // Snapshot: quem chega depois recebe os nomes de quem já estava.
+  eqMap("snapshot traz o nome de quem já estava", b.last("names")?.map, { [aId]: "gabriel" });
+  ok("quem entra sem nome não aparece no mapa", !(bId in (b.last("names")?.map ?? {})));
+
+  // Nome de quem entra chega nos demais.
+  const c = await peer("c");
+  c.join("nomes", "ana");
+  await settle();
+  const cId = c.id()!;
+  eqMap("nome de quem entra chega nos demais", a.last("names")?.map, {
+    [aId]: "gabriel",
+    [cId]: "ana",
+  });
+
+  // rename propaga pra sala inteira.
+  b.send({ t: "rename", name: "beatriz" });
+  await settle();
+  const esperado = { [aId]: "gabriel", [bId]: "beatriz", [cId]: "ana" };
+  eqMap("rename chega em quem já estava", a.last("names")?.map, esperado);
+  eqMap("rename chega em quem entrou depois", c.last("names")?.map, esperado);
+  eqMap("quem renomeou também recebe o mapa", b.last("names")?.map, esperado);
+
+  const antesIgual = a.of("names").length;
+  b.send({ t: "rename", name: "beatriz" });
+  await settle();
+  eq("rename com o mesmo nome não re-broadcasta", a.of("names").length, antesIgual);
+
+  // Saneamento: corte em 24 e colapso de espaços.
+  b.send({ t: "rename", name: "z".repeat(40) });
+  await settle();
+  eq("nome de 40 chars chega cortado em 24", a.last("names")?.map[bId], "z".repeat(24));
+
+  b.send({ t: "rename", name: "  ana   maria \n silva  " });
+  await settle();
+  eq("espaços colapsados e aparados", a.last("names")?.map[bId], "ana maria silva");
+
+  // Nome vazio é o caminho de apagar o próprio nome.
+  b.send({ t: "rename", name: "   " });
+  await settle();
+  ok("nome só de espaços some do mapa", !(bId in a.last("names").map), a.last("names").map);
+  eqMap("apagar o nome não mexe no dos outros", a.last("names")?.map, {
+    [aId]: "gabriel",
+    [cId]: "ana",
+  });
+
+  // join também sanea, não só rename.
+  const d = await peer("d");
+  d.join("nomes", "   " + "w".repeat(30));
+  await settle();
+  eq("nome no join também é saneado", a.last("names")?.map[d.id()!], "w".repeat(24));
+
+  // Nomes não vazam entre salas.
+  const e = await peer("e");
+  e.join("outra-sala", "carla");
+  await settle();
+  eqMap("outra sala só vê o próprio nome", e.last("names")?.map, { [e.id()!]: "carla" });
+  ok(
+    "nome não atravessa sala",
+    !Object.values(a.last("names")?.map ?? {}).includes("carla"),
+    a.last("names")?.map,
+  );
+
+  // Sair da sala tira o nome do mapa de quem fica — o nome mora no socket.
+  a.close();
+  await settle();
+  eqMap("saída remove o nome do mapa", c.last("names")?.map, {
+    [cId]: "ana",
+    [d.id()!]: "w".repeat(24),
+  });
+
+  // Quem sai sem nome não muda o mapa e não deve gerar broadcast.
+  const antesSaida = c.of("names").length;
+  b.close();
+  await settle();
+  eq("saída de quem não tem nome não re-broadcasta", c.of("names").length, antesSaida);
+
+  // rename fora de sala é ignorado, como share-start.
+  const orphan = await peer("orfao-nome");
+  orphan.send({ t: "rename", name: "ninguem" });
+  await settle();
+  ok("rename sem join é ignorado", orphan.of("names").length === 0, orphan.msgs);
+  ok("conexão sobrevive ao rename fora de sala", orphan.ws.readyState === WebSocket.OPEN);
+
+  orphan.close(); c.close(); d.close(); e.close();
+  await settle();
+}
+
 /* ---------- T3: reconnect (lado servidor) ---------- */
 
 async function testReconnect() {
@@ -413,7 +532,7 @@ async function testStun() {
   });
 
   await new Promise<void>((res) => sock.bind(0, "127.0.0.1", res));
-  sock.send(req, 3478, "127.0.0.1");
+  sock.send(req, STUN_PORT, "127.0.0.1");
 
   let buf: Buffer, localPort: number;
   try {
@@ -440,7 +559,7 @@ async function testStun() {
   eq("porta decodificada bate com a de origem", port, localPort);
   eq("IP decodificado bate com a origem", ip, "127.0.0.1");
 
-  sock.send(Buffer.from([1, 2, 3]), 3478, "127.0.0.1");
+  sock.send(Buffer.from([1, 2, 3]), STUN_PORT, "127.0.0.1");
   await Bun.sleep(200);
   ok("lixo em UDP não mata o STUN", true);
 
@@ -459,6 +578,7 @@ await testSharerArbitration();
 await testSharerLeave();
 await testSharerSnapshot();
 await testShareBeforeJoin();
+await testNames();
 await testReconnect();
 await testStun();
 
