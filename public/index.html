@@ -508,15 +508,68 @@ async function flush(pc) {
 // Params idênticos em todos os peers. NÃO assuma que isso faz o Chrome
 // reaproveitar uma única instância de encoder — o comportamento usual é um
 // encoder por PeerConnection. Se capacidade importar, medir CPU com 4 destinos.
+//
+// O que importa aqui é `maintain-resolution`. Sem ela o encoder troca pixels
+// por quadros: desce uma escada de frações da captura (¼, ⅜, ½, ¾) e demora
+// para voltar — medido, 30 a 40s para subir de volta num loopback de 1ms sem
+// perda, e com conteúdo em movimento não subiu nenhum degrau em 90s. Com ela em
+// vigor a resolução não se mexe nem quando o fps cai para 2. Um vídeo chegando
+// em 640×360 a 30fps é exatamente esta política ausente: 640×360 é o degrau ½
+// de 1280×720, não um tamanho de captura.
+//
+// Duas armadilhas, ambas já pagas:
+//
+// - Não fabrique `encodings`. `getParameters()` voltar com a lista vazia
+//   acontece, e preencher com `[{}]` muda o comprimento de `encodings` — que é
+//   precisamente o que a spec manda o `setParameters` recusar com
+//   `InvalidModificationError`. O browser estrito perdia a política inteira por
+//   causa da linha que existia para garanti-la.
+// - Não engula a falha. O `catch {}` que estava aqui transformava "a
+//   política não entrou" em "o vídeo está estranho" descoberto dias depois. O
+//   resultado agora fica em `pc.policy` e sobe para a tira de telemetria.
+//
+// `setParameters` resolver também não quer dizer que o campo pegou, então o
+// valor é lido de volta.
 async function applyEncoding(pc) {
   const sender = pc.getSenders().find((s) => s.track?.kind === "video");
   if (!sender) return;
+
   const params = sender.getParameters();
-  if (!params.encodings?.length) params.encodings = [{}];
-  params.encodings[0].maxBitrate = CAP_BITRATE;
-  params.encodings[0].maxFramerate = CAP_FRAMERATE;
+  const enc = params.encodings?.[0];
+  if (enc) {
+    enc.maxBitrate = CAP_BITRATE;
+    enc.maxFramerate = CAP_FRAMERATE;
+  }
   params.degradationPreference = "maintain-resolution";
-  try { await sender.setParameters(params); } catch {}
+
+  try {
+    await sender.setParameters(params);
+  } catch (err) {
+    // Segunda tentativa sem tocar em `encodings`: onde a estrutura é recusada,
+    // a preferência de degradação sozinha ainda pode passar — e é ela que
+    // segura a resolução. O teto de bitrate é o que se perde, e perder o teto
+    // custa banda; perder a política custa a imagem.
+    try {
+      const sozinha = sender.getParameters();
+      sozinha.degradationPreference = "maintain-resolution";
+      await sender.setParameters(sozinha);
+    } catch (err2) {
+      pc.policy = `política recusada: ${err2?.name || err2}`;
+      console.warn("applyEncoding falhou nas duas tentativas", err, err2);
+      return;
+    }
+  }
+
+  const got = sender.getParameters();
+  pc.policy =
+    got.degradationPreference === "maintain-resolution"
+      ? null
+      : "política não confirmada";
+  if (pc.policy) {
+    console.warn(
+      `applyEncoding: degradationPreference voltou ${JSON.stringify(got.degradationPreference)}`,
+    );
+  }
 }
 
 async function openSend(id) {
@@ -561,6 +614,10 @@ async function route(from, data) {
     if (!pc) return;
     await pc.setRemoteDescription(data.sdp);
     await flush(pc);
+    // De novo agora que a negociação fechou: na oferta o `getParameters()` de
+    // alguns browsers ainda volta com `encodings` vazio, e o que se conseguir
+    // aplicar ali é menos do que se consegue aqui. É idempotente.
+    await applyEncoding(pc);
     return;
   }
 
@@ -1241,25 +1298,50 @@ setInterval(async () => {
   // Tile próprio: agrega upload de todos os peers
   const self = tiles.get(myId);
   if (self && !self.classList.contains("peer") && sending.size) {
-    let total = 0;
+    let total = 0, saiW = 0, saiH = 0, limite = "", politica = "";
     for (const [id, pc] of sending) {
       const stats = await pc.getStats();
       stats.forEach((r) => {
         if (r.type === "outbound-rtp" && r.kind === "video") {
           const b = rate("tx:" + id, r.bytesSent || 0);
           if (b) total += b;
+          // O pior destino é o que interessa: um encoder que desceu de degrau é
+          // o que quem compartilha precisa ver, mesmo que os outros estejam bem.
+          if (r.frameWidth && (!saiW || r.frameWidth < saiW)) {
+            saiW = r.frameWidth;
+            saiH = r.frameHeight;
+          }
+          if (r.qualityLimitationReason && r.qualityLimitationReason !== "none") {
+            limite = r.qualityLimitationReason;
+          }
         }
       });
+      if (pc.policy) politica = pc.policy;
     }
     // Resolução de captura efetiva ao lado do número de destinos: deixa o cap
     // auditável a olho. Se o Chrome ignorar o applyConstraints numa tela real,
     // aparece aqui na hora, em vez de virar CPU a 100% sem explicação.
+    //
+    // E ao lado dela o que está de fato *saindo* do encoder, mas só quando
+    // difere — captura certa com saída um degrau abaixo é o diagnóstico
+    // inteiro, e quem causava o colapso era justamente quem não o via: o
+    // recebedor enxergava 640×360, o sharer só enxergava a própria captura.
+    // `qualityLimitationReason` diz de quem é a culpa, banda ou CPU.
     const cap = localStream?.getVideoTracks()[0]?.getSettings();
-    const capTxt = cap?.width && cap?.height ? `${cap.width}×${cap.height} · ` : "";
+    const capTxt = cap?.width && cap?.height ? `${cap.width}×${cap.height}` : "";
+    const caiu = saiW && cap?.width && saiW < cap.width;
+    const detalhe = (caiu ? ` → ${saiW}×${saiH}` : "") + (limite ? ` ${limite}` : "");
     self.querySelector(".rate").textContent = "↑ " + (fmt(total) || "--");
-    self.querySelector(".size").textContent =
-      capTxt + `${sending.size} destino${sending.size > 1 ? "s" : ""}`;
-    self.querySelector(".path").textContent = "";
+    const size = self.querySelector(".size");
+    size.textContent =
+      (capTxt ? capTxt + detalhe + " · " : "") +
+      `${sending.size} destino${sending.size > 1 ? "s" : ""}`;
+    size.className = "size" + (caiu || limite ? " warn" : "");
+    // O campo de caminho não serve para o tile próprio (não há par ICE do qual
+    // falar), então é onde a política de encoding cabe sem custar layout.
+    const via = self.querySelector(".path");
+    via.textContent = politica || "";
+    via.className = "path" + (politica ? " warn" : "");
     push(myId, total);
   }
 }, 1000);
