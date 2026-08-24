@@ -2,9 +2,9 @@
 /* CLI do screen-share.
 
    O shebang é bun, não node: o servidor usa Bun.serve para o WebSocket e não
-   há equivalente em Node. Quem rodar `npx screen-share` sem Bun instalado
-   recebe `env: bun: No such file or directory` — seco, mas nomeia o que
-   falta. O comando documentado é `bunx screen-share`.
+   há equivalente em Node. Quem rodar `npx @thoth-dev/screen-share` sem Bun
+   instalado recebe `env: bun: No such file or directory` — seco, mas nomeia
+   o que falta. O comando documentado é `bunx @thoth-dev/screen-share`.
 
    Nada aqui é lógica de servidor: isto lê flags, decide primeiro plano ou
    segundo, e entrega o resto ao server.ts. */
@@ -39,7 +39,7 @@ const VERSAO: string = JSON.parse(readFileSync(path.join(RAIZ, "package.json"), 
 
 const AJUDA = `screen-share ${VERSAO} — compartilhamento de tela P2P, sem conta e sem servidor de mídia
 
-  bunx screen-share [flags]
+  bunx @thoth-dev/screen-share [flags]
 
   -p, --port <n>       porta HTTP (padrão 3000)
       --stun-port <n>  porta UDP do STUN (padrão 3478)
@@ -430,7 +430,7 @@ if (bg) {
     `  http        http://localhost:${opts.port}\n` +
     `  stun  udp   :${opts.stunPort}\n` +
     `  pid         ${pid}\n\n` +
-    `Encerrar: bunx screen-share --stop --port ${opts.port}\n`
+    `Encerrar: bunx @thoth-dev/screen-share --stop --port ${opts.port}\n`
   );
   process.exit(0);
 }

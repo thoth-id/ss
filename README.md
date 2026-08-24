@@ -5,7 +5,7 @@ pequeno dentro de uma rede que você já confia (ex.: um tailnet Tailscale). Sem
 TURN, sem SFU, sem conta, sem servidor de mídia: o servidor só faz relay de
 signaling e responde STUN — o vídeo vai direto de um navegador a outro.
 
-Empacotado para o npm sob o nome **`screen-share`** — ainda não publicado.
+Empacotado para o npm sob o nome **`@thoth-dev/screen-share`** — ainda não publicado.
 
 ## Instalar e rodar
 
@@ -18,11 +18,11 @@ e sem `dist/`, e é o Bun que os executa direto.
 > `bun run bin/cli.ts`, com as mesmas flags.
 
 ```bash
-bunx screen-share
+bunx @thoth-dev/screen-share
 ```
 
 Sobe HTTP + WebSocket de signaling em `:3000` e STUN em UDP `:3478`.
-`npx screen-share` também funciona **se** Bun já estiver instalado na máquina;
+`npx @thoth-dev/screen-share` também funciona **se** Bun já estiver instalado na máquina;
 sem Bun, o shebang (`#!/usr/bin/env bun`) falha com
 `env: bun: No such file or directory` — seco, mas nomeia o que falta.
 
@@ -47,7 +47,7 @@ O STUN roda em UDP 3478 direto no IP do tailnet, fora do `tailscale serve`
 ## Flags
 
 ```bash
-bunx screen-share [flags]
+bunx @thoth-dev/screen-share [flags]
 ```
 
 | flag | padrão | o que faz |
@@ -143,7 +143,7 @@ serializáveis lá.
 | `--peers` / `MAX_PEERS` | 5 | 6º peer recebe `denied` e não entra na sala |
 | `--sharers` / `MAX_SHARERS` | 3 | 4ª tentativa de compartilhar recebe `share-denied` |
 
-Para permitir um sharer só, `bunx screen-share --sharers 1`. Nada mais muda.
+Para permitir um sharer só, `bunx @thoth-dev/screen-share --sharers 1`. Nada mais muda.
 
 ## Protocolo
 
@@ -203,7 +203,7 @@ A sala vem do hash da URL: `/#retro`, `/#pair`. Sem hash, cai em `sala`.
 | `MAX_SHARERS` | 3 | quantos transmitem ao mesmo tempo |
 | `MAX_CAPTURE_PIXELS` | 1440000 | teto de pixels da captura |
 
-Rodando via `bunx screen-share`, essas variáveis são as flags da seção acima —
+Rodando via `bunx @thoth-dev/screen-share`, essas variáveis são as flags da seção acima —
 o CLI só as repassa por ambiente ao `server.ts`, o que mantém `bun run
 server.ts` funcionando sozinho, sem o CLI no meio.
 

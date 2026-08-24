@@ -1,6 +1,9 @@
 {
-  "name": "screen-share",
+  "name": "@thoth-dev/screen-share",
   "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Compartilhamento de tela P2P entre navegadores. Sem SFU, sem TURN, sem conta, sem dependência.",
   "keywords": [
     "screen-sharing",

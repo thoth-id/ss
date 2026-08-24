@@ -8,15 +8,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Tailscale tailnet. Bun + TypeScript, **zero dependencies**, no build step, no
 `npm install`. Four source files total.
 
-It is packaged for npm as **`screen-share`**, runnable with `bunx
-screen-share` — **once published, which has not happened yet**. Nothing about
-the stack changed for that: the package still
-ships `.ts` as written, and Bun still runs it directly — no transpilation, no
-`dist/`. `bin/cli.ts` is the published entry point (`bin.screen-share` in
+It is packaged for npm as **`@thoth-dev/screen-share`**, runnable with `bunx
+@thoth-dev/screen-share` — **once published, which has not happened yet**.
+Nothing about the stack changed for that: the package still ships `.ts` as
+written, and Bun still runs it directly — no transpilation, no `dist/`.
+`bin/cli.ts` is the published entry point (`bin.screen-share` in
 `package.json`); it only parses flags and hands the real work to `server.ts`.
-The project's internal name stays `tela` — repo, UI strings and `PLANO.md`
-keep saying `tela`; only the package name and the CLI command are
-`screen-share`. Be consistent about which is which when writing docs.
+
+Three names, three jobs: the project's internal name stays `tela` — repo, UI
+strings and `PLANO.md` keep saying `tela`. The **package name**,
+`@thoth-dev/screen-share`, is what `npm install`, `bun add` and `bunx` take, and
+what appears in the npmjs.com URL — the org scope exists because a plain
+`screen-share` collided with existing package names on the registry. The
+**command name**, `screen-share`, is unchanged and unscoped, because `bin` is
+keyed by the command, not the package: once installed, the executable on
+`PATH` is `screen-share`, and the CLI's own `--help`, `--stop` and pidfiles all
+refer to itself that way. Only the not-yet-installed, run-once-via-`bunx` case
+needs the package name; everything downstream of installation uses the command
+name. Be consistent about which is which when writing docs.
 
 `PLANO.md` is the authoritative spec and task list. Read it before changing
 behavior — it records why each design decision exists, and section 5 lists

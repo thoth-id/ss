@@ -26,8 +26,8 @@ public/
 ```
 
 Rodar direto do repo: `bun run server.ts`. Sobe HTTP em `:3000` e STUN em UDP
-`:3478`. Empacotado para o npm sob o nome `screen-share`; publicado, o comando
-passa a ser `bunx screen-share` (seção 11).
+`:3478`. Empacotado para o npm sob o nome `@thoth-dev/screen-share`; publicado, o comando
+passa a ser `bunx @thoth-dev/screen-share` (seção 11).
 
 ## 3. Estado atual
 
@@ -448,7 +448,7 @@ voltou `prflx` em vez do `srflx` que o T0 esperava. Não corrigido; registrado.
 
 ## 11. Empacotamento npm
 
-O projeto virou publicável no registry do npm sob o nome **`screen-share`**.
+O projeto virou publicável no registry do npm sob o nome **`@thoth-dev/screen-share`**.
 Isso mudou só a forma de distribuir e invocar; não mudou o stack. Uma spec e
 um plano mais ambiciosos foram escritos antes disso e avaliaram portar o
 servidor para `node:http` com um WebSocket escrito à mão, para tirar a
@@ -459,8 +459,8 @@ ponta: `bin/cli.ts`, `server.ts` e `stun.ts` são publicados como escritos, sem
 transpilação e sem `dist/`, e é o Bun que os executa direto — os dois
 documentos acima registram uma exploração descartada, não o desenho atual.
 
-**Como se roda.** `bunx screen-share [flags]`. O shebang do `bin/cli.ts` é
-`#!/usr/bin/env bun`. Quem roda `npx screen-share` numa máquina sem Bun recebe
+**Como se roda.** `bunx @thoth-dev/screen-share [flags]`. O shebang do `bin/cli.ts` é
+`#!/usr/bin/env bun`. Quem roda `npx @thoth-dev/screen-share` numa máquina sem Bun recebe
 `env: bun: No such file or directory` — seco, mas nomeia o que falta; com Bun
 instalado, `npx` funciona igual a `bunx`.
 
@@ -509,6 +509,8 @@ serve a página real.
 
 **O que não muda.** `PLANO.md` continua descrevendo o projeto pelo nome
 interno `tela` — repositório, UI e este documento seguem `tela`; só o pacote
-publicado e o comando de CLI são `screen-share`. As seções 5 (invariantes) e
+publicado, `@thoth-dev/screen-share`, e o comando de CLI, `screen-share`
+(inalterado — `bin` é chaveado pelo nome do comando, não do pacote), saem
+desse padrão. As seções 5 (invariantes) e
 9–10 (medições de CPU) descrevem `server.ts`/`stun.ts` e continuam valendo sem
 alteração — nada no empacotamento toca em signaling, mídia ou STUN.
