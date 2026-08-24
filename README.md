@@ -1,0 +1,148 @@
+# tela
+
+Compartilhamento de tela P2P dentro de um tailnet. Sem TURN, sem SFU, sem conta, sem áudio.
+
+## Rodar
+
+```bash
+bun server.ts
+```
+
+Depois, na mesma máquina:
+
+```bash
+tailscale serve --bg 3000
+```
+
+Isso publica `https://<maquina>.<tailnet>.ts.net` com cert válido do Let's Encrypt,
+acessível só de dentro do tailnet. **Esse passo não é opcional:** `getDisplayMedia`
+só existe em secure context, então servir em `http://100.64.x.y:3000` faz a API
+sumir do `navigator.mediaDevices`.
+
+O `tailscale serve` precisa que HTTPS esteja habilitado no tailnet
+(admin console → **DNS → Enable HTTPS**). Sem isso, `tailscale cert` responde
+`HTTPS cert support is not enabled` e o serve não sobe.
+
+O STUN roda em UDP 3478 direto no IP do tailnet, fora do `tailscale serve`
+(que só proxia TCP). Se você tem ACL restritiva no tailnet, libere 3478/udp.
+
+## Testar
+
+```bash
+(bun run server.ts > /tmp/s.log 2>&1 & echo $! > /tmp/p); sleep 2; \
+  timeout 90 bun run test.ts; kill $(cat /tmp/p)
+```
+
+Cobre estático, signaling, teto de peers, arbitragem de sharers e o wire format
+do STUN — tudo headless, sem browser. **WebRTC não é coberto:** ICE fechando
+sobre IPs 100.x só se verifica com duas máquinas de verdade no tailnet e
+`chrome://webrtc-internals`.
+
+## Por que tem um STUN aqui
+
+O Chrome esconde host candidates de IP privado atrás de nomes mDNS (`.local`),
+e IP de Tailscale cai na faixa CGNAT 100.64/10, que ele trata como privado.
+mDNS depende de multicast, multicast não atravessa o tailnet, o peer remoto
+nunca resolve o nome e o ICE falha em silêncio.
+
+Um STUN dentro do tailnet devolve o 100.x do peer como srflx candidate, que não
+sofre obfuscation. São 40 linhas em `stun.ts` e é o que faz a coisa conectar.
+
+## Topologia
+
+Star por sharer, não mesh. Quem compartilha abre um `RTCPeerConnection` por
+viewer. Com 1 sharer e 4 viewers: 4 conexões, upload = 4 × bitrate.
+
+`CAP_BITRATE` está em 1.5 Mbps por peer (~6 Mbps de upload com 4 viewers).
+
+As PeerConnections são **direcionais**: `sending` e `receiving` são maps
+separados e nunca existe uma PC bidirecional. Cada PC tem um offerer único, o
+que elimina glare e dispensa perfect negotiation. Não unifique os dois maps.
+
+Os params de encoding são idênticos em todos os peers, mas **não presuma que
+isso faz o Chrome reaproveitar uma única instância de encoder** — o
+comportamento usual é um encoder por PeerConnection. Isso nunca foi medido
+aqui. Se capacidade importar, meça CPU com 4 destinos e compare com 1 antes de
+decidir qualquer coisa.
+
+Com `MAX_SHARERS = 2` o pior caso são 2 sharers × 4 viewers = 8 conexões e 2
+encoders por máquina que transmite. Se um dia N pessoas compartilharem ao mesmo
+tempo, vira N² e você precisa de um SFU (mediasoup, LiveKit).
+
+## Limites
+
+Ambos são constantes no topo do `server.ts`, e o servidor é a única autoridade:
+é o único ponto que vê a sala inteira, então dois cliques simultâneos em
+máquinas diferentes só são serializáveis lá.
+
+| constante | valor | o que faz |
+|---|---|---|
+| `MAX_PEERS` | 5 | 6º peer recebe `denied` e não entra na sala |
+| `MAX_SHARERS` | 2 | 3ª tentativa de compartilhar recebe `share-denied` |
+
+Para permitir um sharer só, troque `MAX_SHARERS` para 1. Nada mais muda.
+
+## Protocolo
+
+JSON sobre WebSocket em `/ws`, discriminado por `t`.
+
+Cliente → servidor:
+
+```jsonc
+{ "t": "join",   "room": "sala" }
+{ "t": "signal", "to": "<peerId>", "data": { /* opaco */ } }
+{ "t": "share-start" }
+{ "t": "share-stop" }
+```
+
+Servidor → cliente:
+
+```jsonc
+{ "t": "joined",       "id": "<meuId>", "peers": ["<id>", ...] }
+{ "t": "denied",       "reason": "room-full" }
+{ "t": "peer-joined",  "id": "<id>" }
+{ "t": "peer-left",    "id": "<id>" }
+{ "t": "sharers",      "ids": ["<id>", ...] }
+{ "t": "share-denied", "reason": "limit" }
+{ "t": "signal",       "from": "<id>", "data": { /* opaco */ } }
+```
+
+`sharers` é broadcast **baseado em estado**: manda o conjunto inteiro toda vez
+que ele muda, mais um snapshot pra quem acabou de entrar. É idempotente,
+sobrevive a reconnect e o cliente nunca precisa reconstruir estado a partir de
+deltas. Quem sai do conjunto tem tile e PC derrubados na hora, sem esperar o
+`connectionstatechange`.
+
+O servidor **nunca** olha dentro de `data`. É essa regra que permite mudar a
+negociação sem tocar no backend.
+
+## Salas
+
+A sala vem do hash da URL: `/#retro`, `/#pair`. Sem hash, cai em `sala`.
+
+## Configuração
+
+| env | default | o que faz |
+|---|---|---|
+| `PORT` | 3000 | HTTP + WebSocket de signaling |
+| `STUN_PORT` | 3478 | STUN UDP |
+
+`GET /config` devolve `stunPort`, `maxPeers` e `maxSharers` pro cliente, então
+os limites não ficam duplicados no HTML.
+
+## Segurança
+
+Não há autenticação, e é intencional: **o tailnet é a camada de auth**. Não
+adicione Funnel, port forwarding ou bind público sem antes implementar auth de
+verdade. Fora do tailnet os peers também deixam de compartilhar rede, o que
+quebra a premissa do STUN e passa a exigir TURN.
+
+## Ajustes que valem a pena
+
+- `contentHint = "detail"` já está setado: prioriza nitidez de texto sobre fluidez.
+  Se for compartilhar vídeo em vez de código, troque para `"motion"`.
+- `degradationPreference = "maintain-resolution"` mantém a resolução e derruba
+  o framerate sob pressão. Para código é o que você quer.
+- A faixa de telemetria embaixo de cada tile mostra bitrate, resolução, fps,
+  tipo de candidate e RTT. Se aparecer `host` em vez de `srflx`, os dois peers
+  estão na mesma LAN física e o STUN nem foi necessário.

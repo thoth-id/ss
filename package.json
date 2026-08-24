@@ -1,0 +1,12 @@
+{
+  "name": "tela",
+  "version": "0.1.0",
+  "description": "Compartilhamento de tela P2P dentro de um tailnet Tailscale. Sem SFU, sem TURN, sem conta.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run server.ts",
+    "test": "(bun run server.ts > /tmp/tela-test.log 2>&1 & echo $! > /tmp/tela-test.pid); sleep 2; bun run test.ts; rc=$?; kill \"$(cat /tmp/tela-test.pid)\" 2>/dev/null; exit $rc"
+  },
+  "license": "UNLICENSED"
+}

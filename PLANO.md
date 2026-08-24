@@ -1,0 +1,287 @@
+# Plano de execução: `tela` (screen share P2P sobre Tailscale)
+
+Documento auto-contido. Quem executar não participou das conversas anteriores.
+
+---
+
+## 1. O que é
+
+Compartilhamento de tela browser-a-browser, sem áudio, para um grupo pequeno
+(alvo: 5 pessoas) dentro de um tailnet Tailscale. Mesh WebRTC puro, sem SFU.
+
+O servidor faz três coisas e só: serve o HTML estático, faz relay opaco de
+signaling por WebSocket, e responde STUN. Ele **nunca** toca em mídia.
+
+## 2. Stack e layout
+
+Bun + TypeScript, sem dependências externas. Nada de npm install.
+
+```
+server.ts        Bun.serve: estático + /config + WebSocket de signaling
+stun.ts          servidor STUN mínimo (~50 linhas, node:dgram)
+public/
+  index.html     cliente inteiro: HTML + CSS + JS, arquivo único
+```
+
+Rodar: `bun run server.ts`. Sobe HTTP em `:3000` e STUN em UDP `:3478`.
+
+## 3. Estado atual
+
+### Verificado funcionando
+
+Suíte headless rodada contra o código atual (Bun 1.4), 0 falhas:
+
+- servidor sobe, serve `index.html`, responde `/config`, 404 em rota inexistente
+- `join` responde `joined` com id e lista de peers
+- `peer-joined` chega nos demais; `peer-left` propaga no close
+- salas isoladas entre si
+- `signal` chega no destinatário certo e não ecoa no remetente
+- STUN devolve Binding Success Response com XOR-MAPPED-ADDRESS correto
+  (testado com cliente `dgram` cru: transaction id espelhado, family IPv4,
+  IP e porta decodificados batem)
+
+### NÃO verificado
+
+Nada de WebRTC foi testado. Não houve browser, `getDisplayMedia`, segunda
+máquina nem tailnet no ambiente de teste. **ICE fechando sobre IPs 100.x é a
+maior incógnita do projeto e ainda não foi exercitada uma única vez.**
+
+### Já implementado no cliente (não refazer)
+
+- Modelo direcional de PeerConnections: maps separados `sending` e `receiving`.
+  Nunca existe PC bidirecional. Cada PC tem um offerer único, então não há glare
+  e não é preciso perfect negotiation. **Não mexer nisso.**
+- ICE candidates carregam `dir: "tx" | "rx"` (ponto de vista do remetente,
+  invertido no receptor) para desambiguar de qual das duas PCs vieram.
+- Fila de ICE candidates chegados antes de `setRemoteDescription` (`pc.pending`).
+- Grid de tiles: já suporta N streams simultâneos na tela.
+- `maxBitrate` 1.5 Mb/s, `maxFramerate` 30, `degradationPreference:
+  "maintain-resolution"`, `contentHint = "detail"`.
+- Telemetria por tile a cada 1s: bitrate, resolução, fps, tipo de candidate, RTT.
+- Sala pelo hash da URL (`#nome`). Reconnect automático do WebSocket.
+
+### Lacunas reais
+
+1. Servidor não tem teto de peers por sala. Aceitou 7 numa sala de 5 sem reclamar.
+2. Não existe arbitragem de quem pode compartilhar. Qualquer número de pessoas
+   pode transmitir ao mesmo tempo. Com 5 pessoas todas compartilhando são 20
+   PeerConnections e 4 encoders por máquina.
+3. `stopShare()` fecha as PCs locais mas não avisa ninguém. O tile do outro lado
+   só some quando o `connectionstatechange` cai sozinho, o que demora.
+4. Reconnect gera `myId` novo sem derrubar as PCs antigas. Vaza conexão.
+
+---
+
+## 4. Protocolo atual (wire format)
+
+JSON sobre WebSocket em `/ws`. Campo discriminador é `t`.
+
+**Cliente → servidor**
+
+```jsonc
+{ "t": "join",   "room": "sala" }
+{ "t": "signal", "to": "<peerId>", "data": { /* opaco */ } }
+```
+
+**Servidor → cliente**
+
+```jsonc
+{ "t": "joined",      "id": "<meuId>", "peers": ["<id>", ...] }
+{ "t": "peer-joined", "id": "<id>" }
+{ "t": "peer-left",   "id": "<id>" }
+{ "t": "signal",      "from": "<id>", "data": { /* opaco */ } }
+```
+
+**Dentro de `data`** (o servidor nunca inspeciona isso):
+
+```jsonc
+{ "kind": "offer",  "sdp": {...} }
+{ "kind": "answer", "sdp": {...} }
+{ "kind": "ice",    "dir": "tx" | "rx", "candidate": {...} }
+```
+
+Manter `data` opaco no servidor é regra, não detalhe. É o que permite mudar a
+negociação sem tocar no backend.
+
+---
+
+## 5. Invariantes
+
+Não quebrar nenhuma destas. Cada uma existe por um motivo específico.
+
+**I1. Uma PeerConnection por sentido, nunca bidirecional.**
+Se A e B transmitem um pro outro, são duas PCs distintas. Uma PC compartilhada
+faria os dois criarem offer simultaneamente (glare) e exigiria perfect
+negotiation. O desenho atual torna isso impossível por construção.
+
+**I2. O servidor não olha dentro de `data`.**
+
+**I3. O STUN precisa continuar bindado em `0.0.0.0:3478`.**
+Ele existe porque o Chrome troca host candidates de IP privado por nomes mDNS
+`.local`, e a faixa CGNAT do Tailscale (100.64/10) conta como privada. mDNS
+depende de multicast, que não atravessa o tailnet, então esses candidates morrem
+em silêncio. O STUN devolve o 100.x como srflx, que não sofre obfuscation.
+`tailscale serve` só faz proxy de TCP/HTTP e **não** cobre o STUN UDP. Peers
+batem direto no `100.x:3478`.
+
+**I4. A aplicação nunca escuta na internet pública.**
+Não há autenticação no app, e é intencional: o tailnet é a camada de auth. Não
+adicionar Funnel, port forwarding ou bind público sem antes implementar auth de
+verdade. Fora do tailnet os peers também deixam de compartilhar rede, o que
+quebraria a premissa do STUN e passaria a exigir TURN.
+
+**I5. HTTPS via `tailscale serve`, não self-signed.**
+`getDisplayMedia` só existe em secure context. `tailscale serve --bg 3000` emite
+cert Let's Encrypt válido para o nome `.ts.net`.
+
+---
+
+## 6. Tarefas
+
+Executar em ordem. T0 vem antes de qualquer código.
+
+### T0 — Validar o baseline (bloqueia todo o resto)
+
+Sem isso, as tarefas seguintes podem estar polindo algo que não conecta.
+
+1. `bun run server.ts` numa máquina do tailnet.
+2. `tailscale serve --bg 3000` (HTTPS precisa estar habilitado no admin console
+   em DNS > Enable HTTPS).
+3. Abrir a URL `.ts.net` em duas máquinas diferentes do tailnet.
+4. Uma compartilha, a outra deve ver a tela.
+5. Ler o campo de path na telemetria do tile.
+
+**Aceite:** vídeo aparece do outro lado e o tipo de candidate é `host` ou
+`srflx`. Registrar qual foi.
+
+**Se falhar:** abrir `chrome://webrtc-internals`, achar a PC e ver em que estado
+o ICE parou. Sintoma esperado se o STUN não estiver sendo alcançado: só
+aparecem candidates com nome terminando em `.local` e o pair nunca chega a
+`succeeded`. Nesse caso confirmar que a UDP 3478 está acessível pelo 100.x
+(`nc -zvu <ip-tailnet> 3478`) e que o firewall local não está bloqueando.
+
+**Não prosseguir para T1 enquanto T0 não passar.**
+
+---
+
+### T1 — Teto de peers por sala
+
+`server.ts`. Constante `MAX_PEERS = 5`.
+
+No handler de `join`, se a sala já tem `MAX_PEERS`, responder
+`{ "t": "denied", "reason": "room-full" }` e **não** adicionar ao Set nem
+emitir `peer-joined`. O cliente mostra o motivo e não tenta reconectar em loop.
+
+Atenção: o reconnect automático atual reenvia `join` a cada 1.5s. Ao receber
+`denied`, o cliente precisa parar de reconectar, senão vira busy loop.
+
+**Aceite:** 6º peer recebe `denied`; os 5 primeiros seguem intactos; o 6º não
+aparece na lista de ninguém.
+
+---
+
+### T2 — Arbitragem de sharers (a tarefa principal)
+
+O servidor é o único ponto que vê a sala inteira, então a decisão mora nele.
+Dois cliques simultâneos em máquinas diferentes só são serializáveis num lugar.
+
+Constante `MAX_SHARERS = 2`. Deixar como constante para virar 1 trocando um
+número, sem refatorar nada.
+
+**Estado no servidor:** `sharers: Map<room, Set<peerId>>`.
+
+**Novas mensagens cliente → servidor:**
+
+```jsonc
+{ "t": "share-start" }
+{ "t": "share-stop" }
+```
+
+**Nova mensagem servidor → cliente (broadcast para a sala inteira):**
+
+```jsonc
+{ "t": "sharers", "ids": ["<id>", ...] }
+```
+
+Broadcast baseado em estado, não em evento. Manda o conjunto inteiro toda vez
+que ele muda. É idempotente, sobrevive a reconnect e evita o cliente ter que
+reconstruir estado a partir de deltas.
+
+Regras:
+
+- `share-start` com `sharers.size >= MAX_SHARERS` → responder só ao remetente
+  `{ "t": "share-denied", "reason": "limit" }`, não alterar o Set.
+- `share-start` aceito → adiciona ao Set, broadcast `sharers`.
+- `share-stop` → remove do Set, broadcast `sharers`.
+- `close` do socket → remove do Set se estiver lá, broadcast `sharers`.
+  Não esquecer deste. É o caminho do fechamento de aba.
+
+**No cliente:**
+
+- `startShare()` chama `getDisplayMedia` primeiro (o picker precisa do gesto do
+  usuário e não pode esperar round-trip), depois manda `share-start`. Se vier
+  `share-denied`, parar os tracks imediatamente, zerar `localStream` e mostrar
+  o motivo.
+- `stopShare()` manda `share-stop`.
+- Ao receber `sharers`, desabilitar o botão de compartilhar se o conjunto já
+  está cheio e eu não estou nele.
+- Ao receber `sharers`, derrubar tile e PC de `receiving` de qualquer id que
+  saiu do conjunto. Isso resolve a lacuna 3 de graça: o tile some na hora em vez
+  de esperar o `connectionstatechange`.
+
+**Aceite:**
+- 3ª tentativa de share recebe `share-denied` e o broadcast `sharers` nunca
+  passa de 2 ids.
+- Fechar a aba de um sharer libera a vaga.
+- Tile do sharer que parou some em menos de 1s nos outros.
+
+---
+
+### T3 — Reconnect limpo
+
+Hoje `ws.onclose` reconecta, recebe `joined` com `myId` novo, mas as PCs antigas
+continuam abertas apontando pro id velho.
+
+Em `joined`, se `myId` mudou em relação ao anterior, fechar e limpar tudo:
+`sending`, `receiving`, `tiles`. Se `localStream` ainda existe, reabrir os
+envios com os ids novos (o código atual já faz `peers.forEach(openSend)`, só
+falta a limpeza antes) e reenviar `share-start`.
+
+**Aceite:** derrubar a rede por 5s e voltar não deixa PC órfã
+(`sending.size + receiving.size` bate com o esperado) nem tile duplicado.
+
+---
+
+## 7. Como testar
+
+**Signaling e servidor: headless, sem browser.** Todas as regras de T1 e T2 são
+testáveis com clientes WebSocket puros em Bun, porque o servidor nunca inspeciona
+`data`. Padrão: abrir N `new WebSocket("ws://127.0.0.1:3000/ws")`, mandar `join`,
+coletar mensagens num array, dar `await Bun.sleep(300)` entre passos e assertar.
+
+Subir servidor e teste no mesmo comando de shell (processo em background numa
+invocação separada não sobrevive):
+
+```bash
+(bun run server.ts > /tmp/s.log 2>&1 & echo $! > /tmp/p); sleep 2; \
+  timeout 30 bun run test.ts; kill $(cat /tmp/p)
+```
+
+**WebRTC: só manualmente, com duas máquinas no tailnet.** Não há como cobrir
+isso headless aqui. `chrome://webrtc-internals` é a ferramenta.
+
+---
+
+## 8. Fora de escopo
+
+Não implementar sem pedido explícito: áudio, chat, gravação, SFU, TURN,
+autenticação, Funnel, persistência, mais de 5 peers.
+
+## 9. Ponto a verificar, não a confiar
+
+`applyEncoding()` tem um comentário afirmando que parâmetros idênticos em todos
+os peers fazem o Chrome reaproveitar uma única instância de encoder em vez de
+uma por conexão. **Isso não foi verificado e provavelmente está errado** — o
+comportamento usual é um encoder por PeerConnection. Não usar essa afirmação
+como base para decisão de capacidade. Se importar, medir uso de CPU com 4
+destinos e comparar com 1.

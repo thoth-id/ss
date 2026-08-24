@@ -1,0 +1,12 @@
+# Certs que o `tailscale cert` escreve no diretório atual.
+# Nunca devem ir pro repo — o `tailscale serve` gerencia os dele internamente.
+*.crt
+*.key
+*.pem
+
+# Logs e pids dos scripts de teste
+*.log
+*.pid
+
+node_modules/
+.DS_Store

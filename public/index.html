@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tela</title>
+<style>
+  :root {
+    --bg: #0e1316;
+    --panel: #151b20;
+    --line: #232c33;
+    --line-hi: #35424b;
+    --fg: #c3ccd2;
+    --dim: #6e7f8a;
+    --accent: #58c8b4;
+    --warn: #d9a441;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 13px/1.5 var(--mono);
+    -webkit-font-smoothing: antialiased;
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 16px; border-bottom: 1px solid var(--line);
+    background: var(--panel); flex: none; flex-wrap: wrap;
+  }
+  .brand { color: var(--fg); letter-spacing: .18em; text-transform: lowercase; }
+  .brand i {
+    display: inline-block; width: 6px; height: 6px; margin-left: 7px;
+    background: var(--dim); border-radius: 50%; vertical-align: 2px;
+    transition: background .3s;
+  }
+  .brand i.live { background: var(--accent); }
+  .room { color: var(--dim); }
+  .room b { color: var(--fg); font-weight: 400; }
+  .spacer { flex: 1; }
+  .count { color: var(--dim); font-variant-numeric: tabular-nums; }
+  button {
+    font: inherit; padding: 6px 14px; border-radius: 4px; cursor: pointer;
+    border: 1px solid var(--line-hi); background: transparent; color: var(--fg);
+    transition: border-color .15s, color .15s;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #08211d; }
+  button.primary:hover { background: #6bd8c4; border-color: #6bd8c4; color: #08211d; }
+  button.stop { border-color: var(--warn); color: var(--warn); background: transparent; }
+  button:disabled {
+    opacity: .4; cursor: not-allowed;
+    background: transparent; border-color: var(--line); color: var(--dim);
+  }
+  button:disabled:hover { border-color: var(--line); color: var(--dim); }
+
+  .notice {
+    flex: none; padding: 9px 16px; background: #241d10;
+    border-bottom: 1px solid #3d3016; color: var(--warn);
+  }
+  .notice[hidden] { display: none; }
+
+  main {
+    flex: 1; display: grid; gap: 12px; padding: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    align-content: start;
+  }
+  main:empty { display: none; }
+
+  .tile { border: 1px solid var(--line); border-radius: 4px; background: #000; overflow: hidden; }
+  .tile video { display: block; width: 100%; aspect-ratio: 16/9; object-fit: contain; background: #000; }
+  .tile.self video { opacity: .55; }
+  .meta {
+    display: flex; gap: 14px; padding: 7px 10px;
+    background: var(--panel); border-top: 1px solid var(--line);
+    color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .meta::-webkit-scrollbar { display: none; }
+  .meta .who { color: var(--fg); }
+  .meta .hi { color: var(--accent); }
+  .meta .warn { color: var(--warn); }
+
+  .empty {
+    flex: 1; display: flex; flex-direction: column; justify-content: center;
+    align-items: flex-start; gap: 10px; padding: 32px; color: var(--dim);
+    max-width: 620px;
+  }
+  .empty h1 { font: inherit; color: var(--fg); margin: 0; }
+  .empty p { margin: 0; }
+  .empty .row { display: flex; gap: 8px; margin-top: 8px; }
+  .empty[hidden] { display: none; }
+  code { color: var(--fg); }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="brand">tela<i id="live"></i></span>
+  <span class="room">sala/<b id="roomName"></b></span>
+  <span class="spacer"></span>
+  <span class="count" id="count">conectando</span>
+  <button id="copyBtn">Copiar link</button>
+  <button id="shareBtn" class="primary">Compartilhar tela</button>
+</header>
+
+<div class="notice" id="notice" hidden></div>
+
+<main id="grid"></main>
+
+<section class="empty" id="empty">
+  <h1>Ninguém compartilhando ainda.</h1>
+  <p>Clique em compartilhar tela para transmitir, ou mande o link desta página<br>pra quem vai assistir. Só quem está no tailnet consegue abrir.</p>
+  <p>Troque de sala editando o <code>#</code> da URL.</p>
+</section>
+
+<script>
+const ROOM = decodeURIComponent(location.hash.slice(1)) || "sala";
+const CAP_BITRATE = 1_500_000;   // por peer
+const CAP_FRAMERATE = 30;
+
+const $ = (id) => document.getElementById(id);
+$("roomName").textContent = ROOM;
+
+const peers = new Set();          // ids na sala
+const sending = new Map();        // peerId -> RTCPeerConnection (eu envio)
+const receiving = new Map();      // peerId -> RTCPeerConnection (eu recebo)
+const tiles = new Map();          // peerId -> elemento
+let sharers = new Set();          // quem está transmitindo, segundo o servidor
+let localStream = null;
+let iceServers = [];
+let maxSharers = 2;
+let myId = null;
+let ws = null;
+let dead = false;                 // recebeu `denied`: para de reconectar
+
+/* ---------- setup ---------- */
+
+async function boot() {
+  const cfg = await fetch("/config")
+    .then((r) => r.json())
+    .catch(() => ({ stunPort: 3478, maxSharers: 2 }));
+  maxSharers = cfg.maxSharers ?? 2;
+  // Avisa de cara, em vez de deixar a pessoa clicar num botão que não faz nada.
+  if (!canShare()) notice(whyCantShare());
+  render();
+  // O hostname aqui é o MagicDNS do tailnet, que resolve pro 100.x.
+  // O STUN devolve esse mesmo 100.x como srflx candidate.
+  iceServers = [{ urls: `stun:${location.hostname}:${cfg.stunPort}` }];
+  connect();
+}
+
+function connect() {
+  if (dead) return;
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen = () => ws.send(JSON.stringify({ t: "join", room: ROOM }));
+  ws.onclose = () => {
+    if (dead) return;
+    $("count").textContent = "reconectando";
+    setTimeout(connect, 1500);
+  };
+  ws.onmessage = (e) => handle(JSON.parse(e.data));
+}
+
+function send(o) {
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(o));
+}
+
+function signal(to, data) {
+  send({ t: "signal", to, data });
+}
+
+function notice(text) {
+  const el = $("notice");
+  el.textContent = text || "";
+  el.hidden = !text;
+}
+
+// getDisplayMedia só existe em secure context. http://100.x e http://192.168.x
+// NÃO contam; localhost e https:// contam. Sem isso a API nem aparece no
+// navigator.mediaDevices, e o clique no botão não teria o que chamar.
+function canShare() {
+  return typeof navigator.mediaDevices?.getDisplayMedia === "function";
+}
+
+function whyCantShare() {
+  if (canShare()) return "";
+  if (!window.isSecureContext) {
+    return (
+      `Sem HTTPS não é possível compartilhar: o navegador só expõe a captura de ` +
+      `tela em contexto seguro, e ${location.origin} não é um. Abra por ` +
+      `http://localhost:${location.port || 80} nesta máquina, ou publique com ` +
+      `"tailscale serve --bg ${location.port || 3000}" e use a URL .ts.net.`
+    );
+  }
+  return "Este navegador não expõe getDisplayMedia. Use Chrome, Edge ou Firefox no desktop.";
+}
+
+/* Derruba tudo: usado quando o servidor nos dá um id novo (reconnect). */
+function resetConnections() {
+  for (const pc of sending.values()) pc.close();
+  for (const pc of receiving.values()) pc.close();
+  sending.clear();
+  receiving.clear();
+  for (const id of [...tiles.keys()]) dropTile(id);
+  prev.clear();
+}
+
+function handle(msg) {
+  if (msg.t === "denied") {
+    dead = true;
+    ws?.close();
+    notice(
+      msg.reason === "room-full"
+        ? "Sala cheia. Espere alguém sair e recarregue a página."
+        : `Entrada recusada (${msg.reason}).`
+    );
+    $("count").textContent = "recusado";
+    $("shareBtn").disabled = true;
+    return;
+  }
+
+  if (msg.t === "joined") {
+    const previous = myId;
+    myId = msg.id;
+
+    // Reconnect: o id anterior morreu junto com o socket, e com ele todas as
+    // PCs que apontavam pra ele. Fecha antes de reabrir, senão vaza conexão.
+    if (previous && previous !== myId) resetConnections();
+
+    peers.clear();
+    msg.peers.forEach((id) => peers.add(id));
+
+    // Se estávamos transmitindo, o servidor já nos tirou do conjunto de
+    // sharers no close. Pede a vaga de novo; o envio começa quando o
+    // broadcast `sharers` confirmar.
+    if (localStream) {
+      attachTile(myId, localStream, true);
+      send({ t: "share-start" });
+    }
+    render();
+    return;
+  }
+
+  if (msg.t === "peer-joined") {
+    peers.add(msg.id);
+    if (localStream && sharers.has(myId)) openSend(msg.id);
+    render();
+    return;
+  }
+
+  if (msg.t === "peer-left") {
+    peers.delete(msg.id);
+    sending.get(msg.id)?.close();
+    receiving.get(msg.id)?.close();
+    sending.delete(msg.id);
+    receiving.delete(msg.id);
+    dropTile(msg.id);
+    render();
+    return;
+  }
+
+  if (msg.t === "sharers") {
+    const next = new Set(msg.ids);
+
+    // Quem saiu do conjunto: derruba a PC de recepção e o tile na hora, em vez
+    // de esperar o connectionstatechange cair sozinho.
+    for (const id of sharers) {
+      if (next.has(id) || id === myId) continue;
+      receiving.get(id)?.close();
+      receiving.delete(id);
+      dropTile(id);
+    }
+
+    sharers = next;
+
+    // Fui aceito como sharer: agora sim abre os envios.
+    if (localStream && sharers.has(myId)) peers.forEach(openSend);
+
+    render();
+    return;
+  }
+
+  if (msg.t === "share-denied") {
+    // Já tínhamos o stream do picker; não houve vaga, então descarta.
+    localStream?.getTracks().forEach((t) => t.stop());
+    localStream = null;
+    dropTile(myId);
+    notice(
+      msg.reason === "limit"
+        ? `Já tem ${maxSharers} pessoa${maxSharers > 1 ? "s" : ""} compartilhando. Espere alguém parar.`
+        : `Compartilhamento recusado (${msg.reason}).`
+    );
+    render();
+    return;
+  }
+
+  if (msg.t === "signal") route(msg.from, msg.data);
+}
+
+/* ---------- webrtc ---------- */
+
+function newPeer() {
+  const pc = new RTCPeerConnection({ iceServers });
+  pc.pending = [];
+  return pc;
+}
+
+async function flush(pc) {
+  for (const c of pc.pending.splice(0)) {
+    await pc.addIceCandidate(c).catch(() => {});
+  }
+}
+
+// Params idênticos em todos os peers. NÃO assuma que isso faz o Chrome
+// reaproveitar uma única instância de encoder — o comportamento usual é um
+// encoder por PeerConnection. Se capacidade importar, medir CPU com 4 destinos.
+async function applyEncoding(pc) {
+  const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+  if (!sender) return;
+  const params = sender.getParameters();
+  if (!params.encodings?.length) params.encodings = [{}];
+  params.encodings[0].maxBitrate = CAP_BITRATE;
+  params.encodings[0].maxFramerate = CAP_FRAMERATE;
+  params.degradationPreference = "maintain-resolution";
+  try { await sender.setParameters(params); } catch {}
+}
+
+async function openSend(id) {
+  if (sending.has(id) || !localStream || id === myId) return;
+
+  const pc = newPeer();
+  sending.set(id, pc);
+  pc.onicecandidate = (e) =>
+    e.candidate && signal(id, { kind: "ice", dir: "tx", candidate: e.candidate });
+
+  for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  await applyEncoding(pc);
+  signal(id, { kind: "offer", sdp: pc.localDescription });
+}
+
+async function route(from, data) {
+  if (data.kind === "offer") {
+    let pc = receiving.get(from);
+    if (!pc) {
+      pc = newPeer();
+      receiving.set(from, pc);
+      pc.onicecandidate = (e) =>
+        e.candidate && signal(from, { kind: "ice", dir: "rx", candidate: e.candidate });
+      pc.ontrack = (e) => attachTile(from, e.streams[0]);
+      pc.onconnectionstatechange = () => {
+        if (["failed", "closed"].includes(pc.connectionState)) dropTile(from);
+      };
+    }
+    await pc.setRemoteDescription(data.sdp);
+    await flush(pc);
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    signal(from, { kind: "answer", sdp: pc.localDescription });
+    return;
+  }
+
+  if (data.kind === "answer") {
+    const pc = sending.get(from);
+    if (!pc) return;
+    await pc.setRemoteDescription(data.sdp);
+    await flush(pc);
+    return;
+  }
+
+  if (data.kind === "ice") {
+    // dir é do ponto de vista de quem enviou, então inverte aqui.
+    const pc = data.dir === "tx" ? receiving.get(from) : sending.get(from);
+    if (!pc) return;
+    if (pc.remoteDescription) await pc.addIceCandidate(data.candidate).catch(() => {});
+    else pc.pending.push(data.candidate);
+  }
+}
+
+/* ---------- compartilhar ---------- */
+
+async function startShare() {
+  if (!canShare()) {
+    notice(whyCantShare());
+    return;
+  }
+
+  notice("");
+  let stream;
+  try {
+    // O picker precisa do gesto do usuário, então vem antes do round-trip.
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: CAP_FRAMERATE },
+      audio: false,
+    });
+  } catch (err) {
+    // Cancelar no picker é NotAllowedError e não merece aviso. Qualquer outra
+    // coisa é falha de verdade e precisa aparecer, em vez de morrer calada.
+    if (err?.name !== "NotAllowedError") {
+      notice(`Falha ao capturar a tela: ${err?.name || err}. ${err?.message || ""}`.trim());
+    }
+    return;
+  }
+
+  localStream = stream;
+  const track = stream.getVideoTracks()[0];
+  track.contentHint = "detail"; // prioriza nitidez de texto sobre fluidez
+  track.onended = stopShare;
+
+  attachTile(myId, stream, true);
+  // Nada é enviado até o servidor confirmar a vaga via broadcast `sharers`.
+  send({ t: "share-start" });
+  render();
+}
+
+function stopShare() {
+  send({ t: "share-stop" });
+  localStream?.getTracks().forEach((t) => t.stop());
+  localStream = null;
+  for (const pc of sending.values()) pc.close();
+  sending.clear();
+  dropTile(myId);
+  render();
+}
+
+/* ---------- ui ---------- */
+
+function attachTile(id, stream, isSelf = false) {
+  let tile = tiles.get(id);
+  if (!tile) {
+    tile = document.createElement("div");
+    tile.className = "tile" + (isSelf ? " self" : "");
+    tile.innerHTML =
+      '<video autoplay playsinline muted></video>' +
+      '<div class="meta"><span class="who"></span><span class="rate"></span>' +
+      '<span class="size"></span><span class="path"></span></div>';
+    tile.querySelector(".who").textContent = isSelf ? "você" : id;
+    tiles.set(id, tile);
+    $("grid").append(tile);
+  }
+  tile.querySelector("video").srcObject = stream;
+  render();
+}
+
+function dropTile(id) {
+  tiles.get(id)?.remove();
+  tiles.delete(id);
+  render();
+}
+
+function render() {
+  const n = peers.size;
+  // Mostra a ocupação de sharers junto: é a resposta pra "por que o botão
+  // está bloqueado?" sem precisar passar o mouse em cima.
+  const ocupacao = sharers.size ? ` · ${sharers.size}/${maxSharers} compartilhando` : "";
+  $("count").textContent = (n === 1 ? "1 peer" : `${n} peers`) + ocupacao;
+  $("empty").hidden = tiles.size > 0;
+  $("live").classList.toggle("live", !!localStream);
+
+  const btn = $("shareBtn");
+  const mine = !!localStream;
+  const full = !mine && sharers.size >= maxSharers;
+  btn.textContent = mine ? "Parar" : "Compartilhar tela";
+  btn.className = mine ? "stop" : "primary";
+  // Conjunto cheio e eu não estou nele: não há vaga pra pedir.
+  btn.disabled = dead || full || !canShare();
+  btn.title = !canShare() ? whyCantShare() : full ? "Limite de sharers atingido" : "";
+}
+
+$("shareBtn").onclick = () => (localStream ? stopShare() : startShare());
+$("copyBtn").onclick = async () => {
+  await navigator.clipboard.writeText(location.href);
+  $("copyBtn").textContent = "Copiado";
+  setTimeout(() => ($("copyBtn").textContent = "Copiar link"), 1400);
+};
+
+/* ---------- telemetria ---------- */
+
+const prev = new Map();
+
+function rate(key, bytes) {
+  const now = performance.now();
+  const last = prev.get(key);
+  prev.set(key, { bytes, now });
+  if (!last) return null;
+  const secs = (now - last.now) / 1000;
+  if (secs <= 0) return null;
+  return ((bytes - last.bytes) * 8) / secs;
+}
+
+function fmt(bps) {
+  if (bps == null) return "";
+  return bps >= 1e6 ? (bps / 1e6).toFixed(1) + " Mb/s" : Math.round(bps / 1e3) + " kb/s";
+}
+
+async function pathOf(pc) {
+  const stats = await pc.getStats();
+  const all = new Map();
+  stats.forEach((r) => all.set(r.id, r));
+  for (const r of all.values()) {
+    if (r.type === "candidate-pair" && r.state === "succeeded" && r.nominated) {
+      const local = all.get(r.localCandidateId);
+      const rtt = r.currentRoundTripTime;
+      return {
+        type: local?.candidateType ?? "?",
+        rtt: rtt != null ? Math.round(rtt * 1000) : null,
+      };
+    }
+  }
+  return null;
+}
+
+setInterval(async () => {
+  // Tiles recebidos
+  for (const [id, pc] of receiving) {
+    const tile = tiles.get(id);
+    if (!tile) continue;
+    const stats = await pc.getStats();
+    let bps = null, size = "", fps = 0;
+    stats.forEach((r) => {
+      if (r.type === "inbound-rtp" && r.kind === "video") {
+        bps = rate("rx:" + id, r.bytesReceived || 0);
+        fps = Math.round(r.framesPerSecond || 0);
+        if (r.frameWidth) size = `${r.frameWidth}×${r.frameHeight}`;
+      }
+    });
+    const path = await pathOf(pc);
+    tile.querySelector(".rate").textContent = "↓ " + (fmt(bps) || "--");
+    tile.querySelector(".size").textContent = size ? `${size} · ${fps}fps` : "";
+    const el = tile.querySelector(".path");
+    el.textContent = path ? `${path.type} · ${path.rtt ?? "--"}ms` : "negociando";
+    el.className = "path " + (path?.type === "relay" ? "warn" : path ? "hi" : "");
+  }
+
+  // Tile próprio: agrega upload de todos os peers
+  const self = tiles.get(myId);
+  if (self && sending.size) {
+    let total = 0;
+    for (const [id, pc] of sending) {
+      const stats = await pc.getStats();
+      stats.forEach((r) => {
+        if (r.type === "outbound-rtp" && r.kind === "video") {
+          const b = rate("tx:" + id, r.bytesSent || 0);
+          if (b) total += b;
+        }
+      });
+    }
+    self.querySelector(".rate").textContent = "↑ " + (fmt(total) || "--");
+    self.querySelector(".size").textContent = `${sending.size} destino${sending.size > 1 ? "s" : ""}`;
+    self.querySelector(".path").textContent = "";
+  }
+}, 1000);
+
+boot();
+</script>
+</body>
+</html>
