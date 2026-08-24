@@ -640,11 +640,36 @@ async function startShare() {
 
   notice("");
 
-  // Dica de teto já no picker, derivada do orçamento de pixels assumindo 16:9
-  // (1.440.000 px dá 1600×900). É só dica: captura de tela costuma vir na
-  // resolução nativa mesmo assim, por isso o ajuste exato vem depois, no track.
-  const hintW = Math.round(Math.sqrt((maxCapturePixels * 16) / 9) / 2) * 2;
-  const hintH = Math.round((hintW * 9) / 16 / 2) * 2;
+  // Teto pedido já no picker, derivado do orçamento de pixels E do aspecto real
+  // da tela. Assumir 16:9 aqui custava caro, por um motivo que não é óbvio: o
+  // navegador honra o pedido encaixando a fonte na caixa e preservando o
+  // aspecto DELA, nunca recortando. Numa tela 16:10, `height:{max:900}`
+  // entregava 1440×900 — 1.294.200 px, 90% do orçamento — e o corte é
+  // irreversível, porque o ajuste no track logo abaixo só encolhe.
+  //
+  // Pior: aquele ajuste nunca chegava a rodar. Ele só agia acima do orçamento,
+  // e a captura sempre nascia abaixo (1.294.200 em 16:10, 1.438.200 em 16:9).
+  // Quem aplicava o teto era esta caixa, sozinha, e aplicava errado.
+  //
+  // Medido nas seis geometrias: com o aspecto real, 16:10 entrega 1516×948
+  // (99,8% do orçamento) contra 1438×900 (89,9%) de antes, e 16:9 não muda.
+  //
+  // `screen` é o aspecto do MONITOR, não o da fonte escolhida no picker, e essa
+  // diferença tem um caso em que esta conta perde: monitor 16:10 compartilhando
+  // uma janela 16:9 pede a caixa 1518×948 e entrega 1518×854 (90%), enquanto o
+  // 16:9 fixo de antes acertava 100% nesse caso específico. A troca ainda vale
+  // — tela inteira é a fonte comum e antes ela perdia 10% SEMPRE, agora perde
+  // só quando a fonte discorda do monitor — mas é troca, não melhora pura.
+  //
+  // Fechar isso de vez pediria recalcular o corte depois da captura, a partir
+  // do aspecto real do que chegou, crescendo até o orçamento em vez de só
+  // encolher. Não está feito: crescer depende de a fonte ter os pixels, e isso
+  // não foi medido. Multi-monitor tem o mesmo furo — `screen` é o monitor da
+  // janela, não o que a pessoa escolheu compartilhar.
+  const aspecto =
+    screen.width > 0 && screen.height > 0 ? screen.width / screen.height : 16 / 9;
+  const hintW = Math.round(Math.sqrt(maxCapturePixels * aspecto) / 2) * 2;
+  const hintH = Math.round(hintW / aspecto / 2) * 2;
 
   let stream;
   try {
@@ -683,14 +708,33 @@ async function startShare() {
   // PeerConnection seriam N reduções, uma por conexão, e o degrau é do encoder.
   // Medidos e descartados: baixar framerate PIOROU (11,15 cores a 15fps contra
   // 10,12 a 30fps) e degradationPreference "balanced" não mudou nada (10,44).
+  // Rede de segurança para quando a fonte discordar da caixa pedida acima — uma
+  // janela de outro aspecto, ou um navegador que ignore o pedido. Escala
+  // preservando o aspecto real do que chegou. Dimensões pares: encoders
+  // trabalham em macroblocos.
+  //
+  // O fator é limitado a 1 porque isto só encolhe: crescer além do que a fonte
+  // entrega seria upscale, que gasta banda para inventar pixel. E a comparação
+  // é entre as dimensões calculadas e as atuais, não entre área e orçamento —
+  // a versão antiga perguntava `área > orçamento`, o que deixava passar o caso
+  // em que a área bate exatamente no teto, e chamava à toa quando não precisava.
   const s = track.getSettings();
-  if (s.width && s.height && s.width * s.height > maxCapturePixels) {
-    // Escala preservando o aspecto real da tela, que pode não ser 16:9
-    // (1920×1200 é 16:10). Dimensões pares: encoders trabalham em macroblocos.
-    const k = Math.sqrt(maxCapturePixels / (s.width * s.height));
+  if (s.width && s.height) {
+    const k = Math.min(1, Math.sqrt(maxCapturePixels / (s.width * s.height)));
     const w = Math.round((s.width * k) / 2) * 2;
     const h = Math.round((s.height * k) / 2) * 2;
-    try { await track.applyConstraints({ width: w, height: h }); } catch {}
+    if (w !== s.width || h !== s.height) {
+      try {
+        await track.applyConstraints({ width: w, height: h });
+      } catch (err) {
+        // Falhar aqui significa encodar a fonte inteira. Numa tela 4K isso é o
+        // penhasco de CPU (~2 cores viram ~10), então não pode morrer calado.
+        console.warn(
+          `applyConstraints falhou: captura segue em ${s.width}×${s.height}`,
+          err,
+        );
+      }
+    }
   }
 
   attachTile(myId, stream, true);
