@@ -632,6 +632,41 @@ async function route(from, data) {
 
 /* ---------- compartilhar ---------- */
 
+// Geometria REAL da fonte, tirada do primeiro quadro.
+//
+// `track.getSettings()` logo após o `getDisplayMedia` não serve para isto: se a
+// fonte for maior que a caixa pedida, ele devolve o ECO DA CAIXA — as dimensões
+// que nós mesmos pedimos — e não o que a fonte tem. Medido: numa tela 1920×1200
+// com caixa 1838×1034, `getSettings()` responde 1838×1034, aspecto 16:9, quando
+// a fonte é 16:10. Calcular o corte a partir daí é calcular a partir do próprio
+// palpite, e foi por isso que a captura continuou saindo em 90% do orçamento
+// mesmo depois de a caixa ser corrigida. O primeiro quadro não mente.
+//
+// O timeout existe para que uma fonte que nunca produza quadro não trave o
+// compartilhamento: nesse caso cai no `getSettings()`, que é o que havia antes.
+function geometriaReal(track) {
+  return new Promise((resolve) => {
+    const v = document.createElement("video");
+    let pronto = false;
+    const responde = () => {
+      if (pronto) return;
+      pronto = true;
+      const g =
+        v.videoWidth && v.videoHeight
+          ? { width: v.videoWidth, height: v.videoHeight }
+          : track.getSettings();
+      v.srcObject = null;
+      resolve(g);
+    };
+    v.muted = true;
+    v.playsInline = true;
+    v.onloadedmetadata = responde;
+    v.srcObject = new MediaStream([track]);
+    v.play().catch(() => {});
+    setTimeout(responde, 500);
+  });
+}
+
 async function startShare() {
   if (!canShare()) {
     notice(whyCantShare());
@@ -640,36 +675,42 @@ async function startShare() {
 
   notice("");
 
-  // Teto pedido já no picker, derivado do orçamento de pixels E do aspecto real
-  // da tela. Assumir 16:9 aqui custava caro, por um motivo que não é óbvio: o
-  // navegador honra o pedido encaixando a fonte na caixa e preservando o
-  // aspecto DELA, nunca recortando. Numa tela 16:10, `height:{max:900}`
-  // entregava 1440×900 — 1.294.200 px, 90% do orçamento — e o corte é
-  // irreversível, porque o ajuste no track logo abaixo só encolhe.
+  // Teto pedido ao picker. Ele NÃO é o orçamento: é o orçamento com folga, e a
+  // folga é o ponto. Quem faz o corte exato é o `applyConstraints` logo abaixo,
+  // que conhece o aspecto real do que chegou — mas ele só encolhe, então
+  // precisa que a captura chegue ACIMA do orçamento para ter o que cortar.
   //
-  // Pior: aquele ajuste nunca chegava a rodar. Ele só agia acima do orçamento,
-  // e a captura sempre nascia abaixo (1.294.200 em 16:10, 1.438.200 em 16:9).
-  // Quem aplicava o teto era esta caixa, sozinha, e aplicava errado.
+  // Era exatamente isso que estava quebrado. A caixa saía com a área exata do
+  // orçamento (1600×900), e o navegador honra o pedido encaixando a fonte nela
+  // preservando o aspecto DELA, nunca recortando. Então qualquer fonte que não
+  // fosse 16:9 chegava ABAIXO do teto — 90% em 16:10, 84% em 3:2, 75% em 4:3,
+  // 70% em 5:4 — e o ajuste abaixo nunca rodava, porque nunca havia excesso
+  // para cortar. Quem aplicava o teto era esta caixa, sozinha, e aplicava
+  // errado. O bloco de ajuste era código morto sempre que o navegador
+  // respeitava o pedido.
   //
-  // Medido nas seis geometrias: com o aspecto real, 16:10 entrega 1516×948
-  // (99,8% do orçamento) contra 1438×900 (89,9%) de antes, e 16:9 não muda.
+  // Com 32% de folga a fonte chega acima do orçamento em todo aspecto usual e o
+  // corte a leva ao teto exato: 100% em 16:9, 16:10 e 3:2, 99% em 4:3, 98% em
+  // 21:9. Nenhum aspecto de fonte ficou pior do que era.
   //
-  // `screen` é o aspecto do MONITOR, não o da fonte escolhida no picker, e essa
-  // diferença tem um caso em que esta conta perde: monitor 16:10 compartilhando
-  // uma janela 16:9 pede a caixa 1518×948 e entrega 1518×854 (90%), enquanto o
-  // 16:9 fixo de antes acertava 100% nesse caso específico. A troca ainda vale
-  // — tela inteira é a fonte comum e antes ela perdia 10% SEMPRE, agora perde
-  // só quando a fonte discorda do monitor — mas é troca, não melhora pura.
+  // A caixa é 16:9 fixa de propósito, e não derivada de `screen`. Tentar seguir
+  // o aspecto do monitor foi medido e é pior: `screen` descreve o MONITOR, não
+  // a fonte escolhida no picker, e num monitor retrato compartilhando uma
+  // janela 16:9 a caixa vira 900×1600 e entrega 31% do orçamento. O aspecto do
+  // monitor não prevê o da fonte; a folga não precisa prever nada.
   //
-  // Fechar isso de vez pediria recalcular o corte depois da captura, a partir
-  // do aspecto real do que chegou, crescendo até o orçamento em vez de só
-  // encolher. Não está feito: crescer depende de a fonte ter os pixels, e isso
-  // não foi medido. Multi-monitor tem o mesmo furo — `screen` é o monitor da
-  // janela, não o que a pessoa escolheu compartilhar.
-  const aspecto =
-    screen.width > 0 && screen.height > 0 ? screen.width / screen.height : 16 / 9;
-  const hintW = Math.round(Math.sqrt(maxCapturePixels * aspecto) / 2) * 2;
-  const hintH = Math.round(hintW / aspecto / 2) * 2;
+  // O teto absoluto de 2.000.000 px não é estético: acima de 2.073.600 o custo
+  // de encode salta de ~2 para ~10 cores por oversubscription de thread
+  // (medido, ver CLAUDE.md). Como a área entregue nunca passa da área da caixa,
+  // seja qual for o aspecto da fonte, o degrau fica inalcançável mesmo se o
+  // `applyConstraints` falhar. O `Math.max` externo respeita quem subiu
+  // `--pixels` acima disso de propósito.
+  const areaCaixa = Math.max(
+    maxCapturePixels,
+    Math.min(maxCapturePixels * 1.32, 2_000_000),
+  );
+  const hintW = Math.round(Math.sqrt((areaCaixa * 16) / 9) / 2) * 2;
+  const hintH = Math.round((hintW * 9) / 16 / 2) * 2;
 
   let stream;
   try {
@@ -708,17 +749,16 @@ async function startShare() {
   // PeerConnection seriam N reduções, uma por conexão, e o degrau é do encoder.
   // Medidos e descartados: baixar framerate PIOROU (11,15 cores a 15fps contra
   // 10,12 a 30fps) e degradationPreference "balanced" não mudou nada (10,44).
-  // Rede de segurança para quando a fonte discordar da caixa pedida acima — uma
-  // janela de outro aspecto, ou um navegador que ignore o pedido. Escala
-  // preservando o aspecto real do que chegou. Dimensões pares: encoders
-  // trabalham em macroblocos.
+  // Este é o corte que vale: a caixa acima só garante que a captura chegue
+  // acima do orçamento, e é aqui que ela desce até ele preservando o aspecto
+  // REAL da fonte. Dimensões pares porque encoders trabalham em macroblocos.
   //
   // O fator é limitado a 1 porque isto só encolhe: crescer além do que a fonte
   // entrega seria upscale, que gasta banda para inventar pixel. E a comparação
   // é entre as dimensões calculadas e as atuais, não entre área e orçamento —
   // a versão antiga perguntava `área > orçamento`, o que deixava passar o caso
   // em que a área bate exatamente no teto, e chamava à toa quando não precisava.
-  const s = track.getSettings();
+  const s = await geometriaReal(track);
   if (s.width && s.height) {
     const k = Math.min(1, Math.sqrt(maxCapturePixels / (s.width * s.height)));
     const w = Math.round((s.width * k) / 2) * 2;
