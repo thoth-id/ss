@@ -5,13 +5,17 @@ pequeno dentro de uma rede que você já confia (ex.: um tailnet Tailscale). Sem
 TURN, sem SFU, sem conta, sem servidor de mídia: o servidor só faz relay de
 signaling e responde STUN — o vídeo vai direto de um navegador a outro.
 
-Publicado no npm como **`screen-share`**.
+Empacotado para o npm sob o nome **`screen-share`** — ainda não publicado.
 
 ## Instalar e rodar
 
 Exige [Bun](https://bun.sh) instalado na máquina que sobe o servidor: o
 pacote publica `bin/cli.ts`, `server.ts` e `stun.ts` como escritos, sem build
 e sem `dist/`, e é o Bun que os executa direto.
+
+> **A publicação ainda não aconteceu.** Enquanto ela não acontece, o `bunx`
+> abaixo não resolve. A partir de um clone do repositório o equivalente é
+> `bun run bin/cli.ts`, com as mesmas flags.
 
 ```bash
 bunx screen-share

@@ -36,7 +36,6 @@
     "bun": ">=1.1.0"
   },
   "scripts": {
-    "start": "bun run server.ts",
-    "test": "(bun run server.ts > /tmp/tela-test.log 2>&1 & echo $! > /tmp/tela-test.pid); sleep 2; bun run test.ts; rc=$?; kill \"$(cat /tmp/tela-test.pid)\" 2>/dev/null; exit $rc"
+    "start": "bun run server.ts"
   }
 }

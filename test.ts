@@ -16,8 +16,26 @@ const STUN_PORT = Number(process.env.STUN_PORT ?? 3478);
 const HTTP = `http://127.0.0.1:${PORT}`;
 const WS = `ws://127.0.0.1:${PORT}/ws`;
 
-const MAX_PEERS = 5;
-const MAX_SHARERS = 3;
+/* Os tetos vêm do /config, não de cópias literais aqui. O servidor passou a
+   lê-los do ambiente, e uma cópia local quebraria a suíte em falso só por
+   MAX_PEERS estar exportado no shell de quem roda — falha que não é do produto.
+   O /config é a mesma fonte que o cliente usa, e a suíte já o buscava. */
+const cfgResp = await fetch(HTTP + "/config").catch(() => null);
+if (!cfgResp || !cfgResp.ok) {
+  console.log(`não consegui ler ${HTTP}/config. O servidor está de pé nesta porta?`);
+  process.exit(1);
+}
+const CFG: any = await cfgResp.json();
+const MAX_PEERS: number = CFG.maxPeers;
+const MAX_SHARERS: number = CFG.maxSharers;
+
+// T2 monta uma sala de MAX_SHARERS+1 para ver a arbitragem negar o excedente,
+// e isso só cabe se o teto de sala for maior que o de sharers. Dizer isso aqui
+// evita que uma configuração incompatível apareça como um teste falhando.
+if (!(MAX_PEERS > MAX_SHARERS)) {
+  console.log(`configuração incompatível: T2 precisa de ${MAX_SHARERS + 1} peers numa sala de ${MAX_PEERS}.`);
+  process.exit(1);
+}
 
 let pass = 0;
 let fail = 0;
@@ -89,8 +107,18 @@ async function testStatic() {
   const json: any = await cfg.json();
   ok("GET /config responde 200", cfg.status === 200, cfg.status);
   eq("/config devolve stunPort", json.stunPort, STUN_PORT);
-  eq("/config devolve maxPeers", json.maxPeers, MAX_PEERS);
-  eq("/config devolve maxSharers", json.maxSharers, MAX_SHARERS);
+  // Forma, não valor: o valor é justamente o que a suíte derivou daqui, então
+  // compará-lo consigo mesmo não afirmaria nada.
+  ok(
+    "/config devolve maxPeers como inteiro > 0",
+    Number.isInteger(json.maxPeers) && json.maxPeers > 0,
+    json.maxPeers,
+  );
+  ok(
+    "/config devolve maxSharers como inteiro > 0",
+    Number.isInteger(json.maxSharers) && json.maxSharers > 0,
+    json.maxSharers,
+  );
   ok(
     "/config devolve maxCapturePixels como número > 0",
     typeof json.maxCapturePixels === "number" && json.maxCapturePixels > 0,

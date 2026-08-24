@@ -26,7 +26,8 @@ public/
 ```
 
 Rodar direto do repo: `bun run server.ts`. Sobe HTTP em `:3000` e STUN em UDP
-`:3478`. Publicado no npm, o comando é `bunx screen-share` (seção 11).
+`:3478`. Empacotado para o npm sob o nome `screen-share`; publicado, o comando
+passa a ser `bunx screen-share` (seção 11).
 
 ## 3. Estado atual
 

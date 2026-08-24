@@ -8,8 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Tailscale tailnet. Bun + TypeScript, **zero dependencies**, no build step, no
 `npm install`. Four source files total.
 
-It is also published to npm as **`screen-share`**, runnable with `bunx
-screen-share`. Nothing about the stack changed for that: the package still
+It is packaged for npm as **`screen-share`**, runnable with `bunx
+screen-share` — **once published, which has not happened yet**. Nothing about
+the stack changed for that: the package still
 ships `.ts` as written, and Bun still runs it directly — no transpilation, no
 `dist/`. `bin/cli.ts` is the published entry point (`bin.screen-share` in
 `package.json`); it only parses flags and hands the real work to `server.ts`.
@@ -114,14 +115,25 @@ Do not unify these maps.
 
 ### The server is the arbiter
 
-`MAX_PEERS` and `MAX_SHARERS` are constants at the top of `server.ts`, and the
-server owns both decisions — it is the only place that sees a whole room, so
-simultaneous clicks on different machines are only serializable there. Changing
-`MAX_SHARERS` requires editing only that number — `test.ts` derives its T2 room
-size from the same constant. All three limits (`MAX_PEERS`, `MAX_SHARERS`,
-`MAX_CAPTURE_PIXELS`) now read `process.env.X ?? default` so the CLI's
-`--peers`/`--sharers`/`--pixels` flags can override them; the measured
-defaults did not change.
+`MAX_PEERS` and `MAX_SHARERS` live at the top of `server.ts`, and the server
+owns both decisions — it is the only place that sees a whole room, so
+simultaneous clicks on different machines are only serializable there. All
+three limits (`MAX_PEERS`, `MAX_SHARERS`, `MAX_CAPTURE_PIXELS`) read the
+environment so the CLI's `--peers`/`--sharers`/`--pixels` flags can override
+them; the measured defaults did not change.
+
+They read it through **`int(name, default, max?)`, never `Number(env ?? d)`**.
+`??` does not catch the empty string, so `MAX_PEERS=` became 0 and locked
+everyone out, and `Number("cinco")` is `NaN` — which makes `set.size >= MAX_*`
+*always false*, deleting the room ceiling and the sharer arbitration in silence
+while the client kept rendering "3/3" off its own default. Anything that is not
+a positive integer falls back to the measured default and names itself on
+stderr. An arbiter that read `NaN` is not arbitrating.
+
+`test.ts` derives `MAX_PEERS`/`MAX_SHARERS` from `/config` rather than keeping
+literals, so an exported `MAX_PEERS` in the shell cannot fail the suite for a
+defect that is not there — that mistake cost 8 false failures before it was
+fixed. Its `/config` assertions therefore check shape, not value.
 
 Static files resolve against `import.meta.dir`, not the process cwd — installed
 as a package, the process runs from whatever directory invoked `bunx`, and
