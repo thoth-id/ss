@@ -17,7 +17,7 @@ const HTTP = `http://127.0.0.1:${PORT}`;
 const WS = `ws://127.0.0.1:${PORT}/ws`;
 
 const MAX_PEERS = 5;
-const MAX_SHARERS = 2;
+const MAX_SHARERS = 3;
 
 let pass = 0;
 let fail = 0;
@@ -243,28 +243,31 @@ async function testMaxPeers() {
 async function testSharerArbitration() {
   console.log(`\nT2: arbitragem, máximo ${MAX_SHARERS} sharers`);
 
-  const [a, b, c] = await room("arb", 3);
-  const [aId, bId, cId] = [a.id(), b.id(), c.id()];
+  // Uma pessoa a mais que o teto: a última é justamente a que precisa ser
+  // negada. Tudo deriva de MAX_SHARERS para que mexer no teto continue sendo
+  // trocar um número só, aqui e no servidor.
+  const ps = await room("arb", MAX_SHARERS + 1);
+  const ids = ps.map((p) => p.id()!);
+  const extra = ps[MAX_SHARERS];          // o que não cabe
+  const extraId = ids[MAX_SHARERS];
 
-  a.send({ t: "share-start" });
-  await settle();
-  eq("1º sharer entra no conjunto", a.last("sharers")?.ids, [aId]);
-  eq("broadcast chega na sala inteira", c.last("sharers")?.ids, [aId]);
+  for (let i = 0; i < MAX_SHARERS; i++) {
+    ps[i].send({ t: "share-start" });
+    await settle();
+    eq(`${i + 1}º sharer entra no conjunto`, ps[i].last("sharers")?.ids, ids.slice(0, i + 1));
+  }
+  eq("broadcast chega na sala inteira", extra.last("sharers")?.ids, ids.slice(0, MAX_SHARERS));
 
-  b.send({ t: "share-start" });
+  const before = extra.of("sharers").length;
+  extra.send({ t: "share-start" });
   await settle();
-  eq("2º sharer entra no conjunto", c.last("sharers")?.ids, [aId, bId]);
-
-  const before = c.of("sharers").length;
-  c.send({ t: "share-start" });
-  await settle();
-  eq("3ª tentativa recebe share-denied", c.first("share-denied")?.reason, "limit");
-  eq("share-denied não gera broadcast", c.of("sharers").length, before);
-  ok("quem foi negado não entra no conjunto", !c.last("sharers")?.ids.includes(cId));
-  ok("share-denied vai só pro remetente", a.of("share-denied").length === 0);
+  eq(`${MAX_SHARERS + 1}ª tentativa recebe share-denied`, extra.first("share-denied")?.reason, "limit");
+  eq("share-denied não gera broadcast", extra.of("sharers").length, before);
+  ok("quem foi negado não entra no conjunto", !extra.last("sharers")?.ids.includes(extraId));
+  ok("share-denied vai só pro remetente", ps[0].of("share-denied").length === 0);
 
   // Nenhum broadcast em nenhum momento passou do teto.
-  const todos = [a, b, c].flatMap((p) => p.of("sharers"));
+  const todos = ps.flatMap((p) => p.of("sharers"));
   ok(
     `nenhum broadcast passou de ${MAX_SHARERS} ids`,
     todos.every((m) => m.ids.length <= MAX_SHARERS),
@@ -272,28 +275,29 @@ async function testSharerArbitration() {
   );
 
   // share-start repetido é idempotente e não re-broadcasta.
-  const antes = c.of("sharers").length;
-  a.send({ t: "share-start" });
+  const antes = extra.of("sharers").length;
+  ps[0].send({ t: "share-start" });
   await settle();
-  eq("share-start repetido não re-broadcasta", c.of("sharers").length, antes);
+  eq("share-start repetido não re-broadcasta", extra.of("sharers").length, antes);
 
   // share-stop libera a vaga.
-  a.send({ t: "share-stop" });
+  ps[0].send({ t: "share-stop" });
   await settle();
-  eq("share-stop remove do conjunto", c.last("sharers")?.ids, [bId]);
+  eq("share-stop remove do conjunto", extra.last("sharers")?.ids, ids.slice(1, MAX_SHARERS));
 
   // share-stop de quem não está compartilhando é no-op.
-  const antesStop = c.of("sharers").length;
-  a.send({ t: "share-stop" });
+  const antesStop = extra.of("sharers").length;
+  ps[0].send({ t: "share-stop" });
   await settle();
-  eq("share-stop redundante é no-op", c.of("sharers").length, antesStop);
+  eq("share-stop redundante é no-op", extra.of("sharers").length, antesStop);
 
   // Com vaga aberta, o antes negado consegue.
-  c.send({ t: "share-start" });
+  extra.send({ t: "share-start" });
   await settle();
-  eq("vaga liberada permite novo sharer", c.last("sharers")?.ids, [bId, cId]);
+  eq("vaga liberada permite novo sharer", extra.last("sharers")?.ids,
+     [...ids.slice(1, MAX_SHARERS), extraId]);
 
-  a.close(); b.close(); c.close();
+  ps.forEach((p) => p.close());
   await settle();
 }
 

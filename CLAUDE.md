@@ -37,7 +37,7 @@ that is already up on 3000 — but the vars have to reach **both** processes:
   PORT=3200 STUN_PORT=3678 timeout 90 bun run test.ts; kill $(cat /tmp/p)
 ```
 
-`test.ts` is a hand-rolled suite (96 assertions), not `bun test`. There is **no
+`test.ts` is a hand-rolled suite (97 assertions), not `bun test`. There is **no
 filter flag** — to run a subset, comment out entries in the `/* ---------- run
 ---------- */` block at the bottom of `test.ts`.
 
@@ -96,7 +96,15 @@ Do not unify these maps.
 `MAX_PEERS` and `MAX_SHARERS` are constants at the top of `server.ts`, and the
 server owns both decisions — it is the only place that sees a whole room, so
 simultaneous clicks on different machines are only serializable there. Changing
-`MAX_SHARERS` to 1 requires editing only that number.
+`MAX_SHARERS` requires editing only that number — `test.ts` derives its T2 room
+size from the same constant.
+
+**`MAX_SHARERS` does not govern encoder count, and never did.** A sharer opens
+one PC per destination, so it runs `MAX_PEERS - 1` encoders whether it is the
+only one sharing or one of five. What `MAX_SHARERS` controls is how many streams
+each machine *decodes*, measured at 0.18 core each. It was 2 out of a CPU fear
+aimed at the wrong axis; it is 3 because 3 is where the clean measurement stops,
+not because 4 was shown to hurt. See the sweep below.
 
 `MAX_CAPTURE_PIXELS` lives there too and is served by `/config`. It is the
 capture pixel budget: the client scales the captured track down to fit it,
@@ -182,8 +190,8 @@ at `min(max(64, H*0.22), H*0.4, PRES_RAIL)` (132), and only inherit the stage
 when no video tile exists at all, capped at `PRES_SOLO` (220). The reason is the
 whole point of the feature: a monogram carries almost no information per pixel,
 while a shared screen shrunk to a third of the stage stops being readable text.
-Six equal grid cells — 2 sharers + 4 plates, the room's ceiling — would do
-exactly that. Do not give plates a full grid cell.
+Equal grid cells for everyone — at the room's ceiling that is 3 videos plus 2
+plates — would do exactly that. Do not give plates a full grid cell.
 
 Being alone with nobody sharing is the one state that keeps the old empty card:
 **a roster of one is not a roster**, so when `peers` is empty no plate is built,
@@ -311,6 +319,72 @@ cores.
 Caveat on these numbers: capture was a fake device fed from a file, not real
 `getDisplayMedia`. Real screen capture **adds** cost, so a real machine is worse
 than the table, never better.
+
+### Below the cap the cliff is gone — and sharers are not the axis that costs
+
+The table above was measured at or above 1080p, before `MAX_CAPTURE_PIXELS`
+existed. A second bench, driving the **real client** (the bench page only swaps
+`getDisplayMedia` for a fake device; everything from `getSettings()` on is the
+production path, cap included, so every stream ran at 1518×948) re-measured
+inside the enforced regime. Same machine, 12 logical CPUs, `libvpx` VP8 in
+software. Each "machine" is a separate Chrome with its own `user-data-dir`, CPU
+attributed by walking its process tree in `/proc`.
+
+**Cost of one more viewer** — one sharer, room filling up. All rows 30fps,
+`qualityLimitationReason: "none"`:
+
+| destinations | sharer cores | Δ | renderer threads |
+|---|---|---|---|
+| 1 | 0.59 | — | 20 |
+| 2 | 0.93–0.95 | +0.36 | 24–26 |
+| 3 | 1.54 | +0.59 | 28 |
+| 4 | **1.87–2.31** | +0.77 | 33 |
+
+A full room costs a sharer ~2 cores of 12. **There is no cliff below the cap**:
+the 0.8 → 5.9 jump the table above records for the first-to-second destination
+at 1080p is +0.36 here. The two runs agree with the old table (2.0 at 1600×900)
+and with its thread count (33), which is what says the bench measures the
+product and not itself. With heavy full-frame motion the same 4 destinations
+cost 3.66 cores — still comfortable.
+
+**Cost of one more sharer.** A viewer pays 0.17–0.19 core per stream received,
+0.32–0.36 for two: linear. And a machine already encoding to 2 destinations that
+starts *also* receiving one stream goes 0.93 → 1.11 — **+0.18, the same as a
+pure viewer pays**. Decode adds; it does not interact with encode.
+
+**What the bench could not measure.** Anything past two simultaneous streams on
+a machine that is also encoding. Five full Chromes do not fit in 12 cores: at
+P=5 the box saturates from S=2 on (`lim: "cpu"`, fps 22 → 7 → 4.5 → 2.7), and
+those rows measure the bench, not `tela`. Read the fps and
+`qualityLimitationReason` columns before trusting any CPU number here — a cost
+that *falls* as load rises is starvation, not efficiency. Two loose ends stay
+open: at P=3/S=3 a machine cost 2.56 cores where additivity predicted 1.27,
+with fps intact at 29.4 and the system at 68% — unexplained, plausibly
+single-box contention but not proven; and the same scenario re-run measured 1.87
+against 2.31, so treat everything here as ±20%.
+
+Settling both needs what `PLANO.md` T0 still wants anyway: two or three real
+tailnet machines.
+
+### The local STUN answers from the wrong address on a multi-homed host
+
+Measured, and it explains an open question. `stun.ts` binds `0.0.0.0`, so the
+kernel picks the reply's source IP by the route to the destination, not by the
+address the request arrived on. On this host:
+
+```
+request from tailscale0 → 100.x:3478   reply from 100.x         OK
+request from wifi       → 100.x:3478   reply from 192.168.15.x  discarded
+```
+
+Chrome drops a STUN response whose source differs from the address it asked, so
+that interface never forms an `srflx` candidate — its log fills with `Received
+non-STUN packet from unknown address`. **Remote tailnet peers are unaffected**:
+the route to their `100.x` goes out `tailscale0`, so the source comes out right.
+It only misfires for a client on the same machine — which is exactly the "two
+tabs on the host" case, and is a concrete candidate explanation for why the one
+real ICE run came back `prflx` instead of the `srflx` T0 expected. Not fixed;
+recorded.
 
 ## Out of scope
 

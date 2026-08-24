@@ -10,7 +10,14 @@ const MAX_PEERS = 5;
 // Quantas pessoas podem transmitir ao mesmo tempo. Vira 1 trocando o número.
 // O servidor é o único ponto que vê a sala inteira, então a decisão mora aqui:
 // dois cliques simultâneos em máquinas diferentes só são serializáveis num lugar.
-const MAX_SHARERS = 2;
+//
+// Era 2 por medo de CPU, e o medo estava no eixo errado: o número de encoders
+// de quem transmite é MAX_PEERS-1, não MAX_SHARERS. Um sharer a mais não cria
+// encoder nenhum na máquina de ninguém — cria um decode, que custa 0,18 core.
+// Medido: 4 destinos custam ~2 cores de 12, e receber um segundo stream soma
+// 0,18. Ver a tabela no CLAUDE.md. 3 é onde a medição limpa termina; 4 e 5 não
+// foram medidos porque 5 Chromes não cabem numa caixa de 12 cores.
+const MAX_SHARERS = 3;
 
 // Teto de pixels da captura (equivalente a 1600×900). Acima de 1920×1080 o
 // WebRTC passa a usar ~8 threads de encode por PeerConnection em vez de ~3, e

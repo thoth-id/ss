@@ -38,6 +38,8 @@ Suíte headless rodada contra o código atual (Bun 1.4), 0 falhas:
 - `signal` chega no destinatário certo e não ecoa no remetente
 - nomes de peers: `join`/`rename` saneados, `names` por estado, snapshot no
   join, nome apagado ao sair da sala e nenhum vazamento entre salas
+- arbitragem de sharers derivada de `MAX_SHARERS`: o (N+1)-ésimo recebe
+  `share-denied`, nenhum broadcast passa do teto, vaga liberada volta a aceitar
 - STUN devolve Binding Success Response com XOR-MAPPED-ADDRESS correto
   (testado com cliente `dgram` cru: transaction id espelhado, family IPv4,
   IP e porta decodificados batem)
@@ -235,8 +237,9 @@ aparece na lista de ninguém.
 O servidor é o único ponto que vê a sala inteira, então a decisão mora nele.
 Dois cliques simultâneos em máquinas diferentes só são serializáveis num lugar.
 
-Constante `MAX_SHARERS = 2`. Deixar como constante para virar 1 trocando um
-número, sem refatorar nada.
+Constante `MAX_SHARERS`. Deixar como constante para mudar trocando um número,
+sem refatorar nada — o `test.ts` deriva o tamanho da sala do T2 da mesma
+constante. Nasceu 2; virou **3** depois da medição da seção 10.
 
 **Estado no servidor:** `sharers: Map<room, Set<peerId>>`.
 
@@ -335,3 +338,104 @@ uma por conexão. **Isso não foi verificado e provavelmente está errado** — 
 comportamento usual é um encoder por PeerConnection. Não usar essa afirmação
 como base para decisão de capacidade. Se importar, medir uso de CPU com 4
 destinos e comparar com 1.
+
+---
+
+## 10. Custo de CPU: os dois eixos, medidos
+
+Feita numa bancada que sobe N instâncias de Chrome (uma por "máquina", cada uma
+com `user-data-dir` próprio, CPU atribuída percorrendo a árvore de processos em
+`/proc`) contra o **cliente real** — a página de bancada só troca o
+`getDisplayMedia` por um device falso alimentado por y4m; do `getSettings()` em
+diante o caminho é o de produção, corte de pixels incluído, então todo stream
+rodou a 1518×948. Core 7 150U, 12 lógicas, `libvpx` VP8 em software.
+
+### Os dois eixos não custam a mesma coisa
+
+Com **P** pessoas na sala e **S** transmitindo, o custo **na sua máquina** é:
+
+| o que você paga | fórmula | eixo |
+|---|---|---|
+| encoders | `P-1`, se você transmite | mais gente **assistindo** |
+| upload | `(P-1) x 1,5 Mb/s` | mais gente **assistindo** |
+| decoders | `S`, menos o seu próprio | mais gente **compartilhando** |
+| download | `(S-1) x 1,5 Mb/s` | mais gente **compartilhando** |
+
+O número de encoders de quem transmite é ditado por `MAX_PEERS`, **não** por
+`MAX_SHARERS`. Um sharer a mais não cria encoder nenhum na máquina de ninguém.
+
+### Mais gente assistindo — o eixo caro
+
+Um sharer só, sala enchendo. Todas as linhas a 30fps e
+`qualityLimitationReason: "none"`:
+
+| destinos | cores do sharer | Δ | threads do renderer |
+|---|---|---|---|
+| 1 | 0,59 | — | 20 |
+| 2 | 0,93–0,95 | +0,36 | 24–26 |
+| 3 | 1,54 | +0,59 | 28 |
+| 4 | **1,87–2,31** | +0,77 | 33 |
+
+Sala cheia custa ~2 cores de 12 pra quem transmite. **O degrau não existe abaixo
+do cap**: o salto de 0,8 → 5,9 cores entre o primeiro e o segundo destino, que a
+seção de performance do README registra a 1920×1080, aqui é +0,36. Com movimento
+pesado de quadro inteiro os mesmos 4 destinos custam 3,66 cores.
+
+Dois sinais de que a bancada mede o produto e não a si mesma: 2,31 cores contra
+os 2,0 medidos antes a 1600×900, e 33 threads de renderer contra os 33
+registrados lá.
+
+### Mais gente compartilhando — o eixo barato
+
+Um viewer paga 0,17–0,19 core por stream recebido e 0,32–0,36 por dois: linear.
+E uma máquina que já transmite para 2 destinos, ao passar a **também receber**
+um stream, vai de 0,93 → 1,11 — **+0,18, o mesmo que um viewer puro paga**.
+Decode soma; não interage com encode.
+
+### O que a bancada NÃO conseguiu medir
+
+Qualquer coisa acima de dois streams simultâneos numa máquina que também
+transmite. Cinco Chromes inteiros não cabem em 12 cores: com P=5 a caixa satura
+a partir de S=2 (`lim: "cpu"`, fps caindo 22 → 7 → 4,5 → 2,7) e essas linhas
+medem a bancada, não o `tela`.
+
+**Antes de confiar em qualquer número de CPU aqui, leia o fps e o
+`qualityLimitationReason` ao lado.** Custo que *cai* enquanto a carga sobe é
+estrangulamento, não eficiência — foi assim que uma leitura apressada quase
+virou conclusão.
+
+Duas pontas soltas:
+
+1. Com P=3 e S=3, cada máquina custou 2,56 cores onde a aditividade previa 1,27,
+   com fps intacto em 29,4 e sistema em 68%. Sem explicação. Contenção de caixa
+   única é plausível, mas não foi provada.
+2. O mesmo cenário (P=5, S=1) mediu 2,31 numa rodada e 1,87 em outra. Trate tudo
+   nesta seção como ±20%.
+
+Fechar as duas exige o que o T0 já pede: duas ou três máquinas de verdade do
+tailnet.
+
+### Por que `MAX_SHARERS` virou 3, e não 5
+
+Os dois componentes de S=3 estão medidos limpos: 4 encoders (~2,0–2,3 cores) e
+2 decodes (+0,36), dando ~2,4 cores de 12. Ir até 5 seria extrapolação — o
+argumento estrutural continua de pé, mas não há medição que o sustente. 3 é onde
+a medição limpa termina, não onde 4 se mostrou ruim.
+
+### Achado colateral: o STUN responde do endereço errado em host multi-homed
+
+`stun.ts` faz bind em `0.0.0.0`, então o kernel escolhe o IP de origem da
+resposta pela rota até o destino, e não pelo endereço que recebeu o pedido:
+
+```
+pedido saindo por tailscale0 → 100.x:3478   resposta de 100.x          OK
+pedido saindo por wifi       → 100.x:3478   resposta de 192.168.15.x   descartada
+```
+
+O Chrome descarta resposta STUN cuja origem difere do endereço que ele
+perguntou, então aquela interface nunca forma `srflx` — o log dele enche de
+`Received non-STUN packet from unknown address`. **Peers remotos do tailnet não
+sofrem**: a rota até o `100.x` deles sai pela `tailscale0` e a origem sai certa.
+Só quebra com cliente na mesma máquina — que é exatamente o caso "duas abas no
+host", e é candidato concreto a explicar por que a única rodada real de ICE
+voltou `prflx` em vez do `srflx` que o T0 esperava. Não corrigido; registrado.

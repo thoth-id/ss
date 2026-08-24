@@ -303,7 +303,7 @@ const names = new Map();          // peerId -> nome, segundo o servidor
 let sharers = new Set();          // quem está transmitindo, segundo o servidor
 let localStream = null;
 let iceServers = [];
-let maxSharers = 2;
+let maxSharers = 3;
 let maxCapturePixels = 1_440_000; // teto de pixels na captura; ver startShare()
 let myId = null;
 let myName = "";                  // nome escolhido aqui, já saneado
@@ -315,8 +315,8 @@ let dead = false;                 // recebeu `denied`: para de reconectar
 async function boot() {
   const cfg = await fetch("/config")
     .then((r) => r.json())
-    .catch(() => ({ stunPort: 3478, maxSharers: 2, maxCapturePixels: 1_440_000 }));
-  maxSharers = cfg.maxSharers ?? 2;
+    .catch(() => ({ stunPort: 3478, maxSharers: 3, maxCapturePixels: 1_440_000 }));
+  maxSharers = cfg.maxSharers ?? 3;
   maxCapturePixels = cfg.maxCapturePixels ?? 1_440_000;
   // Avisa de cara, em vez de deixar a pessoa clicar num botão que não faz nada.
   if (!canShare()) notice(whyCantShare());

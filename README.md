@@ -75,9 +75,17 @@ no orçamento de pixels preservando o aspecto real da tela (1920×1200 vira
 leem o mesmo track. Qualquer teto novo precisa ficar abaixo de 1920×1080 pixels
 (2.073.600), senão o degrau volta.
 
-Com `MAX_SHARERS = 2` o pior caso são 2 sharers × 4 viewers = 8 conexões e 2
-encoders por máquina que transmite. Se um dia N pessoas compartilharem ao mesmo
-tempo, vira N² e você precisa de um SFU (mediasoup, LiveKit).
+Com `MAX_SHARERS = 3` o pior caso da sala são 3 sharers × 4 destinos = 12
+PeerConnections. Mas repare em qual constante manda no quê: **quem transmite
+abre uma PC por destino, ou seja `MAX_PEERS - 1` = 4 encoders**, e esse número
+não muda se uma segunda ou terceira pessoa também começar a transmitir. O que
+`MAX_SHARERS` controla é quantos streams cada máquina *decodifica*, e decode é
+barato — 0,18 core por stream, medido. Foi por isso que o teto subiu de 2 para
+3: o medo era de CPU e estava no eixo errado.
+
+O que continua valendo o cuidado é o número de pessoas na sala, não o de
+transmissores. Se um dia `MAX_PEERS` crescer muito, vira N² e você precisa de um
+SFU (mediasoup, LiveKit).
 
 ## Limites
 
@@ -88,7 +96,7 @@ máquinas diferentes só são serializáveis lá.
 | constante | valor | o que faz |
 |---|---|---|
 | `MAX_PEERS` | 5 | 6º peer recebe `denied` e não entra na sala |
-| `MAX_SHARERS` | 2 | 3ª tentativa de compartilhar recebe `share-denied` |
+| `MAX_SHARERS` | 3 | 4ª tentativa de compartilhar recebe `share-denied` |
 
 Para permitir um sharer só, troque `MAX_SHARERS` para 1. Nada mais muda.
 
