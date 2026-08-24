@@ -211,9 +211,12 @@ Um achado saiu junto e está registrado no `CLAUDE.md`: a resolução entregue
 caía para 640×360 a 30fps a partir de uma captura de 1600×900. Não é tamanho de
 captura, é o degrau ½ da escada de adaptação do encoder, e ela só existe quando
 `degradationPreference: "maintain-resolution"` não está em vigor. O
-`applyEncoding` do cliente foi corrigido para não fabricar `encodings` (o que
-rendia `InvalidModificationError` em browser estrito e derrubava a política
-inteira) e para não engolir a falha.
+`applyEncoding` do cliente foi corrigido para não engolir a falha e para ler o
+`degradationPreference` de volta em vez de confiar que o `setParameters`
+resolveu. (Uma versão anterior deste parágrafo também culpava um
+`params.encodings = [{}]`; isso foi **refutado** — a spec garante que a entrada
+existe e o Chrome devolve `length === 1` em todos os estados vivos medidos. Ver
+o `CLAUDE.md`.)
 
 O procedimento original fica abaixo, para quando for preciso repetir.
 

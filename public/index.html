@@ -517,47 +517,34 @@ async function flush(pc) {
 // em 640×360 a 30fps é exatamente esta política ausente: 640×360 é o degrau ½
 // de 1280×720, não um tamanho de captura.
 //
-// Duas armadilhas, ambas já pagas:
+// `encodings[0]` sempre existe: a spec (WebRTC 1.0 § 5.2, *create an
+// RTCRtpSender*, passo 11) manda criar uma entrada quando `sendEncodings` vem
+// vazio, e nenhum algoritmo dela esvazia a lista depois. Já houve aqui um
+// `if (!params.encodings?.length) params.encodings = [{}]` para "garantir" esse
+// slot; ele mudava o comprimento de `encodings`, que é justamente o que o
+// `setParameters` recusa com `InvalidModificationError`. Defesa que só podia
+// causar o dano que dizia evitar. Se um dia a lista vier vazia de verdade, é
+// bug de browser e o `catch` abaixo mostra.
 //
-// - Não fabrique `encodings`. `getParameters()` voltar com a lista vazia
-//   acontece, e preencher com `[{}]` muda o comprimento de `encodings` — que é
-//   precisamente o que a spec manda o `setParameters` recusar com
-//   `InvalidModificationError`. O browser estrito perdia a política inteira por
-//   causa da linha que existia para garanti-la.
-// - Não engula a falha. O `catch {}` que estava aqui transformava "a
-//   política não entrou" em "o vídeo está estranho" descoberto dias depois. O
-//   resultado agora fica em `pc.policy` e sobe para a tira de telemetria.
-//
-// `setParameters` resolver também não quer dizer que o campo pegou, então o
-// valor é lido de volta.
+// O que vale mesmo é não engolir a falha: o `catch {}` que estava aqui
+// transformava "a política não entrou" em "o vídeo está estranho" descoberto
+// dias depois. E `setParameters` resolver não prova que o campo pegou — o
+// `degradationPreference` é lido de volta.
 async function applyEncoding(pc) {
   const sender = pc.getSenders().find((s) => s.track?.kind === "video");
   if (!sender) return;
 
   const params = sender.getParameters();
-  const enc = params.encodings?.[0];
-  if (enc) {
-    enc.maxBitrate = CAP_BITRATE;
-    enc.maxFramerate = CAP_FRAMERATE;
-  }
+  params.encodings[0].maxBitrate = CAP_BITRATE;
+  params.encodings[0].maxFramerate = CAP_FRAMERATE;
   params.degradationPreference = "maintain-resolution";
 
   try {
     await sender.setParameters(params);
   } catch (err) {
-    // Segunda tentativa sem tocar em `encodings`: onde a estrutura é recusada,
-    // a preferência de degradação sozinha ainda pode passar — e é ela que
-    // segura a resolução. O teto de bitrate é o que se perde, e perder o teto
-    // custa banda; perder a política custa a imagem.
-    try {
-      const sozinha = sender.getParameters();
-      sozinha.degradationPreference = "maintain-resolution";
-      await sender.setParameters(sozinha);
-    } catch (err2) {
-      pc.policy = `política recusada: ${err2?.name || err2}`;
-      console.warn("applyEncoding falhou nas duas tentativas", err, err2);
-      return;
-    }
+    pc.policy = `política recusada: ${err?.name || err}`;
+    console.warn("applyEncoding falhou", err);
+    return;
   }
 
   const got = sender.getParameters();
@@ -614,10 +601,6 @@ async function route(from, data) {
     if (!pc) return;
     await pc.setRemoteDescription(data.sdp);
     await flush(pc);
-    // De novo agora que a negociação fechou: na oferta o `getParameters()` de
-    // alguns browsers ainda volta com `encodings` vazio, e o que se conseguir
-    // aplicar ali é menos do que se consegue aqui. É idempotente.
-    await applyEncoding(pc);
     return;
   }
 
@@ -640,7 +623,13 @@ async function route(from, data) {
 // com caixa 1838×1034, `getSettings()` responde 1838×1034, aspecto 16:9, quando
 // a fonte é 16:10. Calcular o corte a partir daí é calcular a partir do próprio
 // palpite, e foi por isso que a captura continuou saindo em 90% do orçamento
-// mesmo depois de a caixa ser corrigida. O primeiro quadro não mente.
+// mesmo depois de a caixa ser corrigida.
+//
+// O primeiro quadro é melhor, não perfeito: medido, ele às vezes chega num
+// tamanho transitório (56px mais alto que a fonte em quatro geometrias da
+// bancada), e é isso que explica as linhas que assentam em 96% em vez de 99%.
+// Esperar mais quadros trocaria esses pontos percentuais por atraso no início
+// do compartilhamento; não vale.
 //
 // O timeout existe para que uma fonte que nunca produza quadro não trave o
 // compartilhamento: nesse caso cai no `getSettings()`, que é o que havia antes.
@@ -699,16 +688,18 @@ async function startShare() {
   // janela 16:9 a caixa vira 900×1600 e entrega 31% do orçamento. O aspecto do
   // monitor não prevê o da fonte; a folga não precisa prever nada.
   //
-  // O teto absoluto de 2.000.000 px não é estético: acima de 2.073.600 o custo
-  // de encode salta de ~2 para ~10 cores por oversubscription de thread
-  // (medido, ver CLAUDE.md). Como a área entregue nunca passa da área da caixa,
-  // seja qual for o aspecto da fonte, o degrau fica inalcançável mesmo se o
-  // `applyConstraints` falhar. O `Math.max` externo respeita quem subiu
-  // `--pixels` acima disso de propósito.
-  const areaCaixa = Math.max(
-    maxCapturePixels,
-    Math.min(maxCapturePixels * 1.32, 2_000_000),
-  );
+  // A folga é sempre 32%, sem teto absoluto. Houve aqui um `Math.min(..., 2e6)`
+  // para prometer que a captura nunca alcança o degrau de CPU de 2.073.600 px —
+  // promessa que se desfazia sozinha: com `--pixels` acima de 2.000.000 a conta
+  // colapsava para a área exata, folga zero, e o corte abaixo voltava a ser o
+  // código morto que esta caixa existe para matar. Uma garantia que evapora
+  // justamente quando alguém mexe no número é pior que garantia nenhuma.
+  //
+  // O que vale é a aritmética do padrão: 1.440.000 × 1,32 = 1.900.800, abaixo
+  // dos 2.073.600 onde o encode salta de ~2 para ~10 cores (medido, ver
+  // CLAUDE.md). Quem sobe `--pixels` sai dessa faixa — mas já saiu ao subir o
+  // orçamento, que é o número que governa o encoder de verdade.
+  const areaCaixa = maxCapturePixels * 1.32;
   const hintW = Math.round(Math.sqrt((areaCaixa * 16) / 9) / 2) * 2;
   const hintH = Math.round((hintW * 9) / 16 / 2) * 2;
 
@@ -759,6 +750,14 @@ async function startShare() {
   // a versão antiga perguntava `área > orçamento`, o que deixava passar o caso
   // em que a área bate exatamente no teto, e chamava à toa quando não precisava.
   const s = await geometriaReal(track);
+
+  // Parar de compartilhar durante o await acima deixava um rastro: o
+  // `share-stop` saía antes do `share-start`, o servidor via a ordem invertida,
+  // a vaga de sharer ficava queimada e quem assistia travava em "conectando…"
+  // para sempre. Reproduzido parando aos 200ms. `stopShare` zera `localStream`,
+  // então essa comparação é a pergunta "ainda é o meu compartilhamento?".
+  if (localStream !== stream) return;
+
   if (s.width && s.height) {
     const k = Math.min(1, Math.sqrt(maxCapturePixels / (s.width * s.height)));
     const w = Math.round((s.width * k) / 2) * 2;

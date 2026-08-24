@@ -355,21 +355,36 @@ estimate said 3.77 Mb/s was available. The symptom's signature is therefore
 **full framerate with collapsed resolution** — the opposite trade from the one
 this client asks for.
 
-Two client-side lessons, both now encoded in `applyEncoding`:
+The lesson that survived: **never swallow the failure.** The old `catch {}`
+turned "the policy did not apply" into "the video looks strange" discovered days
+later. And `setParameters` resolving is not proof that the field took —
+`degradationPreference` is read back.
 
-- **Never fabricate `encodings`.** `params.encodings = [{}]` when
-  `getParameters()` returns an empty list changes the length of `encodings`,
-  which is precisely what the spec makes `setParameters` reject with
-  `InvalidModificationError`. The line existed to guarantee the policy and was
-  what destroyed it on a strict browser. Chrome is not strict here, which is why
-  the bench could not reproduce the symptom with the product intact.
-- **Never swallow the failure.** The old `catch {}` turned "the policy did not
-  apply" into "the video looks strange" discovered days later. And
-  `setParameters` resolving is not proof: read `degradationPreference` back.
+**A correction, because this file was wrong about it for a while.** An earlier
+version of this section claimed `params.encodings = [{}]` — filling in an empty
+`encodings` list — was the mechanism, destroying the policy on a "strict
+browser". That claim was refuted by measurement and by the spec. WebRTC 1.0
+§ 5.2 (*create an RTCRtpSender*, step 11) requires a single encoding entry to
+exist when `sendEncodings` is empty, and no algorithm in the spec empties it
+afterwards. Chrome 151 measured across seven live states — before negotiation,
+`addTrack`, `addTransceiver`, explicit `sendEncodings: []`, no track,
+`recvonly`, after offer, after answer — returned `encodings.length === 1` every
+time. The list came back empty only on a **stopped** transceiver, where
+`setParameters` already rejects with `InvalidStateError` before it ever looks at
+`encodings`. So the line was defending against a state the spec forbids, while
+itself doing the one thing `setParameters` genuinely rejects (changing the
+length). It is gone; `encodings[0]` is indexed directly.
 
-Also: **`83 kb/s` in the strip is not evidence of a thin link.** Static screen
-content costs ~80–100 kb/s in VP8 at *any* resolution — the bench delivered the
-same 83 kb/s at 6.2× the pixels. Do not diagnose bandwidth from that number.
+**And `83 kb/s` is not the free-standing fact it was written as.** This file
+used to say static screen content costs ~80–100 kb/s in VP8 at *any*
+resolution. Measured, it scales with pixels: static content redrawn identically
+at 30fps, `lim: "none"`, 15s after the estimate settles, costs **30.5 kb/s at
+640×360**, 72.8 at 1600×900 and 269.9 at 1920×1080. The ~80 kb/s figure matches
+1600×900, not "any resolution" — the original comparison put a degraded stream
+(bitrate set by the bandwidth estimate) next to a static one (set by pixels).
+The usable version: a low bitrate alone still does not prove a thin link, but
+compare it against the cost *at that resolution*, and 83 kb/s at 640×360 is 2.7×
+the static cost, which is a real signal rather than noise.
 
 The sharer's own strip now shows the outbound resolution when it differs from
 the capture, plus `qualityLimitationReason`, plus the encoding-policy state in
