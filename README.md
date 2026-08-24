@@ -162,8 +162,10 @@ quebra a premissa do STUN e passa a exigir TURN.
 - A faixa de telemetria embaixo de cada tile mostra bitrate, resolução, fps,
   tipo de candidate e RTT. Se aparecer `host` em vez de `srflx`, os dois peers
   estão na mesma LAN física e o STUN nem foi necessário.
-- A fita de barras na faixa é o bitrate do último minuto, uma barra por segundo.
-  Queda de link aparece nela antes de o número instantâneo explicar o motivo.
+- O medidor de barras é o bitrate do último minuto, uma barra por segundo. Queda
+  de link aparece nele antes de o número instantâneo explicar o motivo. Em tile
+  largo ele fica no fim da linha de telemetria; em tile estreito, numa faixa de
+  largura cheia logo acima dela.
 - Clique numa tela (ou no botão `focar`) para jogá-la no palco inteiro; as outras
   viram miniaturas numa trilha. `esc` sai do foco. `tela cheia` usa a API de
   fullscreen do navegador e some com toda a interface.

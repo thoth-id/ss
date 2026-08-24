@@ -56,13 +56,19 @@ maior incógnita do projeto e ainda não foi exercitada uma única vez.**
 - Fila de ICE candidates chegados antes de `setRemoteDescription` (`pc.pending`).
 - Layout de tiles calculado em JS (`layout()`), não em CSS grid: o palco tem
   altura fixa e cada tile é encaixado dentro dela pela proporção real do vídeo.
-  A página não rola em nenhuma contagem de telas. O `STRIP = 40` do JS tem que
-  continuar igual à altura da faixa no CSS (wave 16 + fields 24), e as bordas dos
-  tiles são `box-shadow: inset` justamente para não somarem altura.
+  A página não rola em nenhuma contagem de telas. `STRIP_LINE` (24) e
+  `STRIP_BAND` (40) têm que continuar iguais às alturas da faixa no CSS, e as
+  bordas dos tiles são `box-shadow: inset` justamente para não somarem altura.
+  Qual das duas vale sai de um segundo passe: encaixa com a linha, e se o tile
+  mais estreito ficou abaixo de `BAND_BELOW` (600px), refaz com a faixa.
 - Modo foco: clique numa tela joga ela no palco inteiro e manda as outras para
   uma trilha de miniaturas (à direita, ou embaixo em tela estreita). `esc` sai.
   Os tiles nunca trocam de pai no DOM — mover um `<video>` com `srcObject` pisca.
-- Fita de bitrate por tile: 60 amostras, uma por segundo, em canvas.
+- Medidor de bitrate por tile: 60 amostras, uma por segundo, em canvas. No tile
+  largo mora na própria linha da telemetria, com fatia fixa de 3px; no estreito
+  vira faixa de largura cheia acima do texto, com a fatia esticada. Nos dois
+  casos as barras se encostam — esticar 60 amostras num tile de 1900px dava 32px
+  de fatia e a fita virava tique esparso no canto.
 - `maxBitrate` 1.5 Mb/s, `maxFramerate` 30, `degradationPreference:
   "maintain-resolution"`, `contentHint = "detail"`.
 - Telemetria por tile a cada 1s: bitrate, resolução, fps, tipo de candidate, RTT.

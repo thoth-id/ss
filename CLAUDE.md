@@ -104,9 +104,16 @@ scrolled and the telemetry strip fell below the fold. Do not put it back.
 
 Three things the math depends on:
 
-- **`STRIP = 40` must equal the CSS strip height** (`.wave` 16 + `.fields` 24).
-  Tile borders are `box-shadow: inset` and not real borders precisely so they add
-  no height — a 1px border would make every tile overflow its slot by 2px.
+- **`STRIP_LINE` (24) and `STRIP_BAND` (40) must equal the CSS strip heights** —
+  `.fields` alone, and `.fields` plus the gauge band above it. Tile borders are
+  `box-shadow: inset` and not real borders precisely so they add no height; a 1px
+  border would make every tile overflow its slot by 2px. Which strip is in force
+  is decided by a **second fit pass**: `layout()` fits optimistically with
+  `STRIP_LINE`, and if the narrowest tile came out under `BAND_BELOW` (600px, the
+  width where the telemetry text and the gauge stop sharing one line) it sets
+  `strip = STRIP_BAND` and fits again. The strip is uniform across the layout on
+  purpose — a ragged ruler between side-by-side tiles looks worse than a band on
+  a tile that could have held the inline gauge.
 - **Rows are justified**: every tile in a row shares one height, widths come from
   each tile's real aspect ratio (1600×900 and 1440×900 coexist in one room), and
   the row's height ceiling is `H/rows`, which is what guarantees the block always
@@ -128,9 +135,18 @@ a `tela cheia` button that fullscreens the `.frame` (the `:fullscreen` rule
 overrides the JS-set height, which is why the height lives in `--vh` in the
 stylesheet instead of an inline style on the video).
 
-The per-tile signal ribbon (`.wave`) is 60 samples of measured bitrate, one per
+The per-tile signal gauge (`.wave`) is 60 samples of measured bitrate, one per
 second, drawn on a canvas. It is telemetry, not decoration: a link degrading
 shows up as a falling tape before the single instantaneous number explains why.
+
+Its geometry is the reason for the two strips. Stretching 60 samples across a
+1900px tile gives each one a 32px slot, so the bars stop touching and the minute
+of history reads as sparse ticks in a corner — it looked broken. Above
+`BAND_BELOW` the gauge gets its own 156–180px box at the right end of the
+telemetry line and a **fixed 3px slot**, so the bar rhythm is identical at every
+tile size. Below it there is no room for both on one line, so the gauge takes a
+full-width band above the text and the slot stretches to fill it. Either way the
+bars touch, which is what makes it read as a tape.
 
 ### Client reconnect
 

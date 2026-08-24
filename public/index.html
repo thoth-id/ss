@@ -96,7 +96,7 @@
 
   /* Tile posicionado e dimensionado pelo layout() em px. A borda é box-shadow
      inset de propósito: borda de verdade somaria altura e o encaixe erraria
-     por 2px. Ver STRIP no JS. */
+     por 2px. Ver STRIP_LINE / STRIP_BAND no JS. */
   .tile {
     position: absolute; left: 0; top: 0;
     display: flex; flex-direction: column;
@@ -129,15 +129,25 @@
     background: rgba(6,10,12,.78); backdrop-filter: blur(3px);
   }
 
-  .meta { flex: none; background: var(--panel); box-shadow: inset 0 1px 0 var(--line); }
-  /* A fita: 60 barras, uma por segundo, do bitrate real. Mostra a queda do
-     link acontecendo, coisa que o número instantâneo não conta. */
-  .wave { display: block; width: 100%; height: 16px; }
+  .meta { position: relative; flex: none; background: var(--panel); box-shadow: inset 0 1px 0 var(--line); }
   .fields {
-    display: flex; align-items: center; gap: 12px; height: 24px; padding: 0 9px;
+    display: flex; align-items: center; gap: 10px; height: 24px;
+    padding: 0 190px 0 9px;   /* reserva a direita pro medidor; ver STRIP_LINE */
     font-size: 11.5px; color: var(--dim); white-space: nowrap; overflow: hidden;
     font-variant-numeric: tabular-nums;
   }
+  /* O medidor: uma barra por segundo do último minuto. No tile largo ele mora
+     na própria linha da telemetria, com fatia fixa de 3px — esticar 60 amostras
+     na largura de um tile de 1900px dava 32px de fatia pra uma barra de 6, e a
+     fita virava tique esparso no canto. */
+  .wave {
+    display: block; position: absolute; right: 9px; bottom: 5px;
+    width: 156px; height: 14px;
+  }
+  /* No tile estreito não há linha que caiba as duas coisas: o medidor sobe pra
+     uma faixa própria e aí sim estica, uma barra por fatia. */
+  .tile.band .wave { position: static; width: 100%; height: 16px; }
+  .tile.band .fields { padding-right: 9px; }
   .fields .who { color: var(--fg); }
   .fields .hi { color: var(--accent); }
   .fields .warn { color: var(--warn); }
@@ -641,10 +651,21 @@ function toggleFocus(id) {
 // de telemetria ficava embaixo da dobra.
 const GAP = 12;                   // entre tiles
 const PAD = 14;                   // borda do palco
-const STRIP = 40;                 // faixa: wave 16 + fields 24. Bate com o CSS.
+// Alturas da faixa de telemetria. Têm que bater com o CSS: STRIP_LINE é a
+// altura de .fields, STRIP_BAND é .fields mais a faixa do medidor em cima.
+const STRIP_LINE = 24;
+const STRIP_BAND = 40;
+const BAND_BELOW = 600;           // abaixo desta largura de tile, medidor em faixa
 const MINI_STRIP = 20;            // faixa da miniatura na trilha
-const WAVE_H = 16;
-const WAVE_LEN = 60;              // amostras na fita, uma por segundo
+const WAVE_LINE_H = 14;
+const WAVE_BAND_H = 16;
+const WAVE_SLOT = 3;              // px por amostra na linha: barra de 2 + 1 de ar
+const WAVE_LEN = 60;              // amostras guardadas, uma por segundo
+
+// Vale para todos os tiles do layout atual: régua desalinhada entre tiles lado
+// a lado é pior que medidor em faixa num tile que teria largura pra linha.
+let strip = STRIP_LINE;
+let minTile = Infinity;           // menor tile não-miniatura do passe atual
 
 let pending = 0;
 
@@ -668,12 +689,12 @@ function fitBox(ar, W, H, strip) {
 }
 
 function place(tile, x, y, w, h, mini) {
+  if (!mini) minTile = Math.min(minTile, w);
   tile.classList.toggle("mini", mini);
   tile.style.left = Math.round(x) + "px";
   tile.style.top = Math.round(y) + "px";
   tile.style.width = Math.round(w) + "px";
   tile.style.setProperty("--vh", Math.round(h) + "px");
-  sizeWave(tile, Math.round(w));
 }
 
 function layout() {
@@ -685,8 +706,23 @@ function layout() {
 
   const list = [...tiles.values()];
   const focused = focusId ? tiles.get(focusId) : null;
-  if (focused && list.length > 1) fitFocus(list, focused, PAD, PAD, W, H);
-  else fitGrid(list, PAD, PAD, W, H);
+  const fit = () => {
+    minTile = Infinity;
+    if (focused && list.length > 1) fitFocus(list, focused, PAD, PAD, W, H);
+    else fitGrid(list, PAD, PAD, W, H);
+  };
+
+  // Primeiro passe otimista, com o medidor na linha. Se algum tile ficou
+  // estreito demais pra isso, o medidor vira faixa e o encaixe é refeito —
+  // a faixa é 16px mais alta, então as alturas mudam.
+  strip = STRIP_LINE;
+  fit();
+  if (minTile < BAND_BELOW) {
+    strip = STRIP_BAND;
+    fit();
+  }
+  for (const tile of list) tile.classList.toggle("band", strip === STRIP_BAND);
+  for (const tile of list) sizeWave(tile, tile.offsetWidth);
 }
 
 // Escolhe o número de colunas que maximiza a área total de vídeo. Não é
@@ -703,7 +739,7 @@ function rowsFor(list, ars, cols, W, H) {
   const nRows = Math.ceil(n / cols);
   // Teto de altura por linha. Uniforme de propósito: é o que garante que a
   // soma das linhas nunca passe de H, ou seja, que nada precise de scroll.
-  const budget = (H - GAP * (nRows - 1)) / nRows - STRIP;
+  const budget = (H - GAP * (nRows - 1)) / nRows - strip;
   const rows = [];
   for (let r = 0; r < nRows; r++) {
     const idx = [];
@@ -727,7 +763,7 @@ function fitGrid(list, X, Y, W, H) {
   }
 
   const rows = rowsFor(list, ars, cols, W, H);
-  const total = rows.reduce((sum, r) => sum + r.h + STRIP, 0) + GAP * (rows.length - 1);
+  const total = rows.reduce((sum, r) => sum + r.h + strip, 0) + GAP * (rows.length - 1);
   let y = Y + Math.max(0, (H - total) / 2);
 
   for (const row of rows) {
@@ -738,7 +774,7 @@ function fitGrid(list, X, Y, W, H) {
       place(list[i], x, y, ws[k], row.h, false);
       x += ws[k] + GAP;
     });
-    y += row.h + STRIP + GAP;
+    y += row.h + strip + GAP;
   }
 }
 
@@ -753,10 +789,10 @@ function fitFocus(list, focused, X, Y, W, H) {
   const railH = side ? 0 : Math.max(72, Math.min(132, H * 0.22));
   const mainW = W - (side ? railW + GAP : 0);
   const mainH = H - (side ? 0 : railH + GAP);
-  const box = fitBox(arOf(focused), mainW, mainH, STRIP);
+  const box = fitBox(arOf(focused), mainW, mainH, strip);
 
   if (side) {
-    const top = Y + (mainH - box.h - STRIP) / 2;
+    const top = Y + (mainH - box.h - strip) / 2;
     place(focused, X + (mainW - box.w) / 2, top, box.w, box.h, false);
     // Trilha pendurada na borda de cima do tile em foco: os dois viram um
     // bloco só. Centralizar a trilha na altura do palco a deixava solta.
@@ -775,14 +811,14 @@ function fitFocus(list, focused, X, Y, W, H) {
   const slot = (W - GAP * (k - 1)) / k;
   const boxes = others.map((t) => fitBox(arOf(t), slot, railH, MINI_STRIP));
   const miniH = Math.max(...boxes.map((b) => b.h)) + MINI_STRIP;
-  const total = box.h + STRIP + GAP + miniH;
+  const total = box.h + strip + GAP + miniH;
   const y0 = Y + Math.max(0, (H - total) / 2);
   place(focused, X + (mainW - box.w) / 2, y0, box.w, box.h, false);
 
   const rowW = boxes.reduce((sum, b) => sum + b.w, 0) + GAP * (k - 1);
   let x = X + Math.max(0, (W - rowW) / 2);
   others.forEach((tile, i) => {
-    place(tile, x, y0 + box.h + STRIP + GAP, boxes[i].w, boxes[i].h, true);
+    place(tile, x, y0 + box.h + strip + GAP, boxes[i].w, boxes[i].h, true);
     x += boxes[i].w + GAP;
   });
 }
@@ -896,11 +932,21 @@ function push(id, bps) {
   if (tile) drawWave(tile);
 }
 
-function sizeWave(tile, w) {
+function waveH() {
+  return strip === STRIP_BAND ? WAVE_BAND_H : WAVE_LINE_H;
+}
+
+function sizeWave(tile, tileW) {
   const c = tile.querySelector(".wave");
+  const band = strip === STRIP_BAND;
+  // Na linha, largura própria com teto de um minuto; na faixa, a do tile.
+  const cssW = band
+    ? tileW
+    : Math.max(45, Math.min(WAVE_LEN * WAVE_SLOT, Math.round(tileW * 0.28)));
   const dpr = Math.min(2, devicePixelRatio || 1);
-  const pw = Math.max(1, Math.round(w * dpr));
-  const ph = Math.round(WAVE_H * dpr);
+  const pw = Math.max(1, Math.round(cssW * dpr));
+  const ph = Math.round(waveH() * dpr);
+  c.style.width = band ? "" : cssW + "px";
   if (c.width === pw && c.height === ph) return;
   c.width = pw;
   c.height = ph;
@@ -912,25 +958,26 @@ function sizeWave(tile, w) {
 function drawWave(tile) {
   const c = tile.querySelector(".wave");
   const data = hist.get(tile.dataset.id);
-  const dpr = c.height / WAVE_H;
+  const h0 = waveH();
+  const dpr = c.height / h0;
   const g = c.getContext("2d");
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   const w = c.width / dpr;
-  g.clearRect(0, 0, w, WAVE_H);
+  g.clearRect(0, 0, w, h0);
   if (!data?.length) return;
 
   accent ||= getComputedStyle(document.documentElement)
     .getPropertyValue("--accent").trim() || "#58c8b4";
-  const peak = Math.max(...data, 1);
-  const step = w / WAVE_LEN;
-  // Teto na largura da barra: num tile largo, 1/60 da largura viraria bloco.
-  // Barra fina e centrada na fatia lê como fita de instrumento.
-  const bar = Math.max(1, Math.min(6, step - 1));
-  for (let i = 0; i < data.length; i++) {
-    const h = Math.max(1, (data[i] / peak) * (WAVE_H - 3));
-    g.globalAlpha = i === data.length - 1 ? 1 : 0.34;
+  // Na faixa a fatia estica pra ocupar a largura; na linha ela é fixa. Nos dois
+  // casos as barras se encostam, que é o que faz isso ler como fita.
+  const slot = strip === STRIP_BAND ? w / WAVE_LEN : WAVE_SLOT;
+  const show = data.slice(-Math.floor(w / slot));
+  const peak = Math.max(...show, 1);
+  for (let i = 0; i < show.length; i++) {
+    const h = Math.max(1, (show[i] / peak) * (h0 - 2));
+    g.globalAlpha = i === show.length - 1 ? 1 : 0.4;   // a última é o agora
     g.fillStyle = accent;
-    g.fillRect(w - (data.length - i) * step + (step - bar) / 2, WAVE_H - h, bar, h);
+    g.fillRect(w - (show.length - i) * slot, h0 - h, Math.max(1, slot - 1), h);
   }
   g.globalAlpha = 1;
 }
