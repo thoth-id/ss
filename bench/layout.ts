@@ -83,12 +83,12 @@ async function setViewport(w: number, h: number) {
 // not work here: the pan calls setPointerCapture, which rejects an invented
 // pointerId, and without capture the drag dies at the element edge, so the test
 // would pass vacuously.
-async function roda(x: number, y: number, dy: number) {
+async function wheel(x: number, y: number, dy: number) {
   await cdp("Input.dispatchMouseEvent",
     { type: "mouseWheel", x, y, deltaX: 0, deltaY: dy, pointerType: "mouse" });
   await Bun.sleep(60);
 }
-async function arrasta(x0: number, y0: number, x1: number, y1: number) {
+async function drag(x0: number, y0: number, x1: number, y1: number) {
   await cdp("Input.dispatchMouseEvent",
     { type: "mousePressed", x: x0, y: y0, button: "left", buttons: 1, clickCount: 1, pointerType: "mouse" });
   const N = 8;
@@ -100,7 +100,7 @@ async function arrasta(x0: number, y0: number, x1: number, y1: number) {
     { type: "mouseReleased", x: x1, y: y1, button: "left", buttons: 0, clickCount: 1, pointerType: "mouse" });
   await Bun.sleep(80);
 }
-async function clica(x: number, y: number) {
+async function clickAt(x: number, y: number) {
   await cdp("Input.dispatchMouseEvent",
     { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1, pointerType: "mouse" });
   await cdp("Input.dispatchMouseEvent",
@@ -316,20 +316,20 @@ const cx = Math.round(await evalJS(`(() => { const r = tiles.get("aaaa1111").que
 const cy = Math.round(await evalJS(`(() => { const r = tiles.get("aaaa1111").querySelector(".frame").getBoundingClientRect(); return r.top + r.height / 2; })()`));
 
 const p0 = await evalJS(`pointUnder("aaaa1111", ${cx}, ${cy})`);
-await roda(cx, cy, -120);
+await wheel(cx, cy, -120);
 const p1 = await evalJS(`pointUnder("aaaa1111", ${cx}, ${cy})`);
 check("the wheel magnifies", p1.k > 1.05, `k=${p1.k}`);
 check("anchored on the 1st notch", Math.abs(p1.px - p0.px) < 1 && Math.abs(p1.py - p0.py) < 1,
   `(${p0.px.toFixed(1)},${p0.py.toFixed(1)}) -> (${p1.px.toFixed(1)},${p1.py.toFixed(1)})`);
 
-await roda(cx, cy, -120);
+await wheel(cx, cy, -120);
 const p2 = await evalJS(`pointUnder("aaaa1111", ${cx}, ${cy})`);
 check("the wheel accumulates", p2.k > p1.k + 0.05, `${p1.k} -> ${p2.k}`);
 check("anchored on the 2nd notch (t is no longer zero)",
   Math.abs(p2.px - p0.px) < 1 && Math.abs(p2.py - p0.py) < 1,
   `expected (${p0.px.toFixed(1)},${p0.py.toFixed(1)}), got (${p2.px.toFixed(1)},${p2.py.toFixed(1)})`);
 
-await roda(cx, cy, -120);
+await wheel(cx, cy, -120);
 const p3 = await evalJS(`pointUnder("aaaa1111", ${cx}, ${cy})`);
 check("anchored on the 3rd notch", Math.abs(p3.px - p0.px) < 1 && Math.abs(p3.py - p0.py) < 1,
   `expected (${p0.px.toFixed(1)},${p0.py.toFixed(1)}), got (${p3.px.toFixed(1)},${p3.py.toFixed(1)})`);
@@ -340,10 +340,10 @@ check("anchored on the 3rd notch", Math.abs(p3.px - p0.px) < 1 && Math.abs(p3.py
 // t = c(1−k) then t + c(k−k') = c(1−k'). it only diverges once t stops equalling
 // c(1−k), that is, after a pan or at a second anchor point. without this case
 // that variant passes the whole suite.
-await arrasta(cx, cy, cx - 60, cy - 40);
+await drag(cx, cy, cx - 60, cy - 40);
 const cx3 = cx + 180, cy3 = cy + 90;
 const q0 = await evalJS(`pointUnder("aaaa1111", ${cx3}, ${cy3})`);
-await roda(cx3, cy3, -120);
+await wheel(cx3, cy3, -120);
 const q1 = await evalJS(`pointUnder("aaaa1111", ${cx3}, ${cy3})`);
 check("anchored at a second point, after a pan",
   Math.abs(q1.px - q0.px) < 1 && Math.abs(q1.py - q0.py) < 1,
@@ -351,22 +351,22 @@ check("anchored at a second point, after a pan",
 check("the transform origin is the corner", q1.origin === "0px 0px", q1.origin);
 
 // ceiling: not even an endless wheel passes ZOOM_MAX.
-for (let i = 0; i < 12; i++) await roda(cx, cy, -240);
+for (let i = 0; i < 12; i++) await wheel(cx, cy, -240);
 check("the zoom ceiling holds", (await evalJS(`zooms.get("aaaa1111").k`)) <= 4.0001,
   String(await evalJS(`zooms.get("aaaa1111").k`)));
 
 // confinement: dragging far hits the edge and stops. this is the assertion
 // with teeth: scrollHeight will not do, because .tile has overflow: hidden and
 // absorbs any overflow from the transformed descendant.
-await arrasta(cx, cy, cx + 5000, cy);
+await drag(cx, cy, cx + 5000, cy);
 let z = await evalJS(`zooms.get("aaaa1111")`);
 check("the pan does not detach on the right", Math.abs(z.x) < 0.5, `x=${z.x}`);
-await arrasta(cx, cy, cx - 5000, cy);
+await drag(cx, cy, cx - 5000, cy);
 z = await evalJS(`zooms.get("aaaa1111")`);
 const lim = await evalJS(`(() => { const f = tiles.get("aaaa1111").querySelector(".frame");
   return f.clientWidth * (1 - zooms.get("aaaa1111").k); })()`);
 check("the pan does not detach on the left", Math.abs(z.x - lim) < 1, `x=${z.x} limit=${lim}`);
-await arrasta(cx, cy, cx, cy - 5000);
+await drag(cx, cy, cx, cy - 5000);
 z = await evalJS(`zooms.get("aaaa1111")`);
 const limY = await evalJS(`(() => { const f = tiles.get("aaaa1111").querySelector(".frame");
   return f.clientHeight * (1 - zooms.get("aaaa1111").k); })()`);
@@ -436,7 +436,7 @@ check("native is greater than 1 (the fit shrinks the video)", boundary.native > 
 // a click does not yank away somebody reading up close, and the click after a
 // pan does not focus.
 check("a click does not leave focus while zoomed", (await evalJS("focusId")) === "aaaa1111");
-await clica(cx, cy);
+await clickAt(cx, cy);
 check("a click while zoomed does not change focus", (await evalJS("focusId")) === "aaaa1111",
   String(await evalJS("focusId")));
 
@@ -457,7 +457,7 @@ await evalJS(`(() => { focusId = null; render(); })()`);
 await settle();
 const cx2 = Math.round(await evalJS(`(() => { const r = tiles.get("bbbb2222").querySelector(".frame").getBoundingClientRect(); return r.left + r.width / 2; })()`));
 const cy2 = Math.round(await evalJS(`(() => { const r = tiles.get("bbbb2222").querySelector(".frame").getBoundingClientRect(); return r.top + r.height / 2; })()`));
-await roda(cx2, cy2, -240);
+await wheel(cx2, cy2, -240);
 check("zoom works on an unfocused tile", (await evalJS(`zooms.has("bbbb2222")`)) === true);
 await evalJS(`toggleFocus("aaaa1111")`);
 await settle();
@@ -467,15 +467,15 @@ check("becoming a thumbnail discards the zoom", (await evalJS(`zooms.has("bbbb22
 // is the rail's only use.
 const rc = Math.round(await evalJS(`(() => { const r = tiles.get("bbbb2222").querySelector(".frame").getBoundingClientRect(); return r.left + r.width / 2; })()`));
 const rl = Math.round(await evalJS(`(() => { const r = tiles.get("bbbb2222").querySelector(".frame").getBoundingClientRect(); return r.top + r.height / 2; })()`));
-await roda(rc, rl, -120);
+await wheel(rc, rl, -120);
 check("the wheel does not magnify a thumbnail", (await evalJS(`zooms.has("bbbb2222")`)) === false);
-await clica(rc, rl);
+await clickAt(rc, rl);
 await settle();
 check("and the thumbnail is still focusable by click", (await evalJS("focusId")) === "bbbb2222",
   String(await evalJS("focusId")));
 
 // layout intact under zoom: the transform plays no part in the fit.
-await roda(cx, cy, -240);
+await wheel(cx, cy, -240);
 await settle();
 m = await measure();
 check("the page does not scroll while zoomed", !m.scrolls, `${m.scrollH} > ${m.innerH}`);
