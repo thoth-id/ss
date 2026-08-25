@@ -147,8 +147,23 @@ async function testJoin() {
   eq("first peer is told about the second", a.first("peer-joined")?.id, b.id());
   ok("whoever joins gets no peer-joined for themselves", b.of("peer-joined").length === 0);
 
+  ok("joined carries the session clock", typeof joined?.startedAt === "number", joined?.startedAt);
+  ok("a late peer inherits the same session clock", b.first("joined")?.startedAt === joined.startedAt);
+
   a.close();
   b.close();
+  await settle();
+
+  // empty room must delete its clock; next birth gets a fresh epoch
+  const c = await peer("c");
+  c.join("r-join");
+  await settle();
+  const fresh = c.first("joined");
+  ok("new room after empty gets a fresh session clock",
+    typeof fresh?.startedAt === "number" && fresh.startedAt !== joined.startedAt,
+    `old=${joined.startedAt} fresh=${fresh?.startedAt}`);
+  ok("fresh clock is recent", Math.abs((fresh?.startedAt ?? 0) - Date.now()) < 5000, fresh?.startedAt);
+  c.close();
   await settle();
 }
 

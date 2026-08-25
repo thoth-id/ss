@@ -213,6 +213,14 @@ set, rather than waiting for `connectionstatechange`.
 
 The socket `close` handler must free the sharer slot — that is the tab-close path.
 
+**The room session clock is the same lifecycle by necessity.** `startedAt` (in
+`joined`) is the epoch the first peer set when the room turned from empty to
+one, and it dies in the same `rooms.delete(room)` that erases an empty room. The
+client counts from that single timestamp locally — one reference, no periodic
+sync — which is why the top pill shows the running time (`#room · 0:42 · 2/3 on air ·
+4 in the room`). It could not survive a full empty room even if we wanted
+it to: an empty room does not exist, and neither does its clock.
+
 ### The shell is a call, not a page
 
 The stage is the whole window (`main { position: absolute; inset: 0 }`) and every

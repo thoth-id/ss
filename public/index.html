@@ -366,6 +366,7 @@
 
 <div class="top">
   <span id="topRoom">#room</span>
+  <span id="topTime"></span>
   <span id="topAir">connecting</span>
   <span id="topPeers">1</span>
 </div>
@@ -459,6 +460,7 @@ let maxSharers = 3;
 let maxCapturePixels = 1_440_000; // capture pixel budget; see startShare()
 let myId = null;
 let myName = "";                  // name chosen here, already sanitized
+let startedAt = 0;                // room session epoch (ms), from `joined`
 let ws = null;
 let dead = false;                 // got `denied`: stop reconnecting
 let retry = 0;                    // reconnect timer, cancellable on a room switch
@@ -573,7 +575,9 @@ function handle(msg) {
 
     peers.clear();
     msg.peers.forEach((id) => peers.add(id));
-
+    // one timestamp, and the clock counts from there locally: no periodic sync
+    // needed. an old server without startedAt sends undefined, which hides the clock.
+    startedAt = msg.startedAt ?? 0;
     // if we were transmitting, the server already dropped us from the sharer
     // set on close. ask for the slot again; sending starts when the `sharers`
     // broadcast confirms it.
@@ -1583,6 +1587,7 @@ function switchRoom(nome) {
   // a refusal from the previous room does not carry into the next.
   dead = false;
   notice("");
+  startedAt = 0; // the new room starts its own clock, if it has one
 
   clearTimeout(retry);
   if (ws) {
@@ -1715,6 +1720,9 @@ function render() {
   const quantos = $("topPeers");
   quantos.hidden = !myId;
   quantos.textContent = n ? `${n + 1} in the room` : "just you";
+  const crono = $("topTime");
+  crono.hidden = !(myId && startedAt);
+  if (!crono.hidden) crono.textContent = fmtClock(Date.now() - startedAt);
 
   const idle = tiles.size === 0;
   $("empty").hidden = !idle;
@@ -1947,7 +1955,22 @@ setInterval(async () => {
     via.className = "path" + (politica ? " warn" : "");
     push(myId, total);
   }
+
+  // room session clock: reuse the single 1s telemetry tick — no second timer.
+  const crono = $("topTime");
+  if (crono && !crono.hidden && startedAt) crono.textContent = fmtClock(Date.now() - startedAt);
 }, 1000);
+
+
+// mm:ss under an hour, h:mm:ss after: a room session is read in minutes first.
+function fmtClock(ms) {
+  if (!Number.isFinite(ms)) return "0:00";
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${m}:${ss}` : `${Number(m)}:${ss}`;
+}
 
 // takes the report rather than asking for its own: called once per tile per
 // second, getStats() ran twice for the same peer, once here and once in the
