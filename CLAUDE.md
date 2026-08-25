@@ -12,8 +12,38 @@ It is published on npm as **`@thoth-dev/screen-share`**, runnable with `bunx
 @thoth-dev/screen-share`. Nothing about the stack changed for that: the package
 still ships `.ts` as written, and Bun still runs it directly — no
 transpilation, no `dist/`.
-`bin/cli.ts` is the published entry point (`bin.screen-share` in
-`package.json`); it only parses flags and hands the real work to `server.ts`.
+`bin/screen-share.mjs` is the published entry point (`bin.screen-share` in
+`package.json`), and `bin/cli.ts` is what it hands over to; the CLI only parses
+flags and hands the real work to `server.ts`.
+
+**Why there are two files and not one.** On POSIX, npm links
+`node_modules/.bin/screen-share` straight at the file named in `bin`, so the
+shebang picks the interpreter. With `bin/cli.ts` there (shebang `bun`), a
+machine without Bun died in `env` — `env: 'bun': No such file or directory` —
+before a single line of ours ran, which is why no message written inside
+`cli.ts` could ever have explained it. The launcher has a `node` shebang and
+does three things: under Bun already (`process.versions.bun`, i.e. `bunx`) it
+imports `cli.ts` directly, so `process.argv` keeps the shape
+`argv.slice(2)` expects and no second process appears; otherwise it looks for
+`bun` on `PATH`, in `$BUN_INSTALL/bin` and in `~/.bun/bin` (that last one is
+the common failure: Bun installed, `npx` running in a non-login shell that
+never read the rc) and spawns it; failing that it names what is missing, why
+Bun and not Node (`Bun.serve`), and the install line, then exits 1. It does
+**not** install anything: a published `bin` that curls a script from another
+domain is the postinstall pattern nobody wants.
+
+Being an intermediate process comes with an obligation the old layout did not
+have: **the launcher relays `SIGINT`/`SIGTERM`/`SIGHUP` to the child and
+mirrors its exit code.** Without the relay, `kill <pid>` on the pid the user
+can see killed only the launcher and left `bun` orphaned holding the port
+(measured, not assumed). Ctrl-C hides the bug, because the terminal signals
+the whole process group; a targeted kill does not. When the child dies of a
+signal the launcher removes its own listener for it before re-raising on
+itself, otherwise the handler catches the re-raise and the launcher hangs
+forever trying to kill a dead child.
+
+Keep the launcher free of CLI logic. Flags, `--bg` and `--stop` all stay in
+`cli.ts`.
 
 Three names, three jobs: the project's internal name stays `tela` — repo, UI
 strings and `PLANO.md` keep saying `tela`. The **package name**,
@@ -83,6 +113,7 @@ tailscale serve --bg 3000   # persists across restarts; only the Bun process nee
 ## Architecture
 
 ```
+bin/screen-share.mjs  published bin: node shebang, finds bun or explains why it cannot
 bin/cli.ts       CLI: flags, --bg/--stop, env handoff to server.ts
 server.ts        Bun.serve: static files + /config + WebSocket signaling + room/sharer state
 stun.ts          ~50-line STUN server (node:dgram), Binding Request → XOR-MAPPED-ADDRESS

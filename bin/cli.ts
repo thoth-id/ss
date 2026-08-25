@@ -2,9 +2,11 @@
 /* CLI do screen-share.
 
    O shebang é bun, não node: o servidor usa Bun.serve para o WebSocket e não
-   há equivalente em Node. Quem rodar `npx @thoth-dev/screen-share` sem Bun
-   instalado recebe `env: bun: No such file or directory` — seco, mas nomeia
-   o que falta. O comando documentado é `bunx @thoth-dev/screen-share`.
+   há equivalente em Node. É justamente por isso que este arquivo não é mais o
+   `bin` do pacote: com ele lá, quem rodava `npx @thoth-dev/screen-share` sem
+   Bun instalado morria no `env`, antes de qualquer linha nossa. Quem entra
+   agora é o screen-share.mjs — Node executa, acha o bun e chega aqui. Rodar
+   `bun bin/cli.ts` à mão continua idêntico.
 
    Nada aqui é lógica de servidor: isto lê flags, decide primeiro plano ou
    segundo, e entrega o resto ao server.ts. */

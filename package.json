@@ -25,9 +25,10 @@
   },
   "type": "module",
   "bin": {
-    "screen-share": "bin/cli.ts"
+    "screen-share": "bin/screen-share.mjs"
   },
   "files": [
+    "bin/screen-share.mjs",
     "bin/cli.ts",
     "server.ts",
     "stun.ts",
