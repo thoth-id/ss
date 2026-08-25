@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>tela</title>
+<title>ss</title>
 <style>
   :root {
     /* Chão de call: quase preto, com o viés frio do acento. Os tiles sobem
@@ -337,7 +337,7 @@
 
 <main id="stage"></main>
 
-<span class="mark">tela<i id="live"></i></span>
+<span class="mark">ss<i id="live"></i></span>
 
 <div class="top">
   <span id="topRoom">#sala</span>
@@ -1267,7 +1267,7 @@ addEventListener("keydown", (e) => {
 
 /* ---------- nome ---------- */
 
-const NAME_KEY = "tela:nome";
+const NAME_KEY = "ss:nome";
 // Obrigatório, e com piso: uma letra não distingue duas pessoas, e quem entra
 // numa sala precisa ser reconhecível por quem já está lá. O servidor continua
 // aceitando vazio (é como se apaga um nome), então esta regra é do cliente:
@@ -1355,7 +1355,7 @@ myName = loadName();
 
 /* ---------- salas ---------- */
 
-const ROOMS_KEY = "tela:salas";
+const ROOMS_KEY = "ss:salas";
 const ROOMS_MAX = 8;
 
 // Mesmo corte do servidor (String, 64), mais o colapso de espaços que o
@@ -1384,7 +1384,7 @@ function remember(room) {
 
 function paintRoom() {
   $("topRoom").textContent = "#" + ROOM;
-  document.title = `#${ROOM} · tela`;
+  document.title = `#${ROOM} · ss`;
 }
 
 // Troca de sala sem recarregar. O socket novo ganha um id novo do servidor, e o
