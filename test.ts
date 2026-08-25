@@ -147,6 +147,9 @@ async function testJoin() {
   eq("first peer is told about the second", a.first("peer-joined")?.id, b.id());
   ok("whoever joins gets no peer-joined for themselves", b.of("peer-joined").length === 0);
 
+  ok("joined carries the session clock", typeof joined?.startedAt === "number", joined?.startedAt);
+  ok("a late peer inherits the same session clock", b.first("joined")?.startedAt === joined.startedAt);
+
   a.close();
   b.close();
   await settle();

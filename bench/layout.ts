@@ -230,7 +230,10 @@ checa("everybody has a tile", m.tiles.length === 4 && m.tiles.every((t: any) => 
 checa("nothing overlaps: dock, pill, label", dentro(m), JSON.stringify(m.tiles));
 checa("equal cells for everybody", new Set(m.tiles.map((t: any) => Math.round(t.h))).size === 1,
   JSON.stringify(m.tiles.map((t: any) => Math.round(t.h))));
-checa("the pill counts the room", m.topo.join(" ") === "#room 0/3 on air 4 in the room", JSON.stringify(m.topo));
+checa("the pill counts the room",
+  m.topo.length === 4 && m.topo[0] === "#room" && /^\d+:\d{2}$/.test(m.topo[1]) &&
+  m.topo[2] === "0/3 on air" && m.topo[3] === "4 in the room",
+  JSON.stringify(m.topo));
 await shot("2-call-no-video");
 
 console.log("\n--- 1 screen on air: video rules, presence drops to the rail ---");
