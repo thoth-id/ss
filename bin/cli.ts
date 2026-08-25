@@ -36,14 +36,14 @@ type Opts = {
   maxCapturePixels?: number;
 };
 
-const RAIZ = path.join(import.meta.dir, "..");
+const ROOT = path.join(import.meta.dir, "..");
 
 // read on demand: every `screen-share --bg` used to pay a readFileSync plus a
 // JSON.parse for a version only --help and --version ask for.
-const versao = (): string =>
-  JSON.parse(readFileSync(path.join(RAIZ, "package.json"), "utf8")).version;
+const getVersion = (): string =>
+  JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
 
-const ajuda = () => `ss ${versao()} - peer-to-peer screen sharing, no account and no media server
+const helpText = () => `ss ${getVersion()} - peer-to-peer screen sharing, no account and no media server
 
   bunx @thoth-dev/screen-share [flags]
 
@@ -70,7 +70,7 @@ const ajuda = () => `ss ${versao()} - peer-to-peer screen sharing, no account an
   sharing a screen requires a secure context: localhost works, a bare IP does
   not. for other machines put HTTPS in front (tailscale serve --bg 3000).`;
 
-const ILIMITADO = Number.MAX_SAFE_INTEGER;
+const UNLIMITED = Number.MAX_SAFE_INTEGER;
 
 /* an integer, and inside the range where it means something. Number() alone
    accepts " 0x10 " (as 16), "1e3" and "2.5", none of them an integer written as
@@ -82,12 +82,12 @@ const ILIMITADO = Number.MAX_SAFE_INTEGER;
 // and the error messages have to talk about different things. a fifth file for
 // 15 lines would cost the project more than the duplication. if the rule
 // changes in one, change the other.
-function num(valor: string, flag: string, min: number, max = ILIMITADO): number {
-  const limpo = valor.trim();
-  const n = Number(limpo);
-  if (!/^\d+$/.test(limpo) || !Number.isSafeInteger(n) || n < min || n > max) {
-    const faixa = max === ILIMITADO ? `an integer >= ${min}` : `an integer between ${min} and ${max}`;
-    process.stderr.write(`invalid value for ${flag}: ${valor}\nExpected ${faixa}.\n`);
+function parseNumber(value: string, flag: string, min: number, max = UNLIMITED): number {
+  const trimmed = value.trim();
+  const n = Number(trimmed);
+  if (!/^\d+$/.test(trimmed) || !Number.isSafeInteger(n) || n < min || n > max) {
+    const range = max === UNLIMITED ? `an integer >= ${min}` : `an integer between ${min} and ${max}`;
+    process.stderr.write(`invalid value for ${flag}: ${value}\nExpected ${range}.\n`);
     process.exit(1);
   }
   return n;
@@ -99,11 +99,11 @@ const argv = process.argv.slice(2);
 const opts: Opts = { port: 3000, stunPort: 3478 };
 let bg = false;
 let stop = false;
-let forcar = false;
+let force = false;
 
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i]!;
-  const proximo = (): string => {
+  const nextValue = (): string => {
     const v = argv[++i];
     if (v === undefined) {
       process.stderr.write(`${a} expects a value\n`);
@@ -111,16 +111,16 @@ for (let i = 0; i < argv.length; i++) {
     }
     return v;
   };
-  if (a === "-h" || a === "--help") { process.stdout.write(ajuda() + "\n"); process.exit(0); }
-  else if (a === "-v" || a === "--version") { process.stdout.write(versao() + "\n"); process.exit(0); }
-  else if (a === "-p" || a === "--port") opts.port = num(proximo(), a, 1, 65535);
-  else if (a === "--stun-port") opts.stunPort = num(proximo(), a, 1, 65535);
-  else if (a === "--peers") opts.maxPeers = num(proximo(), a, 1);
-  else if (a === "--sharers") opts.maxSharers = num(proximo(), a, 1);
-  else if (a === "--pixels") opts.maxCapturePixels = num(proximo(), a, 1);
+  if (a === "-h" || a === "--help") { process.stdout.write(helpText() + "\n"); process.exit(0); }
+  else if (a === "-v" || a === "--version") { process.stdout.write(getVersion() + "\n"); process.exit(0); }
+  else if (a === "-p" || a === "--port") opts.port = parseNumber(nextValue(), a, 1, 65535);
+  else if (a === "--stun-port") opts.stunPort = parseNumber(nextValue(), a, 1, 65535);
+  else if (a === "--peers") opts.maxPeers = parseNumber(nextValue(), a, 1);
+  else if (a === "--sharers") opts.maxSharers = parseNumber(nextValue(), a, 1);
+  else if (a === "--pixels") opts.maxCapturePixels = parseNumber(nextValue(), a, 1);
   else if (a === "--bg") bg = true;
   else if (a === "--stop") stop = true;
-  else if (a === "--force") forcar = true;
+  else if (a === "--force") force = true;
   else {
     process.stderr.write(`unknown flag: ${a}\n\nRun with --help.\n`);
     process.exit(1);
@@ -141,7 +141,7 @@ if (bg && stop) {
    whatever that number pointed at and reporting success. with no attacker at
    all, pid recycling does the same: an orphan pidfile after a reboot makes --bg
    refuse or --stop hit an unrelated process that inherited the number. */
-function dirEstado(): string {
+function getStateDir(): string {
   const base = process.env.XDG_RUNTIME_DIR;
   const uid = typeof process.getuid === "function" ? process.getuid() : "no-uid";
   const dir = base ? path.join(base, "screen-share") : path.join(tmpdir(), `screen-share-${uid}`);
@@ -159,9 +159,9 @@ function dirEstado(): string {
   // guarantee true; without it, refusing beats pretending.
   try {
     const st = statSync(dir);
-    const alheio = typeof process.getuid === "function" && st.uid !== process.getuid();
-    const frouxo = (st.mode & 0o077) !== 0;
-    if (alheio || frouxo) {
+    const ownedByOther = typeof process.getuid === "function" && st.uid !== process.getuid();
+    const tooPermissive = (st.mode & 0o077) !== 0;
+    if (ownedByOther || tooPermissive) {
       process.stderr.write(
         `${dir} is not private: owner ${st.uid}, mode ${(st.mode & 0o777).toString(8)}.\n` +
         `Remove that directory and try again.\n`
@@ -176,32 +176,32 @@ function dirEstado(): string {
   return dir;
 }
 
-/* prepared on demand, not at module load. `dirEstado()` aborts when the state
+/* prepared on demand, not at module load. `getStateDir()` aborts when the state
    directory belongs to somebody else or has a loose mode, which is the right
    call for --bg and --stop, which write there, and the wrong one for a
    foreground run, which never touches it. reproduced: a loose XDG_RUNTIME_DIR
    killed a plain `screen-share` over a path that run would never use. */
 let pidfile = "";
 let logPath = "";
-function prepararEstado() {
-  const dir = dirEstado();
+function prepareState() {
+  const dir = getStateDir();
   pidfile = path.join(dir, `screen-share-${opts.port}.pid`);
   logPath = path.join(dir, `screen-share-${opts.port}.log`);
 }
 
 /** pid registered for this port, or null if there is no usable record. */
-function lerPid(): number | null {
-  let bruto: string;
+function readPid(): number | null {
+  let raw: string;
   try {
-    bruto = readFileSync(pidfile, "utf8");
+    raw = readFileSync(pidfile, "utf8");
   } catch {
     // absent, a directory where the file should be (EISDIR became a stack
     // trace), no permission: to the caller all three are "no record".
     return null;
   }
-  const limpo = bruto.trim();
-  if (!/^\d+$/.test(limpo)) return null; // garbage is the same as absent
-  const pid = Number(limpo);
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return null; // garbage is the same as absent
+  const pid = Number(trimmed);
   return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
 }
 
@@ -210,7 +210,7 @@ function lerPid(): number | null {
    something else. on Linux /proc answers that; where it does not exist there is
    no answer, and the rule becomes do not kill without being told to.
    null = undecidable. */
-function nosso(pid: number): boolean | null {
+function isOurServer(pid: number): boolean | null {
   let cmdline: string;
   try {
     cmdline = readFileSync(`/proc/${pid}/cmdline`, "utf8");
@@ -225,7 +225,7 @@ function nosso(pid: number): boolean | null {
    contracts. absent counts as success: the caller wants the path free, not the
    file dead. any other failure is fatal, because the O_EXCL further down would
    hit EEXIST and the CLI would start a server only to kill it. */
-function limparRegistro() {
+function clearRecord() {
   try {
     unlinkSync(pidfile);
   } catch (e: any) {
@@ -237,7 +237,7 @@ function limparRegistro() {
   }
 }
 
-function lerLog(): string {
+function readLog(): string {
   try {
     return readFileSync(logPath, "utf8");
   } catch {
@@ -248,25 +248,25 @@ function lerLog(): string {
 /* ---------- --stop ---------- */
 
 if (stop) {
-  prepararEstado();
-  const pid = lerPid();
+  prepareState();
+  const pid = readPid();
   if (pid === null) {
     process.stderr.write(`nothing running in the background on port ${opts.port}\n`);
     process.exit(1);
   }
 
-  const identidade = nosso(pid);
-  if (identidade === false) {
+  const identity = isOurServer(pid);
+  if (identity === false) {
     // recycled pid or planted pidfile; either way, killing would hit a third
     // party with nothing to do with this.
     process.stdout.write(
       `pid ${pid} registered for port ${opts.port} is not an ss server; leaving it alone.\n` +
       `Clearing the record.\n`
     );
-    limparRegistro();
+    clearRecord();
     process.exit(0);
   }
-  if (identidade === null && !forcar) {
+  if (identity === null && !force) {
     process.stderr.write(
       `cannot confirm that pid ${pid} is an ss server on this platform (no /proc).\n` +
       `Nothing was stopped. If you are sure, repeat with --force.\n`
@@ -280,7 +280,7 @@ if (stop) {
   } catch {
     process.stdout.write(`pid ${pid} was already gone; clearing the record\n`);
   }
-  limparRegistro();
+  clearRecord();
   process.exit(0);
 }
 
@@ -298,7 +298,7 @@ if (opts.maxPeers) env.MAX_PEERS = String(opts.maxPeers);
 if (opts.maxSharers) env.MAX_SHARERS = String(opts.maxSharers);
 if (opts.maxCapturePixels) env.MAX_CAPTURE_PIXELS = String(opts.maxCapturePixels);
 
-const alvoServidor = path.join(RAIZ, "server.ts");
+const serverTarget = path.join(ROOT, "server.ts");
 
 /* ---------- --bg ---------- */
 
@@ -308,7 +308,7 @@ const alvoServidor = path.join(RAIZ, "server.ts");
    compares the *configuration*, not the process. binding is the right question
    and the answer is immediate. the socket is closed before the spawn; layers 2
    and 3 cover the window between closing it and the child binding. */
-function sondarPorta(port: number): Promise<string | null> {
+function probePort(port: number): Promise<string | null> {
   return new Promise((resolve) => {
     const s = createServer();
     s.once("error", (e: NodeJS.ErrnoException) => resolve(e.code ?? "EUNKNOWN"));
@@ -321,7 +321,7 @@ function sondarPorta(port: number): Promise<string | null> {
    --stun-port, because the 3478 default is one number. the child died of
    EADDRINUSE in dgram and the message told the user to change --port, which was
    free. the bind is on 0.0.0.0 because that is where stun.ts binds. */
-function sondarUdp(port: number): Promise<string | null> {
+function probeUdp(port: number): Promise<string | null> {
   return new Promise((resolve) => {
     const s = createSocket("udp4");
     s.once("error", (e: NodeJS.ErrnoException) => resolve(e.code ?? "EUNKNOWN"));
@@ -330,39 +330,39 @@ function sondarUdp(port: number): Promise<string | null> {
 }
 
 if (bg) {
-  prepararEstado();
+  prepareState();
   // the probe comes before touching the pidfile and before opening the log, so
   // the loser of a race truncates neither the winner's log nor its record, and
   // exits with its own message instead of the tail of somebody else's.
-  const falha = await sondarPorta(opts.port);
-  if (falha) {
-    const registrado = lerPid();
-    const dica =
-      registrado !== null && nosso(registrado) === true
-        ? ` Looks like the ss server at pid ${registrado}: stop it with --stop --port ${opts.port}.`
+  const portError = await probePort(opts.port);
+  if (portError) {
+    const registered = readPid();
+    const hint =
+      registered !== null && isOurServer(registered) === true
+        ? ` Looks like the ss server at pid ${registered}: stop it with --stop --port ${opts.port}.`
         : "";
     process.stderr.write(
-      falha === "EADDRINUSE"
-        ? `port ${opts.port} is already taken.${dica}\nUse --port with another number.\n`
-        : `could not bind port ${opts.port} (${falha}).\n`
+      portError === "EADDRINUSE"
+        ? `port ${opts.port} is already taken.${hint}\nUse --port with another number.\n`
+        : `could not bind port ${opts.port} (${portError}).\n`
     );
     process.exit(1);
   }
 
-  const falhaUdp = await sondarUdp(opts.stunPort);
-  if (falhaUdp) {
+  const udpError = await probeUdp(opts.stunPort);
+  if (udpError) {
     process.stderr.write(
-      falhaUdp === "EADDRINUSE"
+      udpError === "EADDRINUSE"
         ? `the STUN UDP port ${opts.stunPort} is already taken.\n` +
           `Each instance needs its own: use --stun-port with another number.\n`
-        : `could not bind UDP port ${opts.stunPort} (${falhaUdp}).\n`
+        : `could not bind UDP port ${opts.stunPort} (${udpError}).\n`
     );
     process.exit(1);
   }
 
   // a free port means any pidfile for it is stale: the process it names, if it
   // still exists, is no longer listening here.
-  limparRegistro();
+  clearRecord();
 
   // stdio to a file, not "ignore": without this a server that dies on startup
   // dies without a trace, and the user is left with a failure and no diagnosis.
@@ -373,34 +373,33 @@ if (bg) {
   // success banner out of the tail of the loser's error.
   const log = openSync(logPath, "w", 0o600);
 
-  let erroSpawn: NodeJS.ErrnoException | null = null;
-  const filho = spawn(process.execPath, [alvoServidor], {
+  let spawnError: NodeJS.ErrnoException | null = null;
+  const child = spawn(process.execPath, [serverTarget], {
     env, detached: true, stdio: ["ignore", log, log],
   });
   // without this listener a spawn failure emits 'error' with nobody listening
   // and takes the CLI down with a stack, before any useful message.
-  filho.on("error", (e) => { erroSpawn = e as NodeJS.ErrnoException; });
-  filho.unref();
+  child.on("error", (e) => { spawnError = e as NodeJS.ErrnoException; });
+  child.unref();
 
-  if (filho.pid === undefined) {
+  if (child.pid === undefined) {
     closeSync(log);
     process.stderr.write(`could not start ${process.execPath}\n`);
     process.exit(1);
   }
-  const pid = filho.pid;
+  const pid = child.pid;
+  const deadline = Date.now() + 8000;
+  let ready = false;
+  let died = false;
 
-  const prazo = Date.now() + 8000;
-  let pronto = false;
-  let morreu = false;
-
-  while (Date.now() < prazo) {
-    if (erroSpawn) break;
+  while (Date.now() < deadline) {
+    if (spawnError) break;
 
     // the liveness check comes before the fetch. it does not prove the child
     // bound the port, since for the first 200-300 ms it is alive merely because
     // it is still loading, but it proves the opposite when it fails, and that
     // is what cuts the wait short.
-    try { process.kill(pid, 0); } catch { morreu = true; break; }
+    try { process.kill(pid, 0); } catch { died = true; break; }
 
     try {
       const r = await fetch(`http://127.0.0.1:${opts.port}/config`, {
@@ -408,7 +407,7 @@ if (bg) {
       });
       // readiness only, never identity: /config answering does not say who
       // answered. layers 1 to 3 are what decide the server is ours.
-      if (r.ok) { pronto = true; break; }
+      if (r.ok) { ready = true; break; }
     } catch {}
 
     await new Promise((r) => setTimeout(r, 150));
@@ -417,30 +416,30 @@ if (bg) {
   // layer 2: EADDRINUSE kills the child in ~300 ms, and early on it is alive
   // because it is loading, not because it bound. half a second after the probe
   // passes, "still alive?" means what it looks like it means.
-  if (pronto) {
+  if (ready) {
     await new Promise((r) => setTimeout(r, 500));
-    try { process.kill(pid, 0); } catch { pronto = false; morreu = true; }
+    try { process.kill(pid, 0); } catch { ready = false; died = true; }
   }
 
   // layer 3: alive or not, if its log shows EADDRINUSE then whoever answered
   // the probe was not it.
-  if (pronto && lerLog().includes("EADDRINUSE")) {
-    pronto = false;
-    morreu = true;
+  if (ready && readLog().includes("EADDRINUSE")) {
+    ready = false;
+    died = true;
   }
 
-  if (!pronto) {
+  if (!ready) {
     try { process.kill(pid); } catch {}
-    const cauda = lerLog().trimEnd().split("\n").slice(-8).join("\n");
+    const tail = readLog().trimEnd().split("\n").slice(-8).join("\n");
     process.stderr.write(
-      erroSpawn
-        ? `could not start the server: ${erroSpawn.message}\n`
-        : morreu
+      spawnError
+        ? `could not start the server: ${spawnError.message}\n`
+        : died
           ? `the server died starting up on port ${opts.port}.\n` +
-            (cauda ? `\n${cauda}\n\n` : "") +
+            (tail ? `\n${tail}\n\n` : "") +
             `Port taken? Try --port with another number.\n`
           : `the server did not answer within 8s on port ${opts.port}.\n` +
-            (cauda ? `\n${cauda}\n\n` : "") +
+            (tail ? `\n${tail}\n\n` : "") +
             `Full log at ${logPath}\n`
     );
     process.exit(1);
@@ -465,7 +464,7 @@ if (bg) {
   }
 
   process.stdout.write(
-    `ss ${versao()}  ·  background\n` +
+    `ss ${getVersion()}  ·  background\n` +
     `  http        http://localhost:${opts.port}\n` +
     `  stun  udp   :${opts.stunPort}\n` +
     `  pid         ${pid}\n\n` +
@@ -479,4 +478,4 @@ if (bg) {
 Object.assign(process.env, env);
 // pathToFileURL, not the raw path: import() of an absolute path works in Bun on
 // POSIX by accident, not by contract. the portable form is a URL.
-await import(pathToFileURL(alvoServidor).href);
+await import(pathToFileURL(serverTarget).href);

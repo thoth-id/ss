@@ -36,12 +36,12 @@ const proc = Bun.spawn([
 // an exception mid-suite must not leave a Chrome alive: the next run attaches
 // to THAT one, with the old page loaded and the room already joined, and fails
 // for defects that do not exist.
-const encerra = () => { try { proc.kill(); } catch {} };
-process.on("exit", encerra);
-process.on("uncaughtException", (e) => { console.error(e); encerra(); process.exit(1); });
-process.on("unhandledRejection", (e) => { console.error(e); encerra(); process.exit(1); });
+const cleanup = () => { try { proc.kill(); } catch {} };
+process.on("exit", cleanup);
+process.on("uncaughtException", (e) => { console.error(e); cleanup(); process.exit(1); });
+process.on("unhandledRejection", (e) => { console.error(e); cleanup(); process.exit(1); });
 
-async function alvo() {
+async function getCdpTarget() {
   for (let i = 0; i < 60; i++) {
     try {
       const list = await fetch(`http://127.0.0.1:${DBG}/json/list`).then((r) => r.json());
@@ -53,29 +53,29 @@ async function alvo() {
   throw new Error("chromium did not answer");
 }
 
-const ws = new WebSocket(await alvo());
+const ws = new WebSocket(await getCdpTarget());
 await new Promise((r) => (ws.onopen = r));
 let seq = 0;
-const espera = new Map<number, (v: any) => void>();
+const pending = new Map<number, (v: any) => void>();
 ws.onmessage = (e) => {
   const m = JSON.parse(String(e.data));
-  if (m.id && espera.has(m.id)) espera.get(m.id)!(m);
+  if (m.id && pending.has(m.id)) pending.get(m.id)!(m);
 };
 function cdp(method: string, params: any = {}): Promise<any> {
   const id = ++seq;
   ws.send(JSON.stringify({ id, method, params }));
-  return new Promise((r) => espera.set(id, r));
+  return new Promise((r) => pending.set(id, r));
 }
 async function evalJS(expr: string) {
   const r = await cdp("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true });
   if (r.result?.exceptionDetails) throw new Error(JSON.stringify(r.result.exceptionDetails));
   return r.result?.result?.value;
 }
-async function shot(nome: string) {
+async function capture(name: string) {
   const r = await cdp("Page.captureScreenshot", { format: "png" });
-  await Bun.write(`${OUT}/cdp-${nome}.png`, Buffer.from(r.result.data, "base64"));
+  await Bun.write(`${OUT}/cdp-${name}.png`, Buffer.from(r.result.data, "base64"));
 }
-async function tela(w: number, h: number) {
+async function setViewport(w: number, h: number) {
   await cdp("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: false });
 }
 
@@ -110,72 +110,72 @@ async function clica(x: number, y: number) {
 
 await cdp("Page.enable");
 await cdp("Runtime.enable");
-await tela(1440, 900);
+await setViewport(1440, 900);
 await cdp("Page.navigate", { url: `http://127.0.0.1:${PORT}/#room` });
 await Bun.sleep(1500);
 for (let i = 0; i < 60 && !(await evalJS('typeof ROOM !== "undefined"')); i++) await Bun.sleep(250);
 
-const falhas: string[] = [];
-function checa(nome: string, cond: boolean, detalhe = "") {
-  console.log(`  ${cond ? "ok  " : "FAIL"}  ${nome}${cond ? "" : "  " + detalhe}`);
-  if (!cond) falhas.push(nome);
+const failures: string[] = [];
+function check(name: string, cond: boolean, detail = "") {
+  console.log(`  ${cond ? "ok  " : "FAIL"}  ${name}${cond ? "" : "  " + detail}`);
+  if (!cond) failures.push(name);
 }
 
 // the fit transitions left/top/width/height over .16s. measuring two rAFs
 // later reads geometry in flight: a tile off its aspect ratio, a pill still in
 // its old place. wait twice the transition.
-const assenta = () => Bun.sleep(340);
+const settle = () => Bun.sleep(340);
 
-async function medir() {
+async function measure() {
   return await evalJS(`(() => {
     const st = document.getElementById("stage").getBoundingClientRect();
     const dock = document.querySelector(".dock").getBoundingClientRect();
-    const topo = document.querySelector(".top").getBoundingClientRect();
-    const bate = (r, o) =>
+    const topBar = document.querySelector(".top").getBoundingClientRect();
+    const overlaps = (r, o) =>
       !(r.right <= o.left || r.left >= o.right || r.bottom <= o.top || r.top >= o.bottom);
     const tiles = [...document.querySelectorAll(".tile")].map((t) => {
       const r = t.getBoundingClientRect();
       const v = t.querySelector("video");
       return { id: t.dataset.id, x: r.x, y: r.y, w: r.width, h: r.height,
                peer: t.classList.contains("peer"),
-               foraDoPalco: r.bottom > st.bottom + 1 || r.right > st.right + 1 || r.top < st.top - 1,
-               sobDock: bate(r, dock), sobTopo: bate(r, topo),
+               outOfStage: r.bottom > st.bottom + 1 || r.right > st.right + 1 || r.top < st.top - 1,
+               overDock: overlaps(r, dock), overTop: overlaps(r, topBar),
                vw: v ? v.getBoundingClientRect().width : 0,
                vh: v ? v.getBoundingClientRect().height : 0 };
     });
     return {
-      rola: document.documentElement.scrollHeight > innerHeight,
+      scrolls: document.documentElement.scrollHeight > innerHeight,
       scrollH: document.documentElement.scrollHeight, innerH: innerHeight,
       stage: { w: st.width, h: st.height },
       tiles,
-      nomes: [...document.querySelectorAll(".tile .who b")].map((b) => b.textContent),
+      tileNames: [...document.querySelectorAll(".tile .who b")].map((b) => b.textContent),
       // the two pills share the tile's bottom edge. overlapping is the way
       // this fails, and it is measurable: compare boxes, not class names.
-      pilulas: [...document.querySelectorAll(".tile:not(.peer)")].map((t) => {
-        const nome = t.querySelector(".who").getBoundingClientRect();
+      pills: [...document.querySelectorAll(".tile:not(.peer)")].map((t) => {
+        const whoRect = t.querySelector(".who").getBoundingClientRect();
         const tel = t.querySelector(".tel");
         if (getComputedStyle(tel).display === "none") return true;
-        return nome.right <= tel.getBoundingClientRect().left;
+        return whoRect.right <= tel.getBoundingClientRect().left;
       }),
       gate: !document.getElementById("gate").hidden,
       goOff: document.getElementById("gateGo").disabled,
       myId: typeof myId !== "undefined" ? myId : null,
-      topo: [...document.querySelectorAll(".top span")].filter((s) => !s.hidden).map((s) => s.textContent),
+      topBar: [...document.querySelectorAll(".top span")].filter((s) => !s.hidden).map((s) => s.textContent),
     };
   })()`);
 }
 
-const dentro = (m: any) =>
-  m.tiles.every((t: any) => !t.foraDoPalco && !t.sobDock && !t.sobTopo) &&
-  m.pilulas.every(Boolean);
+const allInside = (m: any) =>
+  m.tiles.every((t: any) => !t.outOfStage && !t.overDock && !t.overTop) &&
+  m.pills.every(Boolean);
 
 console.log("\n--- gate: the name is mandatory and the modal is the door ---");
-let m = await medir();
-checa("the gate opens by itself", m.gate === true);
-checa("no room joined before a name", m.myId === null, String(m.myId));
-checa("the enter button starts disabled", m.goOff === true);
-checa("the page does not scroll", !m.rola, `${m.scrollH} > ${m.innerH}`);
-await shot("1-gate");
+let m = await measure();
+check("the gate opens by itself", m.gate === true);
+check("no room joined before a name", m.myId === null, String(m.myId));
+check("the enter button starts disabled", m.goOff === true);
+check("the page does not scroll", !m.scrolls, `${m.scrollH} > ${m.innerH}`);
+await capture("1-gate");
 
 await evalJS(`(() => {
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
@@ -183,25 +183,25 @@ await evalJS(`(() => {
   document.getElementById("gateScrim").click();
 })()`);
 await Bun.sleep(200);
-m = await medir();
-checa("esc and an outside click do not close it unnamed", m.gate === true);
+m = await measure();
+check("esc and an outside click do not close it unnamed", m.gate === true);
 
-async function digita(v: string) {
+async function typeText(v: string) {
   await evalJS(`(() => {
     const n = document.getElementById("gateName");
     n.value = ${JSON.stringify(v)};
     n.dispatchEvent(new Event("input"));
   })()`);
 }
-await digita("GM");
-checa("2 letters do not pass", await evalJS(`document.getElementById("gateGo").disabled`));
-await digita("GMG");
-checa("3 letters pass", !(await evalJS(`document.getElementById("gateGo").disabled`)));
+await typeText("GM");
+check("2 letters do not pass", await evalJS(`document.getElementById("gateGo").disabled`));
+await typeText("GMG");
+check("3 letters pass", !(await evalJS(`document.getElementById("gateGo").disabled`)));
 
 await evalJS(`document.getElementById("gateGo").click()`);
 for (let i = 0; i < 40 && !(await evalJS("!!myId")); i++) await Bun.sleep(200);
-m = await medir();
-checa("joined after answering", !!m.myId && m.gate === false, `${m.myId} gate=${m.gate}`);
+m = await measure();
+check("joined after answering", !!m.myId && m.gate === false, `${m.myId} gate=${m.gate}`);
 
 // a populated room: the call grid of everybody not transmitting.
 await evalJS(`(() => {
@@ -222,60 +222,60 @@ await evalJS(`(() => {
   sharers = new Set();
   render();
 })()`);
-await assenta();
-m = await medir();
+await settle();
+m = await measure();
 console.log("\n--- 4 in the room, nobody transmitting (the call) ---");
-checa("the page does not scroll", !m.rola, `${m.scrollH} > ${m.innerH}`);
-checa("everybody has a tile", m.tiles.length === 4 && m.tiles.every((t: any) => t.peer), String(m.tiles.length));
-checa("nothing overlaps: dock, pill, label", dentro(m), JSON.stringify(m.tiles));
-checa("equal cells for everybody", new Set(m.tiles.map((t: any) => Math.round(t.h))).size === 1,
+check("the page does not scroll", !m.scrolls, `${m.scrollH} > ${m.innerH}`);
+check("everybody has a tile", m.tiles.length === 4 && m.tiles.every((t: any) => t.peer), String(m.tiles.length));
+check("nothing overlaps: dock, pill, label", allInside(m), JSON.stringify(m.tiles));
+check("equal cells for everybody", new Set(m.tiles.map((t: any) => Math.round(t.h))).size === 1,
   JSON.stringify(m.tiles.map((t: any) => Math.round(t.h))));
-checa("the pill counts the room",
-  m.topo.length === 4 && m.topo[0] === "#room" && /^\d+:\d{2}(:\d{2})?$/.test(m.topo[1]) &&
-  m.topo[2] === "0/3 on air" && m.topo[3] === "4 in the room",
-  JSON.stringify(m.topo));
-await shot("2-call-no-video");
+check("the pill counts the room",
+  m.topBar.length === 4 && m.topBar[0] === "#room" && /^\d+:\d{2}(:\d{2})?$/.test(m.topBar[1]) &&
+  m.topBar[2] === "0/3 on air" && m.topBar[3] === "4 in the room",
+  JSON.stringify(m.topBar));
+await capture("2-call-no-video");
 
 console.log("\n--- 1 screen on air: video rules, presence drops to the rail ---");
 await evalJS(`(() => { sharers = new Set(["aaaa1111"]); render(); attachTile("aaaa1111", fake(1600, 900)); })()`);
-await assenta();
-m = await medir();
+await settle();
+m = await measure();
 const video = m.tiles.filter((t: any) => !t.peer);
 const placas = m.tiles.filter((t: any) => t.peer);
-checa("the page does not scroll", !m.rola, `${m.scrollH} > ${m.innerH}`);
-checa("nothing overlaps: dock, pill, label", dentro(m), JSON.stringify(m.tiles));
-checa("1 video and 3 monograms", video.length === 1 && placas.length === 3);
-checa("the presence rail is capped", placas.every((p: any) => p.h <= 132), JSON.stringify(placas.map((p: any) => p.h)));
-checa("the video is bigger than the rail", video[0].h > placas[0].h * 2, `${video[0].h} vs ${placas[0].h}`);
-checa("aspect ratio preserved", Math.abs(video[0].vw / video[0].vh - 16 / 9) < 0.02, `${video[0].vw}×${video[0].vh}`);
-await shot("3-one-video");
+check("the page does not scroll", !m.scrolls, `${m.scrollH} > ${m.innerH}`);
+check("nothing overlaps: dock, pill, label", allInside(m), JSON.stringify(m.tiles));
+check("1 video and 3 monograms", video.length === 1 && placas.length === 3);
+check("the presence rail is capped", placas.every((p: any) => p.h <= 132), JSON.stringify(placas.map((p: any) => p.h)));
+check("the video is bigger than the rail", video[0].h > placas[0].h * 2, `${video[0].h} vs ${placas[0].h}`);
+check("aspect ratio preserved", Math.abs(video[0].vw / video[0].vh - 16 / 9) < 0.02, `${video[0].vw}×${video[0].vh}`);
+await capture("3-one-video");
 
 console.log("\n--- 2 screens, different aspect ratios ---");
 await evalJS(`(() => { sharers = new Set(["aaaa1111","bbbb2222"]); render(); attachTile("bbbb2222", fake(1440, 900)); })()`);
-await assenta();
-m = await medir();
+await settle();
+m = await measure();
 const vids = m.tiles.filter((t: any) => !t.peer);
-checa("the page does not scroll", !m.rola, `${m.scrollH} > ${m.innerH}`);
-checa("nothing overlaps: dock, pill, label", dentro(m), JSON.stringify(m.tiles));
-checa("two videos on stage", vids.length === 2, String(vids.length));
-checa("justified row: same height", Math.abs(vids[0].h - vids[1].h) < 2, `${vids[0].h} vs ${vids[1].h}`);
-await shot("4-two-videos");
+check("the page does not scroll", !m.scrolls, `${m.scrollH} > ${m.innerH}`);
+check("nothing overlaps: dock, pill, label", allInside(m), JSON.stringify(m.tiles));
+check("two videos on stage", vids.length === 2, String(vids.length));
+check("justified row: same height", Math.abs(vids[0].h - vids[1].h) < 2, `${vids[0].h} vs ${vids[1].h}`);
+await capture("4-two-videos");
 
 console.log("\n--- focus ---");
 await evalJS(`toggleFocus("aaaa1111")`);
-await assenta();
-m = await medir();
+await settle();
+m = await measure();
 const foco = m.tiles.find((t: any) => t.id === "aaaa1111");
 const mini = m.tiles.find((t: any) => t.id === "bbbb2222");
-checa("the page does not scroll", !m.rola, `${m.scrollH} > ${m.innerH}`);
-checa("nothing overlaps: dock, pill, label", dentro(m), JSON.stringify(m.tiles));
-checa("the focused one is bigger than the thumbnail", foco.w > mini.w * 2, `${foco.w} vs ${mini.w}`);
-checa("the grid button lights up in focus", !(await evalJS(`document.getElementById("gridBtn").disabled`)));
-await shot("5-focus");
+check("the page does not scroll", !m.scrolls, `${m.scrollH} > ${m.innerH}`);
+check("nothing overlaps: dock, pill, label", allInside(m), JSON.stringify(m.tiles));
+check("the focused one is bigger than the thumbnail", foco.w > mini.w * 2, `${foco.w} vs ${mini.w}`);
+check("the grid button lights up in focus", !(await evalJS(`document.getElementById("gridBtn").disabled`)));
+await capture("5-focus");
 
 await evalJS(`document.getElementById("gridBtn").click()`);
-await assenta();
-checa("the grid button leaves focus", (await evalJS("focusId")) === null);
+await settle();
+check("the grid button leaves focus", (await evalJS("focusId")) === null);
 
 console.log("\n--- receiver-side zoom ---");
 // anchoring: the point of video under the cursor must not move. in element
@@ -283,8 +283,8 @@ console.log("\n--- receiver-side zoom ---");
 // p = (c − t)/k. the wrong formula breaks it from the SECOND notch on, once t
 // stops being zero; the first passes in any version, hence two notches.
 await evalJS(`toggleFocus("aaaa1111")`);
-await assenta();
-await evalJS(`window.pontoSob = (id, cx, cy) => {
+await settle();
+await evalJS(`window.pointUnder = (id, cx, cy) => {
   const f = tiles.get(id).querySelector(".frame");
   const v = f.querySelector("video");
   const fr = f.getBoundingClientRect();
@@ -300,11 +300,11 @@ await evalJS(`window.pontoSob = (id, cx, cy) => {
   // the effective CSS map is s = o + M·(p − o), so p = o + M⁻¹·(s − o).
   const q = m.inverse().transformPoint(new DOMPoint(cx - fr.left - ox, cy - fr.top - oy));
   return { px: q.x + ox, py: q.y + oy, k: m.a, tx: m.e, ty: m.f,
-           origem: cs.transformOrigin, W: f.clientWidth, H: f.clientHeight };
+           origin: cs.transformOrigin, W: f.clientWidth, H: f.clientHeight };
 }`);
 // pixel coverage: the magnified video has to cover the whole frame. this is
 // the one that catches the pan detaching, because it compares rendered boxes.
-await evalJS(`window.cobre = (id) => {
+await evalJS(`window.coversFrame = (id) => {
   const f = tiles.get(id).querySelector(".frame");
   const fr = f.getBoundingClientRect(), vr = f.querySelector("video").getBoundingClientRect();
   return { ok: vr.left <= fr.left + 1 && vr.top <= fr.top + 1 &&
@@ -315,23 +315,23 @@ await evalJS(`window.cobre = (id) => {
 const cx = Math.round(await evalJS(`(() => { const r = tiles.get("aaaa1111").querySelector(".frame").getBoundingClientRect(); return r.left + r.width / 2; })()`));
 const cy = Math.round(await evalJS(`(() => { const r = tiles.get("aaaa1111").querySelector(".frame").getBoundingClientRect(); return r.top + r.height / 2; })()`));
 
-const p0 = await evalJS(`pontoSob("aaaa1111", ${cx}, ${cy})`);
+const p0 = await evalJS(`pointUnder("aaaa1111", ${cx}, ${cy})`);
 await roda(cx, cy, -120);
-const p1 = await evalJS(`pontoSob("aaaa1111", ${cx}, ${cy})`);
-checa("the wheel magnifies", p1.k > 1.05, `k=${p1.k}`);
-checa("anchored on the 1st notch", Math.abs(p1.px - p0.px) < 1 && Math.abs(p1.py - p0.py) < 1,
+const p1 = await evalJS(`pointUnder("aaaa1111", ${cx}, ${cy})`);
+check("the wheel magnifies", p1.k > 1.05, `k=${p1.k}`);
+check("anchored on the 1st notch", Math.abs(p1.px - p0.px) < 1 && Math.abs(p1.py - p0.py) < 1,
   `(${p0.px.toFixed(1)},${p0.py.toFixed(1)}) -> (${p1.px.toFixed(1)},${p1.py.toFixed(1)})`);
 
 await roda(cx, cy, -120);
-const p2 = await evalJS(`pontoSob("aaaa1111", ${cx}, ${cy})`);
-checa("the wheel accumulates", p2.k > p1.k + 0.05, `${p1.k} -> ${p2.k}`);
-checa("anchored on the 2nd notch (t is no longer zero)",
+const p2 = await evalJS(`pointUnder("aaaa1111", ${cx}, ${cy})`);
+check("the wheel accumulates", p2.k > p1.k + 0.05, `${p1.k} -> ${p2.k}`);
+check("anchored on the 2nd notch (t is no longer zero)",
   Math.abs(p2.px - p0.px) < 1 && Math.abs(p2.py - p0.py) < 1,
   `expected (${p0.px.toFixed(1)},${p0.py.toFixed(1)}), got (${p2.px.toFixed(1)},${p2.py.toFixed(1)})`);
 
 await roda(cx, cy, -120);
-const p3 = await evalJS(`pontoSob("aaaa1111", ${cx}, ${cy})`);
-checa("anchored on the 3rd notch", Math.abs(p3.px - p0.px) < 1 && Math.abs(p3.py - p0.py) < 1,
+const p3 = await evalJS(`pointUnder("aaaa1111", ${cx}, ${cy})`);
+check("anchored on the 3rd notch", Math.abs(p3.px - p0.px) < 1 && Math.abs(p3.py - p0.py) < 1,
   `expected (${p0.px.toFixed(1)},${p0.py.toFixed(1)}), got (${p3.px.toFixed(1)},${p3.py.toFixed(1)})`);
 
 // a fourth notch at ANOTHER point, after a pan. the three before it, all at
@@ -342,17 +342,17 @@ checa("anchored on the 3rd notch", Math.abs(p3.px - p0.px) < 1 && Math.abs(p3.py
 // that variant passes the whole suite.
 await arrasta(cx, cy, cx - 60, cy - 40);
 const cx3 = cx + 180, cy3 = cy + 90;
-const q0 = await evalJS(`pontoSob("aaaa1111", ${cx3}, ${cy3})`);
+const q0 = await evalJS(`pointUnder("aaaa1111", ${cx3}, ${cy3})`);
 await roda(cx3, cy3, -120);
-const q1 = await evalJS(`pontoSob("aaaa1111", ${cx3}, ${cy3})`);
-checa("anchored at a second point, after a pan",
+const q1 = await evalJS(`pointUnder("aaaa1111", ${cx3}, ${cy3})`);
+check("anchored at a second point, after a pan",
   Math.abs(q1.px - q0.px) < 1 && Math.abs(q1.py - q0.py) < 1,
   `expected (${q0.px.toFixed(1)},${q0.py.toFixed(1)}), got (${q1.px.toFixed(1)},${q1.py.toFixed(1)})`);
-checa("the transform origin is the corner", q1.origem === "0px 0px", q1.origem);
+check("the transform origin is the corner", q1.origin === "0px 0px", q1.origin);
 
 // ceiling: not even an endless wheel passes ZOOM_MAX.
 for (let i = 0; i < 12; i++) await roda(cx, cy, -240);
-checa("the zoom ceiling holds", (await evalJS(`zooms.get("aaaa1111").k`)) <= 4.0001,
+check("the zoom ceiling holds", (await evalJS(`zooms.get("aaaa1111").k`)) <= 4.0001,
   String(await evalJS(`zooms.get("aaaa1111").k`)));
 
 // confinement: dragging far hits the edge and stops. this is the assertion
@@ -360,17 +360,17 @@ checa("the zoom ceiling holds", (await evalJS(`zooms.get("aaaa1111").k`)) <= 4.0
 // absorbs any overflow from the transformed descendant.
 await arrasta(cx, cy, cx + 5000, cy);
 let z = await evalJS(`zooms.get("aaaa1111")`);
-checa("the pan does not detach on the right", Math.abs(z.x) < 0.5, `x=${z.x}`);
+check("the pan does not detach on the right", Math.abs(z.x) < 0.5, `x=${z.x}`);
 await arrasta(cx, cy, cx - 5000, cy);
 z = await evalJS(`zooms.get("aaaa1111")`);
 const lim = await evalJS(`(() => { const f = tiles.get("aaaa1111").querySelector(".frame");
   return f.clientWidth * (1 - zooms.get("aaaa1111").k); })()`);
-checa("the pan does not detach on the left", Math.abs(z.x - lim) < 1, `x=${z.x} limit=${lim}`);
+check("the pan does not detach on the left", Math.abs(z.x - lim) < 1, `x=${z.x} limit=${lim}`);
 await arrasta(cx, cy, cx, cy - 5000);
 z = await evalJS(`zooms.get("aaaa1111")`);
 const limY = await evalJS(`(() => { const f = tiles.get("aaaa1111").querySelector(".frame");
   return f.clientHeight * (1 - zooms.get("aaaa1111").k); })()`);
-checa("the pan does not detach at the top", Math.abs(z.y - limY) < 1, `y=${z.y} limit=${limY}`);
+check("the pan does not detach at the top", Math.abs(z.y - limY) < 1, `y=${z.y} limit=${limY}`);
 
 // the clamp pass inside layout() exists for this case, and it used to fail by
 // measuring the box IN FLIGHT: .tile transitions width/height over .16s, so
@@ -378,24 +378,24 @@ checa("the pan does not detach at the top", Math.abs(z.y - limY) < 1, `y=${z.y} 
 // width. this assertion reads pixels, not the zooms object, which is how it
 // once passed green while the tile rendered black.
 await evalJS(`(() => { zooms.set("aaaa1111", { k: 4, x: -1e6, y: -1e6 }); applyZoom("aaaa1111"); })()`);
-let cob = await evalJS(`cobre("aaaa1111")`);
-checa("at 4× against the edge the video covers the frame", cob.ok, JSON.stringify(cob));
+let cob = await evalJS(`coversFrame("aaaa1111")`);
+check("at 4× against the edge the video covers the frame", cob.ok, JSON.stringify(cob));
 await evalJS(`document.getElementById("gridBtn").click()`);
-await assenta();
-cob = await evalJS(`cobre("aaaa1111")`);
-checa("and still covers it on leaving focus (the box shrinks)", cob.ok, JSON.stringify(cob));
-await tela(1100, 720);
-await assenta();
-cob = await evalJS(`cobre("aaaa1111")`);
-checa("and still covers it on a smaller stage", cob.ok, JSON.stringify(cob));
-await tela(1440, 900);
-await assenta();
+await settle();
+cob = await evalJS(`coversFrame("aaaa1111")`);
+check("and still covers it on leaving focus (the box shrinks)", cob.ok, JSON.stringify(cob));
+await setViewport(1100, 720);
+await settle();
+cob = await evalJS(`coversFrame("aaaa1111")`);
+check("and still covers it on a smaller stage", cob.ok, JSON.stringify(cob));
+await setViewport(1440, 900);
+await settle();
 await evalJS(`toggleFocus("aaaa1111")`);
-await assenta();
+await settle();
 
 // the frame has to clip by itself: in fullscreen .tile leaves the flow and its
 // overflow no longer reaches the scaled video.
-checa("the frame clips the magnified video",
+check("the frame clips the magnified video",
   (await evalJS(`getComputedStyle(tiles.get("aaaa1111").querySelector(".frame")).overflow`)) === "hidden",
   await evalJS(`getComputedStyle(tiles.get("aaaa1111").querySelector(".frame")).overflow`));
 
@@ -405,131 +405,131 @@ const ind = await evalJS(`(() => {
   const t = tiles.get("aaaa1111"), e = t.querySelector(".zoom");
   if (!e) return null;
   const cs = getComputedStyle(e);
-  return { txt: e.textContent, vis: cs.display !== "none", dentroDoTel: !!e.closest(".tel"),
+  return { txt: e.textContent, vis: cs.display !== "none", insideTel: !!e.closest(".tel"),
            upscale: e.classList.contains("up") };
 })()`);
-checa("the indicator exists and shows", !!ind && ind.vis, JSON.stringify(ind));
-checa("the indicator states the factor", !!ind && /[\d.,]+\s*×/.test(ind.txt), JSON.stringify(ind?.txt));
-checa("the indicator sits outside .tel", !!ind && !ind.dentroDoTel, JSON.stringify(ind));
-checa("at 4× on a 1440 tile the indicator marks upscale", !!ind && ind.upscale === true, JSON.stringify(ind));
+check("the indicator exists and shows", !!ind && ind.vis, JSON.stringify(ind));
+check("the indicator states the factor", !!ind && /[\d.,]+\s*×/.test(ind.txt), JSON.stringify(ind?.txt));
+check("the indicator sits outside .tel", !!ind && !ind.insideTel, JSON.stringify(ind));
+check("at 4× on a 1440 tile the indicator marks upscale", !!ind && ind.upscale === true, JSON.stringify(ind));
 
 // the boundary, which is what the indicator exists to state: up to native,
 // magnifying recovers detail that arrived and was thrown away by the fit; above
 // it, it interpolates. testing only the 4× extreme does not prove the threshold
 // sits in the right place.
-const fronteira = await evalJS(`(() => {
+const boundary = await evalJS(`(() => {
   const t = tiles.get("aaaa1111"), f = t.querySelector(".frame"), v = t.querySelector("video");
-  const nativo = v.videoWidth / (f.clientWidth * devicePixelRatio);
+  const native = v.videoWidth / (f.clientWidth * devicePixelRatio);
   const leia = (k) => { zooms.set("aaaa1111", { k, x: 0, y: 0 }); applyZoom("aaaa1111");
     return t.querySelector(".zoom").classList.contains("up"); };
   // probing below native only makes sense if native is above 1: at dpr >= 2 it
   // falls below, applyZoom treats it as identity and the test would pass for
   // the wrong reason. the bench runs at deviceScaleFactor 1 on purpose.
-  if (nativo <= 1.1) return { nativo, abaixo: null, acima: null };
-  return { nativo, abaixo: leia(nativo * 0.95), acima: leia(nativo * 1.05) };
+  if (native <= 1.1) return { native, below: null, above: null };
+  return { native, below: leia(native * 0.95), above: leia(native * 1.05) };
 })()`);
-checa("below native is not upscale", fronteira.abaixo === false, JSON.stringify(fronteira));
-checa("above native is upscale", fronteira.acima === true, JSON.stringify(fronteira));
-checa("native is greater than 1 (the fit shrinks the video)", fronteira.nativo > 1,
-  `native=${fronteira.nativo}`);
+check("below native is not upscale", boundary.below === false, JSON.stringify(boundary));
+check("above native is upscale", boundary.above === true, JSON.stringify(boundary));
+check("native is greater than 1 (the fit shrinks the video)", boundary.native > 1,
+  `native=${boundary.native}`);
 
 // a click does not yank away somebody reading up close, and the click after a
 // pan does not focus.
-checa("a click does not leave focus while zoomed", (await evalJS("focusId")) === "aaaa1111");
+check("a click does not leave focus while zoomed", (await evalJS("focusId")) === "aaaa1111");
 await clica(cx, cy);
-checa("a click while zoomed does not change focus", (await evalJS("focusId")) === "aaaa1111",
+check("a click while zoomed does not change focus", (await evalJS("focusId")) === "aaaa1111",
   String(await evalJS("focusId")));
 
 // resetting returns to identity with no phantom state.
 await evalJS(`(() => { zooms.delete("aaaa1111"); applyZoom("aaaa1111"); })()`);
-const limpo = await evalJS(`(() => {
+const cleanState = await evalJS(`(() => {
   const t = tiles.get("aaaa1111");
   const e = t.querySelector(".zoom");
   return { tr: t.querySelector("video").style.transform, cls: t.querySelector(".frame").className,
            ind: e ? getComputedStyle(e).display : "ausente" };
 })()`);
-checa("resetting clears transform, class and indicator",
-  limpo.tr === "" && !limpo.cls.includes("zoomed") && limpo.ind === "none", JSON.stringify(limpo));
+check("resetting clears transform, class and indicator",
+  cleanState.tr === "" && !cleanState.cls.includes("zoomed") && cleanState.ind === "none", JSON.stringify(cleanState));
 
 // a thumbnail carries no zoom: in a 150px rail, focusing gives more pixels
 // than any magnification, and there is no gesture there.
 await evalJS(`(() => { focusId = null; render(); })()`);
-await assenta();
+await settle();
 const cx2 = Math.round(await evalJS(`(() => { const r = tiles.get("bbbb2222").querySelector(".frame").getBoundingClientRect(); return r.left + r.width / 2; })()`));
 const cy2 = Math.round(await evalJS(`(() => { const r = tiles.get("bbbb2222").querySelector(".frame").getBoundingClientRect(); return r.top + r.height / 2; })()`));
 await roda(cx2, cy2, -240);
-checa("zoom works on an unfocused tile", (await evalJS(`zooms.has("bbbb2222")`)) === true);
+check("zoom works on an unfocused tile", (await evalJS(`zooms.has("bbbb2222")`)) === true);
 await evalJS(`toggleFocus("aaaa1111")`);
-await assenta();
-checa("becoming a thumbnail discards the zoom", (await evalJS(`zooms.has("bbbb2222")`)) === false);
+await settle();
+check("becoming a thumbnail discards the zoom", (await evalJS(`zooms.has("bbbb2222")`)) === false);
 // and the wheel must not reopen it: on a thumbnail the indicator is hidden,
 // .ctl covers the whole frame (no pan) and the click would stop focusing, which
 // is the rail's only use.
 const rc = Math.round(await evalJS(`(() => { const r = tiles.get("bbbb2222").querySelector(".frame").getBoundingClientRect(); return r.left + r.width / 2; })()`));
 const rl = Math.round(await evalJS(`(() => { const r = tiles.get("bbbb2222").querySelector(".frame").getBoundingClientRect(); return r.top + r.height / 2; })()`));
 await roda(rc, rl, -120);
-checa("the wheel does not magnify a thumbnail", (await evalJS(`zooms.has("bbbb2222")`)) === false);
+check("the wheel does not magnify a thumbnail", (await evalJS(`zooms.has("bbbb2222")`)) === false);
 await clica(rc, rl);
-await assenta();
-checa("and the thumbnail is still focusable by click", (await evalJS("focusId")) === "bbbb2222",
+await settle();
+check("and the thumbnail is still focusable by click", (await evalJS("focusId")) === "bbbb2222",
   String(await evalJS("focusId")));
 
 // layout intact under zoom: the transform plays no part in the fit.
 await roda(cx, cy, -240);
-await assenta();
-m = await medir();
-checa("the page does not scroll while zoomed", !m.rola, `${m.scrollH} > ${m.innerH}`);
-checa("nothing overlaps while zoomed", dentro(m), JSON.stringify(m.tiles));
-await shot("5b-zoom");
+await settle();
+m = await measure();
+check("the page does not scroll while zoomed", !m.scrolls, `${m.scrollH} > ${m.innerH}`);
+check("nothing overlaps while zoomed", allInside(m), JSON.stringify(m.tiles));
+await capture("5b-zoom");
 
 // does not contaminate the rest of the bench.
 await evalJS(`(() => { for (const id of [...zooms.keys()]) { zooms.delete(id); applyZoom(id); }
   focusId = null; render(); })()`);
-await assenta();
-checa("the bench leaves zoom clean", (await evalJS("zooms.size")) === 0 && (await evalJS("focusId")) === null);
+await settle();
+check("the bench leaves zoom clean", (await evalJS("zooms.size")) === 0 && (await evalJS("focusId")) === null);
 
 console.log("\n--- 430px wide ---");
-await tela(430, 780);
-await assenta();
-await assenta();
-m = await medir();
-checa("the page does not scroll", !m.rola, `${m.scrollH} > ${m.innerH}`);
-checa("nothing overlaps: dock, pill, label", dentro(m), JSON.stringify(m.tiles));
-checa("name and telemetry do not overlap", m.pilulas.every(Boolean), JSON.stringify(m.pilulas));
-checa("the tape drops before the number",
+await setViewport(430, 780);
+await settle();
+await settle();
+m = await measure();
+check("the page does not scroll", !m.scrolls, `${m.scrollH} > ${m.innerH}`);
+check("nothing overlaps: dock, pill, label", allInside(m), JSON.stringify(m.tiles));
+check("name and telemetry do not overlap", m.pills.every(Boolean), JSON.stringify(m.pills));
+check("the tape drops before the number",
   (await evalJS(`[...document.querySelectorAll(".tile:not(.peer)")].every((t) => t.classList.contains("tight"))`)));
-await shot("6-narrow");
+await capture("6-narrow");
 
 console.log("\n--- name from the dock ---");
-await tela(1440, 900);
+await setViewport(1440, 900);
 await evalJS(`document.getElementById("meBtn").click()`);
 await Bun.sleep(200);
-checa("the dock opens the gate unblocked", await evalJS(`!document.getElementById("gate").hidden && !gateTrava`));
-await digita("Gabriel");
+check("the dock opens the gate unblocked", await evalJS(`!document.getElementById("gate").hidden && !gateLocked`));
+await typeText("Gabriel");
 await evalJS(`document.getElementById("gateGo").click()`);
 await Bun.sleep(500);
-checa("the name reaches the server and comes back", (await evalJS(`names.get(myId)`)) === "Gabriel", await evalJS("myName"));
-const minhaPilula = await evalJS(`(() => {
+check("the name reaches the server and comes back", (await evalJS(`names.get(myId)`)) === "Gabriel", await evalJS("myName"));
+const myPill = await evalJS(`(() => {
   const w = [...document.querySelectorAll(".tile")].find((t) => t.dataset.id === myId).querySelector(".who");
   const em = w.querySelector("em");
-  return { nome: w.querySelector("b").textContent, marca: em.textContent, visivel: getComputedStyle(em).display !== "none" };
+  return { name: w.querySelector("b").textContent, marker: em.textContent, visible: getComputedStyle(em).display !== "none" };
 })()`);
-checa("my tile's pill states the name", minhaPilula.nome === "Gabriel", JSON.stringify(minhaPilula));
-checa("and the (you) marker beside it", minhaPilula.marca === "(you)" && minhaPilula.visivel);
+check("my tile's pill states the name", myPill.name === "Gabriel", JSON.stringify(myPill));
+check("and the (you) marker beside it", myPill.marker === "(you)" && myPill.visible);
 
 console.log("\n--- switching rooms ---");
 const idAntes = await evalJS("myId");
 await evalJS(`switchRoom("trabalho")`);
 await Bun.sleep(900);
-m = await medir();
-checa("a new id from the server", !!m.myId && m.myId !== idAntes, `${idAntes} -> ${m.myId}`);
-checa("the stage is clear", m.tiles.length === 0, String(m.tiles.length));
-checa("the hash follows", (await evalJS("location.hash")) === "#trabalho", await evalJS("location.hash"));
-checa("the pill follows", (await evalJS(`document.getElementById("topRoom").textContent`)) === "#trabalho");
-checa("the page does not scroll", !m.rola, `${m.scrollH} > ${m.innerH}`);
-await shot("7-room-switch");
+m = await measure();
+check("a new id from the server", !!m.myId && m.myId !== idAntes, `${idAntes} -> ${m.myId}`);
+check("the stage is clear", m.tiles.length === 0, String(m.tiles.length));
+check("the hash follows", (await evalJS("location.hash")) === "#trabalho", await evalJS("location.hash"));
+check("the pill follows", (await evalJS(`document.getElementById("topRoom").textContent`)) === "#trabalho");
+check("the page does not scroll", !m.scrolls, `${m.scrollH} > ${m.innerH}`);
+await capture("7-room-switch");
 
-console.log(falhas.length ? `\n${falhas.length} FAILURE(S): ${falhas.join(", ")}` : "\nall green");
+console.log(failures.length ? `\n${failures.length} FAILURE(S): ${failures.join(", ")}` : "\nall green");
 ws.close();
 proc.kill();
-process.exit(falhas.length ? 1 : 0);
+process.exit(failures.length ? 1 : 0);

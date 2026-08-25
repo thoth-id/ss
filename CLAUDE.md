@@ -64,10 +64,10 @@ restating what the line already says: the measured numbers, the bug that was
 reproduced, the alternative that looks right and is not. If the code says it,
 delete the comment.
 
-Some identifiers are still Portuguese (`resolverEstatico`, `caixaAlvo`,
-`filho`, `lupa`), as are the two `localStorage` keys (`ss:nome`, `ss:salas`).
-The keys stay for a reason: renaming them would silently drop every user's
-stored name and room history, and a missing name reopens the blocking gate.
+Identifiers are in English (`resolveStatic`, `targetBox`, `child`, `zoomBadge`),
+and the `localStorage` keys are `ss:name` / `ss:rooms` (legacy `ss:nome` / `ss:salas`
+are still read for migration and then cleared, so existing users keep their name
+and room history without a hard cut).
 
 ## Commands
 
@@ -187,7 +187,7 @@ fixed. Its `/config` assertions therefore check shape, not value.
 Static files resolve against `import.meta.dir`, not the process cwd — installed
 as a package, the process runs from whatever directory invoked `bunx`, and
 `"./public"` pointed at nothing there (that is how the page first went missing
-in a real install). `resolverEstatico()` in `server.ts` does that resolution
+in a real install). `resolveStatic()` in `server.ts` does that resolution
 and also guards against path traversal (`../`, encoded slashes) — keep new
 static-file logic going through it rather than building paths ad hoc.
 
@@ -380,7 +380,7 @@ Three things that are load-bearing and easy to undo:
   zoom pill on top of it. Measured: exiting focus at 4× on the edge left the
   video's right edge at −614px while the frame started at x=14. That is the same
   read-during-transition the bench section below warns about, committed in the
-  product instead. `caixaAlvo()` reads the inline `width`/`--vh` that `place()`
+  product instead. `targetBox()` reads the inline `width`/`--vh` that `place()`
   wrote, which is the target, and falls back to the measured box only in
   fullscreen, where `.frame` has left the flow and `.tile` no longer governs it.
 
@@ -495,7 +495,7 @@ through the same function, so editing the `#` by hand still works.
 
 ### The portaria, and why the name is mandatory
 
-The entry modal **is** the door: `entrar()` only sends `join` when
+The entry modal **is** the door: `joinRoom()` only sends `join` when
 `nameOk(myName)` holds (`MIN_NAME` = 3 graphemes after `cleanName`), so an
 unnamed person is connected but in no room at all — the server ignores every
 message that arrives before a `join`. That is why the blocking variant refuses to

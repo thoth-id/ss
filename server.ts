@@ -9,7 +9,7 @@ import { startStun } from "./stun";
 const PUBLIC_DIR = nodePath.join(import.meta.dir, "public");
 
 /** absolute path inside public/, or null if the route tries to escape it. */
-function resolverEstatico(pathname: string): string | null {
+function resolveStatic(pathname: string): string | null {
   let rel: string;
   try {
     rel = decodeURIComponent(pathname);
@@ -22,14 +22,14 @@ function resolverEstatico(pathname: string): string | null {
   // the install path and source lines, out of a 20-byte request.
   if (rel.includes("\0")) return null;
   if (rel === "/" || rel === "") rel = "/index.html";
-  const alvo = nodePath.resolve(PUBLIC_DIR, "." + nodePath.posix.normalize(rel));
-  if (alvo !== PUBLIC_DIR && !alvo.startsWith(PUBLIC_DIR + nodePath.sep)) return null;
-  return alvo;
+  const target = nodePath.resolve(PUBLIC_DIR, "." + nodePath.posix.normalize(rel));
+  if (target !== PUBLIC_DIR && !target.startsWith(PUBLIC_DIR + nodePath.sep)) return null;
+  return target;
 }
 
 // the banner names the version, so a bug report carries it. read lazily and
 // defensively: server.ts also runs straight from a clone.
-function versao(): string {
+function getVersion(): string {
   try {
     const raw = readFileSync(nodePath.join(import.meta.dir, "package.json"), "utf8");
     return JSON.parse(raw).version || "?";
@@ -47,17 +47,17 @@ function versao(): string {
    measured default and names itself on stderr. */
 // twin of `num()` in bin/cli.ts: same rule, two sides of the same boundary.
 // if the rule changes here, change it there.
-function int(nome: string, padrao: number, max = Number.MAX_SAFE_INTEGER): number {
-  const bruto = process.env[nome];
-  if (bruto === undefined) return padrao;
-  const limpo = bruto.trim();
-  const n = Number(limpo);
+function int(name: string, fallback: number, max = Number.MAX_SAFE_INTEGER): number {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  const trimmed = raw.trim();
+  const n = Number(trimmed);
   // the regex is what rejects " 0x10 ", "1e3", "2.5" and "", all accepted by
   // Number() and none of them an integer written as an integer.
-  if (!/^\d+$/.test(limpo) || !Number.isSafeInteger(n) || n < 1 || n > max) {
-    const faixa = max === Number.MAX_SAFE_INTEGER ? "a positive integer" : `an integer between 1 and ${max}`;
-    process.stderr.write(`${nome}=${JSON.stringify(bruto)} is not ${faixa}; using ${padrao}\n`);
-    return padrao;
+  if (!/^\d+$/.test(trimmed) || !Number.isSafeInteger(n) || n < 1 || n > max) {
+    const range = max === Number.MAX_SAFE_INTEGER ? "a positive integer" : `an integer between 1 and ${max}`;
+    process.stderr.write(`${name}=${JSON.stringify(raw)} is not ${range}; using ${fallback}\n`);
+    return fallback;
   }
   return n;
 }
@@ -172,9 +172,9 @@ Bun.serve<Client>({
       return Response.json({ stunPort: STUN_PORT, maxPeers: MAX_PEERS, maxSharers: MAX_SHARERS, maxCapturePixels: MAX_CAPTURE_PIXELS });
     }
 
-    const alvo = resolverEstatico(url.pathname);
-    if (!alvo) return new Response("not found", { status: 404 });
-    const file = Bun.file(alvo);
+    const target = resolveStatic(url.pathname);
+    if (!target) return new Response("not found", { status: 404 });
+    const file = Bun.file(target);
     return (await file.exists())
       ? new Response(file)
       : new Response("not found", { status: 404 });
@@ -299,7 +299,7 @@ Bun.serve<Client>({
 startStun(STUN_PORT);
 
 console.log(
-  `ss ${versao()}\n` +
+  `ss ${getVersion()}\n` +
   `  http        http://localhost:${PORT}\n` +
   `  stun  udp   :${STUN_PORT}\n` +
   `  room        ${MAX_PEERS} peers  ·  ${MAX_SHARERS} sharers`
