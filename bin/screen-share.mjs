@@ -24,8 +24,8 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const AQUI = path.dirname(fileURLToPath(import.meta.url));
-const CLI = path.join(AQUI, "cli.ts");
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const CLI = path.join(HERE, "cli.ts");
 
 const EXE = process.platform === "win32" ? ["bun.exe", "bun"] : ["bun"];
 
@@ -34,18 +34,18 @@ const EXE = process.platform === "win32" ? ["bun.exe", "bun"] : ["bun"];
    installer writes into the shell rc, and `npx` running in a non-login shell
    that never read that rc. finding the binary there is the difference between
    working and telling the user to reinstall what they already have. */
-const diretorios = () => {
+const getSearchDirs = () => {
   const dirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
   const bunInstall = process.env.BUN_INSTALL;
   if (bunInstall) dirs.push(path.join(bunInstall, "bin"));
-  const casa = homedir();
-  if (casa) dirs.push(path.join(casa, ".bun", "bin"));
+  const home = homedir();
+  if (home) dirs.push(path.join(home, ".bun", "bin"));
   return dirs;
 };
 
 // existing is not enough: a directory named `bun` on PATH would pass a test
 // that only looks for presence.
-const executavel = (p) => {
+const isExecutable = (p) => {
   try {
     if (!statSync(p).isFile()) return false;
     accessSync(p, constants.X_OK);
@@ -55,17 +55,17 @@ const executavel = (p) => {
   }
 };
 
-const acharBun = () => {
-  for (const dir of diretorios()) {
-    for (const nome of EXE) {
-      const alvo = path.join(dir, nome);
-      if (executavel(alvo)) return alvo;
+const findBun = () => {
+  for (const dir of getSearchDirs()) {
+    for (const name of EXE) {
+      const target = path.join(dir, name);
+      if (isExecutable(target)) return target;
     }
   }
   return null;
 };
 
-const FALTA = `ss needs Bun, and I could not find one on this machine.
+const MISSING_BUN = `ss needs Bun, and I could not find one on this machine.
 
   The server uses Bun.serve for the signaling WebSocket, and Node has no
   equivalent. What is missing is the runtime, not a dependency.
@@ -90,17 +90,17 @@ const FALTA = `ss needs Bun, and I could not find one on this machine.
 if (process.versions.bun) {
   await import(pathToFileURL(CLI).href);
 } else {
-  const bun = acharBun();
+  const bun = findBun();
   if (!bun) {
-    process.stderr.write(FALTA);
+    process.stderr.write(MISSING_BUN);
     process.exit(1);
   }
 
-  const filho = spawn(bun, [CLI, ...process.argv.slice(2)], { stdio: "inherit" });
+  const child = spawn(bun, [CLI, ...process.argv.slice(2)], { stdio: "inherit" });
 
   // without this listener a failed spawn emits 'error' with nobody listening,
   // and Node takes the process down with a stack trace instead of a sentence.
-  filho.on("error", (err) => {
+  child.on("error", (err) => {
     process.stderr.write(`could not execute ${bun}: ${err.message}\n`);
     process.exit(1);
   });
@@ -111,10 +111,10 @@ if (process.versions.bun) {
      launcher and leaves bun orphaned holding the port, measured, not assumed.
      Ctrl-C hides this because the terminal signals the whole process group; a
      targeted kill does not. */
-  const SINAIS = ["SIGINT", "SIGTERM", "SIGHUP"];
-  for (const sinal of SINAIS) {
-    process.on(sinal, () => {
-      if (!filho.killed) filho.kill(sinal);
+  const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
+  for (const signal of SIGNALS) {
+    process.on(signal, () => {
+      if (!child.killed) child.kill(signal);
     });
   }
 
@@ -125,12 +125,12 @@ if (process.versions.bun) {
      decoration: with the listener above still installed, Node hands the signal
      to it instead of dying, and the launcher would hang trying to kill a child
      that is already dead. */
-  filho.on("exit", (codigo, sinal) => {
-    if (sinal) {
-      process.removeAllListeners(sinal);
-      process.kill(process.pid, sinal);
+  child.on("exit", (code, signal) => {
+    if (signal) {
+      process.removeAllListeners(signal);
+      process.kill(process.pid, signal);
       return;
     }
-    process.exit(codigo ?? 1);
+    process.exit(code ?? 1);
   });
 }

@@ -166,7 +166,7 @@
      name is what ellipsizes, and truncating the marker instead would cut the
      one thing that says whose frame this is. hence `flex: none`. */
   .who em { display: none; flex: none; font-style: normal; color: var(--dim); }
-  .who.eu em { display: block; }
+  .who.me em { display: block; }
   .who i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
   .tile.peer .who i { display: none; }
   .tile.wait .who b { color: var(--accent); }
@@ -465,8 +465,7 @@ let ws = null;
 let dead = false;                 // got `denied`: stop reconnecting
 let retry = 0;                    // reconnect timer, cancellable on a room switch
 let gateOpen = false;
-let gateTrava = false;            // gate with no way out: still no name
-
+let gateLocked = false;            // gate with no way out: still no name
 /* ---------- setup ---------- */
 
 async function boot() {
@@ -498,7 +497,7 @@ function connect() {
   // the name travels in the join, so a reconnect restores it by itself: the
   // server lost the old socket and the name that lived on it. no valid name
   // means no join, and whoever is still at the gate is in no room at all.
-  ws.onopen = entrar;
+  ws.onopen = joinRoom;
   ws.onclose = () => {
     if (dead) return;
     $("topAir").textContent = "reconnecting";
@@ -1042,7 +1041,7 @@ const zooms = new Map();          // peerId -> { k, x, y }; absent is identity
 // longer exists, and the video ends up wholly outside its frame. the target is
 // in the inline style place() wrote. in fullscreen the frame leaves the flow
 // and .tile no longer governs it, so there the measured box is the true one.
-function caixaAlvo(tile, frame) {
+function targetBox(tile, frame) {
   if (document.fullscreenElement === frame) {
     return { W: frame.clientWidth || 1, H: frame.clientHeight || 1 };
   }
@@ -1055,7 +1054,7 @@ function applyZoom(id) {
   const tile = tiles.get(id);
   const frame = tile?.querySelector(".frame");
   const video = tile?.querySelector("video");
-  const lupa = tile?.querySelector(".zoom");
+  const badge = tile?.querySelector(".zoom");
   if (!frame || !video) return;
   const z = zooms.get(id);
   if (!z || z.k <= 1) {
@@ -1064,30 +1063,30 @@ function applyZoom(id) {
     video.style.transform = "";
     frame.classList.remove("zoomed", "dragging");
     frame.title = "click focuses · wheel zooms · double click restores";
-    if (lupa) { lupa.hidden = true; lupa.classList.remove("up"); }
+    if (badge) { badge.hidden = true; badge.classList.remove("up"); }
     return;
   }
   // the pan is confined to the box, so the magnified video never stops
   // covering the frame and the image cannot be lost off screen.
-  const { W, H } = caixaAlvo(tile, frame);
+  const { W, H } = targetBox(tile, frame);
   z.x = Math.min(0, Math.max(W * (1 - z.k), z.x));
   z.y = Math.min(0, Math.max(H * (1 - z.k), z.y));
   video.style.transformOrigin = "0 0";
   video.style.transform = `translate(${z.x}px, ${z.y}px) scale(${z.k})`;
   frame.classList.add("zoomed");
   frame.title = "drag to move · wheel adjusts · double click restores";
-  if (lupa) {
+  if (badge) {
     // how much detail is left to recover: the frame shows the video already
     // shrunk, and this ratio says by how much. past it no new pixel arrives,
     // only interpolation. with no metadata yet, Infinity means "assume there is
     // detail", because claiming interpolation before the first frame would be
     // asserting a falsehood exactly where nothing is known.
-    const nativo = video.videoWidth ? video.videoWidth / (W * devicePixelRatio) : Infinity;
-    const up = z.k > Math.max(1, nativo);
-    lupa.hidden = false;
-    lupa.textContent = z.k.toFixed(1) + "×";
-    lupa.classList.toggle("up", up);
-    lupa.title = up
+    const native = video.videoWidth ? video.videoWidth / (W * devicePixelRatio) : Infinity;
+    const up = z.k > Math.max(1, native);
+    badge.hidden = false;
+    badge.textContent = z.k.toFixed(1) + "×";
+    badge.classList.toggle("up", up);
+    badge.title = up
       ? `${z.k.toFixed(1)}× · past native, this is interpolation · click restores`
       : `${z.k.toFixed(1)}× · still within the detail that arrived · click restores`;
   }
@@ -1136,8 +1135,8 @@ function bindZoom(tile, id) {
     applyZoom(id);
   }, { passive: false });
 
-  const lupa = tile.querySelector(".zoom");
-  if (lupa) lupa.onclick = (e) => {
+  const badge = tile.querySelector(".zoom");
+  if (badge) badge.onclick = (e) => {
     e.stopPropagation();
     zooms.delete(id);
     applyZoom(id);
@@ -1452,7 +1451,8 @@ addEventListener("keydown", (e) => {
 
 /* ---------- name ---------- */
 
-const NAME_KEY = "ss:nome";
+const NAME_KEY = "ss:name";
+const LEGACY_NAME_KEY = "ss:nome";
 // mandatory, with a floor: one letter does not tell two people apart, and
 // whoever joins has to be recognizable to those already there. the server still
 // accepts empty, which is how a name is erased, so this rule is the client's:
@@ -1480,9 +1480,9 @@ const SEG = typeof Intl.Segmenter === "function"
   ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
   : null;
 
-function initial(nome) {
-  const primeiro = SEG ? [...SEG.segment(nome)][0]?.segment : [...nome][0];
-  return primeiro?.toUpperCase() ?? "_";
+function initial(name) {
+  const first = SEG ? [...SEG.segment(name)][0]?.segment : [...name][0];
+  return first?.toUpperCase() ?? "_";
 }
 
 // whoever has no name shows up by id, the only identifier the server
@@ -1498,21 +1498,27 @@ function nameOf(id) {
 // by id. with no valid name it falls back to a bare "you", which does not
 // qualify itself twice.
 function pill(tile, id) {
-  const eu = id === myId;
-  const nome = eu ? (nameOk(myName) ? myName : "you") : nameOf(id);
-  tile.querySelector(".who b").textContent = nome;
-  tile.querySelector(".who").classList.toggle("eu", eu && nome !== "you");
-  return nome;
+  const isMe = id === myId;
+  const displayName = isMe ? (nameOk(myName) ? myName : "you") : nameOf(id);
+  tile.querySelector(".who b").textContent = displayName;
+  tile.querySelector(".who").classList.toggle("me", isMe && displayName !== "you");
+  return displayName;
 }
-
 // localStorage throws in a restricted context (cookies blocked, sandboxed
 // iframe). not remembering a name is no reason to take the page down.
 function loadName() {
-  try { return cleanName(localStorage.getItem(NAME_KEY)); } catch { return ""; }
+  try {
+    const stored = localStorage.getItem(NAME_KEY) ?? localStorage.getItem(LEGACY_NAME_KEY);
+    return cleanName(stored);
+  } catch { return ""; }
 }
 
 function storeName(v) {
-  try { localStorage.setItem(NAME_KEY, v); } catch {}
+  try {
+    localStorage.setItem(NAME_KEY, v);
+    // legacy key kept for downgrade compatibility, will be naturally phased out
+    localStorage.removeItem(LEGACY_NAME_KEY);
+  } catch {}
 }
 
 // no debounce: the name is not typed live into the header any more, it is
@@ -1529,7 +1535,7 @@ function setName(raw) {
 // entering means sending `join`, and that only happens with a valid name.
 // until the gate is answered the socket exists but the person is in no room:
 // the server ignores everything that arrives before a join.
-function entrar() {
+function joinRoom() {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   if (myId || !nameOk(myName)) return;
   send({ t: "join", room: ROOM, name: myName });
@@ -1539,8 +1545,10 @@ myName = loadName();
 
 /* ---------- rooms ---------- */
 
-const ROOMS_KEY = "ss:salas";
+const ROOMS_KEY = "ss:rooms";
+const LEGACY_ROOMS_KEY = "ss:salas";
 const ROOMS_MAX = 8;
+
 
 // the same cut as the server (String, 64), plus the whitespace collapse the
 // fragment lets through. empty falls back to "room", the default on both sides.
@@ -1555,14 +1563,18 @@ function cleanRoom(raw) {
 // existing on close. occupancy, therefore, only for the current room.
 function loadRooms() {
   try {
-    const v = JSON.parse(localStorage.getItem(ROOMS_KEY) || "[]");
+    const raw = localStorage.getItem(ROOMS_KEY) ?? localStorage.getItem(LEGACY_ROOMS_KEY);
+    const v = JSON.parse(raw || "[]");
     return Array.isArray(v) ? [...new Set(v.map(cleanRoom))] : [];
   } catch { return []; }
 }
 
 function remember(room) {
   const list = [room, ...loadRooms().filter((r) => r !== room)].slice(0, ROOMS_MAX);
-  try { localStorage.setItem(ROOMS_KEY, JSON.stringify(list)); } catch {}
+  try {
+    localStorage.setItem(ROOMS_KEY, JSON.stringify(list));
+    localStorage.removeItem(LEGACY_ROOMS_KEY);
+  } catch {}
   return list;
 }
 
@@ -1575,11 +1587,11 @@ function paintRoom() {
 // server, and `joined` already knows how to tear down what belonged to the old
 // one: same path as a reconnect. whoever was transmitting keeps going and asks
 // for a sharer slot again in the new room.
-function switchRoom(nome) {
-  const alvo = cleanRoom(nome);
-  if (alvo === ROOM) return;
+function switchRoom(name) {
+  const target = cleanRoom(name);
+  if (target === ROOM) return;
 
-  ROOM = alvo;
+  ROOM = target;
   remember(ROOM);
   paintRoom();
   history.replaceState(null, "", "#" + encodeURIComponent(ROOM));
@@ -1620,60 +1632,60 @@ addEventListener("hashchange", () => {
 // gate is answered the person is in no room. that is why it does not close on
 // esc or on a click outside while there is still no name. afterwards the same
 // modal serves to switch room or name, and closing it unanswered is legitimate.
-function openGate(trava) {
+function openGate(locked) {
   gateOpen = true;
-  gateTrava = !!trava;
+  gateLocked = !!locked;
   $("gateName").value = myName;
   $("gateRoom").value = ROOM;
-  $("gateTitle").textContent = trava ? "Who is joining" : "Room and name";
-  $("gateSub").hidden = !trava;
+  $("gateTitle").textContent = locked ? "Who is joining" : "Room and name";
+  $("gateSub").hidden = !locked;
   paintGate();
   $("gate").hidden = false;
-  const alvo = trava || !nameOk(myName) ? $("gateName") : $("gateRoom");
-  alvo.focus();
-  alvo.select();
+  const target = locked || !nameOk(myName) ? $("gateName") : $("gateRoom");
+  target.focus();
+  target.select();
 }
 
 function closeGate() {
   // with no name there is no way out: the gate is the only thing between the
   // person and a room where they would show up as "3f9a1b2c" to everybody.
-  if (gateTrava) return;
+  if (gateLocked) return;
   gateOpen = false;
   $("gate").hidden = true;
 }
 
 function paintGate() {
-  const nome = cleanName($("gateName").value);
-  const ok = nameOk(nome);
-  const sala = cleanRoom($("gateRoom").value);
+  const name = cleanName($("gateName").value);
+  const ok = nameOk(name);
+  const room = cleanRoom($("gateRoom").value);
 
   const av = $("gateAv");
-  av.textContent = initial(nome);
+  av.textContent = initial(name);
   av.className = "av" + (ok ? "" : " anon");
 
   // only complain once something has been typed: an untouched field with a
   // warning lit is a telling-off before the mistake.
-  const dica = $("gateHint");
-  dica.textContent = ok ? `${[...nome].length}/24` : `${MIN_NAME} letters minimum`;
-  dica.className = !ok && nome ? "bad" : "";
+  const hint = $("gateHint");
+  hint.textContent = ok ? `${[...name].length}/24` : `${MIN_NAME} letters minimum`;
+  hint.className = !ok && name ? "bad" : "";
 
   const go = $("gateGo");
   go.disabled = !ok;
-  go.textContent = sala === ROOM ? "Enter" : `Enter #${sala}`;
-  $("gateUrl").textContent = `${location.host}/#${encodeURIComponent(sala)}`;
+  go.textContent = room === ROOM ? "Enter" : `Enter #${room}`;
+  $("gateUrl").textContent = `${location.host}/#${encodeURIComponent(room)}`;
 
   const box = $("gateRecents");
   box.textContent = "";
   const list = loadRooms();
   // one room, and it is the one already in the field: the row says nothing.
-  if (!list.length || (list.length === 1 && list[0] === sala)) return;
+  if (!list.length || (list.length === 1 && list[0] === room)) return;
   const k = document.createElement("span");
   k.className = "k";
   k.textContent = "your rooms";
   box.append(k);
   for (const r of list) {
     const b = document.createElement("button");
-    b.className = "rchip" + (r === sala ? " on" : "");
+    b.className = "rchip" + (r === room ? " on" : "");
     b.textContent = r;
     b.onclick = () => {
       $("gateRoom").value = r;
@@ -1685,14 +1697,14 @@ function paintGate() {
 
 function confirmGate() {
   if (!nameOk($("gateName").value)) return;
-  const sala = cleanRoom($("gateRoom").value);
+  const room = cleanRoom($("gateRoom").value);
   setName($("gateName").value);
-  gateTrava = false;
+  gateLocked = false;
   closeGate();
   // same room: the join was only waiting for a name. new room: reconnect, and
   // the join goes out on onopen, name included.
-  if (sala === ROOM) entrar();
-  else switchRoom(sala);
+  if (room === ROOM) joinRoom();
+  else switchRoom(room);
 }
 
 $("gateName").oninput = paintGate;
@@ -1757,11 +1769,11 @@ function render() {
     }
     const on = id === focusId;
     tile.classList.toggle("focused", on);
-    const alvo = id === myId ? "your screen" : nameOf(id);
+    const targetLabel = id === myId ? "your screen" : nameOf(id);
     const btn = tile.querySelector(".focus");
     btn.textContent = on ? "leave focus" : "focus";
-    btn.setAttribute("aria-label", on ? "Leave focus" : `Focus on ${alvo}`);
-    tile.querySelector(".full").setAttribute("aria-label", `Fullscreen: ${alvo}`);
+    btn.setAttribute("aria-label", on ? "Leave focus" : `Focus on ${targetLabel}`);
+    tile.querySelector(".full").setAttribute("aria-label", `Fullscreen: ${targetLabel}`);
   }
 
   const btn = $("shareBtn");
@@ -1791,9 +1803,9 @@ $("copyBtn").onclick = async () => {
   b.classList.add("tap");
   // navigator.clipboard does not exist outside a secure context, so this is a
   // TypeError rather than a rejection, and a bare await became an unhandled one.
-  let copiou = true;
-  try { await navigator.clipboard.writeText(location.href); } catch { copiou = false; }
-  b.title = copiou ? "Link copied" : "Copy it from the address bar";
+  let copied = true;
+  try { await navigator.clipboard.writeText(location.href); } catch { copied = false; }
+  b.title = copied ? "Link copied" : "Copy it from the address bar";
   setTimeout(() => { b.title = "Copy link"; }, 1400);
 };
 $("roomBtn").onclick = () => openGate(false);
@@ -1906,7 +1918,7 @@ setInterval(async () => {
   // our own tile: aggregates the upload to every peer
   const self = tiles.get(myId);
   if (self && !self.classList.contains("peer") && sending.size) {
-    let total = 0, saiW = 0, saiH = 0, limite = "", politica = "";
+    let total = 0, outW = 0, outH = 0, limitReason = "", policy = "";
     for (const [id, pc] of sending) {
       const stats = await pc.getStats();
       stats.forEach((r) => {
@@ -1918,17 +1930,17 @@ setInterval(async () => {
           // are fine. the reason comes from the SAME destination as the
           // resolution, not from whichever ends the loop, or the strip mixes
           // one peer's size with another's explanation.
-          if (r.frameWidth && (!saiW || r.frameWidth < saiW)) {
-            saiW = r.frameWidth;
-            saiH = r.frameHeight;
-            limite =
+          if (r.frameWidth && (!outW || r.frameWidth < outW)) {
+            outW = r.frameWidth;
+            outH = r.frameHeight;
+            limitReason =
               r.qualityLimitationReason && r.qualityLimitationReason !== "none"
                 ? r.qualityLimitationReason
                 : "";
           }
         }
       });
-      if (pc.policy) politica = pc.policy;
+      if (pc.policy) policy = pc.policy;
     }
     // the effective capture resolution next to the destination count makes the
     // cap auditable by eye: if Chrome ignores applyConstraints on a real
@@ -1939,20 +1951,20 @@ setInterval(async () => {
     // person who could not see it.
     const cap = localStream?.getVideoTracks()[0]?.getSettings();
     const capTxt = cap?.width && cap?.height ? `${cap.width}×${cap.height}` : "";
-    const caiu = saiW && cap?.width && saiW < cap.width;
-    const detalhe = (caiu ? ` → ${saiW}×${saiH}` : "") + (limite ? ` ${limite}` : "");
+    const didDrop = outW && cap?.width && outW < cap.width;
+    const detail = (didDrop ? ` → ${outW}×${outH}` : "") + (limitReason ? ` ${limitReason}` : "");
     self.querySelector(".tel").classList.add("vivo");
     self.querySelector(".rate").textContent = "↑ " + (fmt(total) || "--");
     const size = self.querySelector(".size");
     size.textContent =
-      (capTxt ? capTxt + detalhe + " · " : "") +
-      `${sending.size} destino${sending.size > 1 ? "s" : ""}`;
-    size.className = "size" + (caiu || limite ? " warn" : "");
+      (capTxt ? capTxt + detail + " · " : "") +
+      `${sending.size} destination${sending.size > 1 ? "s" : ""}`;
+    size.className = "size" + (didDrop || limitReason ? " warn" : "");
     // the path field is useless on our own tile (there is no ICE pair to talk
     // about), so it is where the encoding policy fits at no layout cost.
     const via = self.querySelector(".path");
-    via.textContent = politica || "";
-    via.className = "path" + (politica ? " warn" : "");
+    via.textContent = policy || "";
+    via.className = "path" + (policy ? " warn" : "");
     push(myId, total);
   }
 
