@@ -193,11 +193,13 @@
     box-shadow: 0 22px 44px -20px #000;
   }
   .dock button {
+    position: relative;
     width: 44px; height: 44px; flex: none; border-radius: 50%; cursor: pointer;
     display: grid; place-items: center; color: var(--fg);
     background: var(--raise); border: 1px solid transparent;
     transition: background .15s, color .15s;
   }
+  .dock button:active { transform: scale(.94); }
   .dock button:hover { background: #24313a; }
   .dock button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .dock button svg {
@@ -208,7 +210,25 @@
   .dock button.on:hover { background: #6bd8c4; }
   .dock button.stop { background: var(--stop); color: #fff; }
   .dock button.stop:hover { background: #e35f55; }
-  .dock button.ok { background: #17403a; color: var(--accent); }
+  /* Copiar não é um estado. O botão ficava verde por 1.4s, e verde parado no
+     dock é o vocabulário do `.on` — modo ligado, como o de compartilhar. O que
+     confirma um clique sem virar modo é o pulso: nasce no botão, sai e some. */
+  .dock button.tap { animation: tap .34s ease; }
+  .dock button.tap::after {
+    content: ""; position: absolute; inset: -1px; border-radius: 50%;
+    border: 1px solid var(--accent); animation: onda .5s ease-out forwards;
+  }
+  @keyframes tap  { 40% { transform: scale(.9); } }
+  @keyframes onda {
+    from { opacity: .9; transform: scale(1); }
+    to   { opacity: 0;  transform: scale(1.45); }
+  }
+  /* Sem movimento o pulso vira um lampejo no lugar: some do mesmo jeito. */
+  @media (prefers-reduced-motion: reduce) {
+    .dock button.tap { animation: none; }
+    .dock button.tap::after { animation: lampejo .5s ease-out forwards; }
+    @keyframes lampejo { from { opacity: .9; } to { opacity: 0; } }
+  }
   .dock button:disabled { opacity: .35; cursor: not-allowed; background: var(--raise); }
   .dock .sep { width: 1px; height: 24px; background: var(--line); flex: none; }
 
@@ -1530,14 +1550,18 @@ function render() {
 
 $("shareBtn").onclick = () => (localStream ? stopShare() : startShare());
 $("copyBtn").onclick = async () => {
-  await navigator.clipboard.writeText(location.href);
   const b = $("copyBtn");
-  b.classList.add("ok");
-  b.title = "Link copiado";
-  setTimeout(() => {
-    b.classList.remove("ok");
-    b.title = "Copiar link";
-  }, 1400);
+  // Tirar e repor a classe com um reflow no meio: sem isso o segundo clique
+  // seguido não anima nada, porque a classe já estava lá.
+  b.classList.remove("tap");
+  void b.offsetWidth;
+  b.classList.add("tap");
+  // `navigator.clipboard` nem existe fora de contexto seguro, então isso é
+  // TypeError e não rejeição — e o `await` solto virava erro não tratado.
+  let copiou = true;
+  try { await navigator.clipboard.writeText(location.href); } catch { copiou = false; }
+  b.title = copiou ? "Link copiado" : "Copie da barra de endereço";
+  setTimeout(() => { b.title = "Copiar link"; }, 1400);
 };
 $("roomBtn").onclick = () => openGate(false);
 $("meBtn").onclick = () => {

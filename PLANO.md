@@ -96,7 +96,10 @@ maior incógnita do projeto e ainda não foi exercitada uma única vez.**
   contra cada tile em vez de confiar nas constantes. O dock tem cinco botões, e
   cada um é uma capacidade que já existe: compartilhar (verde pra começar,
   vermelho pra parar), copiar link, sala, nome, sair do foco. Não inventar botão
-  de áudio, câmera ou desligar só porque a referência de call tem.
+  de áudio, câmera ou desligar só porque a referência de call tem. **Verde
+  parado no dock é modo ligado** — é o que o botão de compartilhar diz. Copiar
+  não é modo: confirma com um pulso que nasce no botão e some em meio segundo,
+  não pintando o botão de verde por 1,4s.
 - Tipografia em dois papéis: mono pra verdade de máquina (id, taxa, resolução,
   caminho, nome de sala, a marca `tela`), sans do **sistema** pra palavra de
   gente. Nada de webfont: o projeto não busca nada na rede.

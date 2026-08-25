@@ -195,6 +195,16 @@ does: share (teal to start, red to stop, disabled with the reason in its
 capability that does not exist — there is no audio, no camera and no hang-up
 here, however much the reference call UIs have them.
 
+**A dock button that stays coloured means a mode is on** — that is what the
+share button says, and copying is not a mode. The copy button used to go green
+for 1.4s, which borrowed `.on`'s vocabulary for something that already
+happened. It now confirms with a pulse (`.tap`: a .34s squash plus a ring that
+expands out of the button and fades), removed and re-added around a forced
+reflow so a second click animates again. Clipboard failure is caught rather
+than left as an unhandled rejection: `navigator.clipboard` does not exist
+outside a secure context, so on plain `http://100.x` the call is a `TypeError`,
+and the title says to copy from the address bar instead.
+
 Two type roles, and the split is the point: **mono is machine truth** (ids,
 rates, resolutions, candidate types, room names, and the `tela` wordmark, which
 is a command), **sans is human words** (buttons, labels, sentences). Before this,
