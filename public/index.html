@@ -38,7 +38,7 @@
     font: 13px/1.5 var(--sans);
     -webkit-font-smoothing: antialiased;
   }
-  code, kbd { font-family: var(--mono); }
+  kbd { font-family: var(--mono); }
 
   /* O palco é a janela inteira. Todo o cromo flutua por cima dele, e as faixas
      que ele ocupa em cima e embaixo estão no JS (PAD_TOP / PAD_BOT): tile
@@ -611,9 +611,9 @@ function handle(msg) {
 
   if (msg.t === "share-denied") {
     // Já tínhamos o stream do picker; não houve vaga, então descarta.
-    localStream?.getTracks().forEach((t) => t.stop());
-    localStream = null;
-    dropTile(myId);
+    // Sem `share-stop` nem teardown de envios: o servidor nunca nos registrou,
+    // então não há vaga a liberar nem PC aberta.
+    discardCapture();
     notice(
       msg.reason === "limit"
         ? `Já tem ${maxSharers} pessoa${maxSharers > 1 ? "s" : ""} compartilhando. Espere alguém parar.`
@@ -791,6 +791,16 @@ function geometriaReal(track) {
   });
 }
 
+// Caixa 16:9 que cabe num orçamento de pixels, com dimensões pares (encoders
+// trabalham em macroblocos). Serve tanto à dica do picker — que passa o
+// orçamento COM a folga de 1,32, para a captura chegar acima do teto e o corte
+// de applyConstraints ter o que cortar — quanto ao card de sala vazia, que
+// anuncia o orçamento puro. Uma fórmula só: mudar aqui muda nos dois lugares.
+function boxFor(pixels) {
+  const w = Math.round(Math.sqrt((pixels * 16) / 9) / 2) * 2;
+  return { w, h: Math.round((w * 9) / 16 / 2) * 2 };
+}
+
 async function startShare() {
   if (!canShare()) {
     notice(whyCantShare());
@@ -834,9 +844,7 @@ async function startShare() {
   // dos 2.073.600 onde o encode salta de ~2 para ~10 cores (medido, ver
   // CLAUDE.md). Quem sobe `--pixels` sai dessa faixa — mas já saiu ao subir o
   // orçamento, que é o número que governa o encoder de verdade.
-  const areaCaixa = maxCapturePixels * 1.32;
-  const hintW = Math.round(Math.sqrt((areaCaixa * 16) / 9) / 2) * 2;
-  const hintH = Math.round((hintW * 9) / 16 / 2) * 2;
+  const { w: hintW, h: hintH } = boxFor(maxCapturePixels * 1.32);
 
   let stream;
   try {
@@ -917,13 +925,21 @@ async function startShare() {
   render();
 }
 
-function stopShare() {
-  send({ t: "share-stop" });
+// Fim de um compartilhamento: para os tracks locais e derruba o tile próprio.
+// A parte que difere entre "parei" e "fui negado" fica com quem chama: só quem
+// PAROU precisa avisar o servidor (`share-stop`) e fechar as PCs de envio —
+// quem foi negado nunca teve vaga, logo não tem nada disso.
+function discardCapture() {
   localStream?.getTracks().forEach((t) => t.stop());
   localStream = null;
+  dropTile(myId);
+}
+
+function stopShare() {
+  send({ t: "share-stop" });
+  discardCapture();
   for (const pc of sending.values()) pc.close();
   sending.clear();
-  dropTile(myId);
   render();
 }
 
@@ -1060,7 +1076,6 @@ const PRES_AR = 16 / 9;
 // encolhida deixa de ser texto legível.
 const PRES_RAIL = 132;
 
-let minTile = Infinity;           // menor tile não-miniatura do passe atual
 let pending = 0;
 
 function relayout() {
@@ -1084,7 +1099,6 @@ function fitBox(ar, W, H) {
 }
 
 function place(tile, x, y, w, h, mini) {
-  if (!mini && !tile.classList.contains("peer")) minTile = Math.min(minTile, w);
   tile.classList.toggle("mini", mini);
   tile.classList.toggle("tight", w < WAVE_BELOW);
   tile.classList.toggle("narrow", w < TEL_BELOW);
@@ -1107,7 +1121,6 @@ function layout() {
   const vids = list.filter((t) => !isPlate(t));
   const plates = list.filter(isPlate);
 
-  minTile = Infinity;
   // No foco a presença entra na trilha como qualquer miniatura: o roster não
   // desaparece justo quando alguém está olhando uma tela de perto.
   if (focused && list.length > 1) fitFocus(list, focused, PAD_X, PAD_TOP, W, H);
@@ -1269,6 +1282,14 @@ function cleanName(raw) {
 
 function nameOk(raw) {
   return [...cleanName(raw)].length >= MIN_NAME;
+}
+
+// Primeiro GRAFEMA, não primeiro char: nome pode começar com emoji, e
+// slice(0,1) partiria o par surrogate no meio. Vazio devolve o cursor `_`,
+// que é o desenho de quem ainda não se apresentou — usado pelo monograma
+// do tile e pelo avatar da portaria.
+function initial(nome) {
+  return [...nome][0]?.toUpperCase() ?? "_";
 }
 
 // Quem não tem nome aparece pelo id, que é o único identificador que o servidor
@@ -1433,7 +1454,7 @@ function paintGate() {
   const sala = cleanRoom($("gateRoom").value);
 
   const av = $("gateAv");
-  av.textContent = nome ? [...nome][0].toUpperCase() : "_";
+  av.textContent = initial(nome);
   av.className = "av" + (ok ? "" : " anon");
 
   // Só reclama depois que a pessoa digitou alguma coisa: campo intocado com
@@ -1488,7 +1509,7 @@ $("gate").onkeydown = (e) => {
   if (e.key === "Enter") confirmGate();
 };
 
-/* ---------- ui ---------- *//* ---------- ui ---------- */
+/* ---------- ui ---------- */
 
 function render() {
   const n = peers.size;
@@ -1511,11 +1532,11 @@ function render() {
   $("empty").hidden = !idle;
   if (idle) {
     // Mesmo teto que startShare() usa como dica no picker, assumindo 16:9.
-    const w = Math.round(Math.sqrt((maxCapturePixels * 16) / 9) / 2) * 2;
+    const { w, h } = boxFor(maxCapturePixels);
     $("fRoom").textContent = ROOM;
     $("fPeers").textContent = n;
     $("fSharers").textContent = `${sharers.size}/${maxSharers}`;
-    $("fCap").textContent = `até ${w}×${Math.round((w * 9) / 16 / 2) * 2}`;
+    $("fCap").textContent = `até ${w}×${h}`;
   }
   $("live").classList.toggle("live", !!localStream);
 
@@ -1531,10 +1552,9 @@ function render() {
       const waiting = sharers.has(id);
       tile.classList.toggle("anon", !named);
       tile.classList.toggle("wait", waiting);
-      // Primeiro grafema, não primeiro char: nome pode começar com emoji, e
-      // slice(0,1) partiria o par surrogate no meio.
+      // Primeiro grafema, não primeiro char — ver initial().
       tile.querySelector(".glyph").textContent =
-        named ? [...nameOf(id)][0].toUpperCase() : "_";
+        named ? initial(nameOf(id)) : "_";
       if (waiting) tile.querySelector(".who b").textContent = "conectando…";
       // Dois homônimos na sala só se distinguem pelo id.
       tile.title = named ? `${nameOf(id)} · ${id}` : id;
