@@ -576,9 +576,8 @@ function handle(msg) {
     peers.clear();
     msg.peers.forEach((id) => peers.add(id));
     // one timestamp, and the clock counts from there locally: no periodic sync
-    // needed. an old server without startedAt sends 0, which hides the clock.
-    startedAt = msg.startedAt || 0;
-
+    // needed. an old server without startedAt sends undefined, which hides the clock.
+    startedAt = msg.startedAt ?? 0;
     // if we were transmitting, the server already dropped us from the sharer
     // set on close. ask for the slot again; sending starts when the `sharers`
     // broadcast confirms it.
@@ -1956,18 +1955,16 @@ setInterval(async () => {
     via.className = "path" + (politica ? " warn" : "");
     push(myId, total);
   }
+
+  // room session clock: reuse the single 1s telemetry tick — no second timer.
+  const crono = $("topTime");
+  if (crono && !crono.hidden && startedAt) crono.textContent = fmtClock(Date.now() - startedAt);
 }, 1000);
 
-// the room session clock: one start timestamp, counted locally. writes only
-// when the span is visible, so the tab keeps the pill busy only for a room.
-setInterval(() => {
-  const el = $("topTime");
-  if (el.hidden || !startedAt) return;
-  el.textContent = fmtClock(Date.now() - startedAt);
-}, 1000);
 
 // mm:ss under an hour, h:mm:ss after: a room session is read in minutes first.
 function fmtClock(ms) {
+  if (!Number.isFinite(ms)) return "0:00";
   const s = Math.max(0, Math.floor(ms / 1000));
   const h = Math.floor(s / 3600);
   const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0");

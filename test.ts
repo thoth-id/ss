@@ -153,6 +153,18 @@ async function testJoin() {
   a.close();
   b.close();
   await settle();
+
+  // empty room must delete its clock; next birth gets a fresh epoch
+  const c = await peer("c");
+  c.join("r-join");
+  await settle();
+  const fresh = c.first("joined");
+  ok("new room after empty gets a fresh session clock",
+    typeof fresh?.startedAt === "number" && fresh.startedAt !== joined.startedAt,
+    `old=${joined.startedAt} fresh=${fresh?.startedAt}`);
+  ok("fresh clock is recent", Math.abs((fresh?.startedAt ?? 0) - Date.now()) < 5000, fresh?.startedAt);
+  c.close();
+  await settle();
 }
 
 async function testLeave() {

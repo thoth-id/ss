@@ -208,11 +208,13 @@ Bun.serve<Client>({
         ws.data.name = cleanName(msg.name);
         const peers = [...set].map((p) => p.data.id);
         // the first peer in an empty room is also the room's birth: that is
-        // when the session clock starts.
+        // when the session clock starts. backfill if the room pre-dated sessions
+        // (deploy with live rooms) so the payload never ships undefined.
         if (set.size === 0) sessions.set(room, Date.now());
+        if (!sessions.has(room)) sessions.set(room, Date.now());
         set.add(ws);
 
-        ws.send(JSON.stringify({ t: "joined", id: ws.data.id, peers, startedAt: sessions.get(room) }));
+        ws.send(JSON.stringify({ t: "joined", id: ws.data.id, peers, startedAt: sessions.get(room)! }));
         // snapshot of who is transmitting, for whoever just arrived. this is
         // what makes the state-based broadcast survive a reconnect.
         ws.send(JSON.stringify({ t: "sharers", ids: [...sharersOf(room)] }));

@@ -231,7 +231,7 @@ checa("nothing overlaps: dock, pill, label", dentro(m), JSON.stringify(m.tiles))
 checa("equal cells for everybody", new Set(m.tiles.map((t: any) => Math.round(t.h))).size === 1,
   JSON.stringify(m.tiles.map((t: any) => Math.round(t.h))));
 checa("the pill counts the room",
-  m.topo.length === 4 && m.topo[0] === "#room" && /^\d+:\d{2}$/.test(m.topo[1]) &&
+  m.topo.length === 4 && m.topo[0] === "#room" && /^\d+:\d{2}(:\d{2})?$/.test(m.topo[1]) &&
   m.topo[2] === "0/3 on air" && m.topo[3] === "4 in the room",
   JSON.stringify(m.topo));
 await shot("2-call-no-video");
