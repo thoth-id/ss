@@ -45,8 +45,8 @@ forever trying to kill a dead child.
 Keep the launcher free of CLI logic. Flags, `--bg` and `--stop` all stay in
 `cli.ts`.
 
-Three names, three jobs: the project's internal name stays `tela` — repo, UI
-strings and `PLANO.md` keep saying `tela`. The **package name**,
+Three names, three jobs: the project's internal name stays `tela` — repo and UI
+strings keep saying `tela`. The **package name**,
 `@thoth-dev/screen-share`, is what `npm install`, `bun add` and `bunx` take, and
 what appears in the npmjs.com URL — the org scope exists because a plain
 `screen-share` collided with existing package names on the registry. The
@@ -57,12 +57,8 @@ refer to itself that way. Only the not-yet-installed, run-once-via-`bunx` case
 needs the package name; everything downstream of installation uses the command
 name. Be consistent about which is which when writing docs.
 
-`PLANO.md` is the authoritative spec and task list. Read it before changing
-behavior — it records why each design decision exists, and section 5 lists
-invariants that must not be broken.
-
-Code comments, UI strings and `PLANO.md` are in Brazilian Portuguese. Match that
-when editing.
+Code comments and UI strings are in Brazilian Portuguese. Match that when
+editing.
 
 ## Commands
 
@@ -127,7 +123,7 @@ opaquely, answer STUN. **It never touches media.** Media is peer-to-peer.
 ### Signaling protocol
 
 JSON over WebSocket at `/ws`, discriminated by `t`. Full wire format is in
-`README.md` and `PLANO.md` section 4.
+`README.md`.
 
 The server **never inspects `msg.data`** — it only routes it to `msg.to`. This is
 what allows the WebRTC negotiation to change without touching the backend. Do
@@ -480,7 +476,7 @@ the host. That doubt is what the 2026-08-24 run settled.
 `prflx` (peer-reflexive) is a **direct** path — the candidate was learned during
 connectivity checks instead of being gathered up front, which is what you expect
 when WireGuard delivers packets from an address that was not in the gathered set.
-`PLANO.md` T0 anticipated `host` or `srflx` and never listed `prflx`, but it
+T0 anticipated `host` or `srflx` and never listed `prflx`, but it
 satisfies the intent: direct, no TURN, no relay. Read the path field in each
 tile's telemetry strip — `relay` would mean the STUN path failed.
 
@@ -654,7 +650,7 @@ with fps intact at 29.4 and the system at 68% — unexplained, plausibly
 single-box contention but not proven; and the same scenario re-run measured 1.87
 against 2.31, so treat everything here as ±20%.
 
-Settling both needs what `PLANO.md` T0 still wants anyway: two or three real
+Settling both needs what T0 still wants anyway: two or three real
 tailnet machines.
 
 ### The local STUN answers from the wrong address on a multi-homed host

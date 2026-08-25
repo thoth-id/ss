@@ -7,6 +7,9 @@
 # Agents
 .claude/
 
+# Specs e plans do brainstorming/writing-plans: ficam locais, não sobem.
+docs/superpowers/
+
 # Logs e pids dos scripts de teste
 *.log
 *.pid
