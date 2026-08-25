@@ -175,9 +175,18 @@ Bun.serve<Client>({
     const target = resolveStatic(url.pathname);
     if (!target) return new Response("not found", { status: 404 });
     const file = Bun.file(target);
-    return (await file.exists())
-      ? new Response(file)
-      : new Response("not found", { status: 404 });
+    if (!(await file.exists())) return new Response("not found", { status: 404 });
+
+    // without a cache-control the browser invents a freshness lifetime by
+    // heuristic, and an installed PWA is where that becomes an app frozen on an
+    // old sw.js that never fetches the new one. no-cache does not forbid
+    // storing, it forces revalidation; with no ETag emitted here revalidating
+    // is just re-sending 80 KB inside the tailnet, which costs nothing. the
+    // icons stay out of it: stable name, stable bytes.
+    const icon = /\.(png|ico|svg)$/.test(target);
+    return new Response(file, {
+      headers: { "cache-control": icon ? "public, max-age=604800" : "no-cache" },
+    });
   },
 
   websocket: {
