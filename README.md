@@ -19,9 +19,11 @@ bunx @thoth-dev/screen-share
 
 That brings up HTTP plus the signaling WebSocket on `:3000`, and STUN on UDP
 `:3478`. `npx @thoth-dev/screen-share` also works **if** Bun is already
-installed on the machine. Without Bun the shebang (`#!/usr/bin/env bun`) fails
-with `env: bun: No such file or directory`, which is terse but names what is
-missing.
+installed on the machine: the published entry point is a small Node launcher
+that finds `bun` (on `PATH`, in `$BUN_INSTALL/bin` or in `~/.bun/bin`, which
+covers a non-login shell that never read the install rc) and hands the run to
+`bin/cli.ts`. Without Bun it prints what is missing, why the server needs it,
+and the one line that installs it, then exits 1.
 
 Then, on the same machine:
 
