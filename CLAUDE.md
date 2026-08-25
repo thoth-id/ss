@@ -123,6 +123,10 @@ bin/cli.ts       CLI: flags, --bg/--stop, env handoff to server.ts
 server.ts        Bun.serve: static files + /config + WebSocket signaling + room/sharer state
 stun.ts          ~50-line STUN server (node:dgram), Binding Request → XOR-MAPPED-ADDRESS
 public/index.html  the entire client: HTML + CSS + JS in one file
+public/sw.js     service worker, network-first — see "Installable (PWA)"
+public/manifest.webmanifest   app identity: name, display mode, colours
+public/favicon.*, apple-touch-icon.png, android-chrome-*.png, mstile-150x150.png,
+                 browserconfig.xml   the thoth favicon set, byte-for-byte as delivered
 test.ts          headless suite (no browser)
 ```
 
@@ -525,6 +529,52 @@ closes and clears all PCs and tiles before reopening, then re-requests its share
 slot (the server dropped the old id on close). A `denied` message sets a `dead`
 flag that stops the reconnect loop — without it, a full room becomes a busy loop.
 
+### Installable (PWA)
+
+`public/manifest.webmanifest`, `public/sw.js` and the icon set at the root of
+`public/` make the page installable, so it opens in its own window instead of a
+tab. Nothing else changes: same origin, same signaling, same WebRTC.
+
+The service worker is **network-first for everything**, which is backwards for a
+PWA and deliberate here. The client is one hand-edited HTML file served from
+inside the tailnet, so the network is a millisecond away and a cache hit is the
+only way this page could go stale. The cache is a safety net, not the normal
+path. `/config` is excluded outright — a cached copy would describe limits that
+no longer hold — and `/ws` never reaches a fetch handler anyway.
+
+Offline-first would be pointless: without signaling there is no room. What the
+worker buys is (a) installability, since Chrome only offers the prompt to a page
+with a manifest, an icon and a `fetch` handler, and (b) a blip mid-call showing
+the page that was already loaded instead of the browser's error screen, which
+leaves the 1.5s reconnect loop running where a reload would have killed it.
+
+The static handler sends `cache-control: no-cache` on everything but the icons.
+Without it the browser invents a freshness lifetime by heuristic, and an
+installed PWA is exactly where that becomes an app frozen on an old `sw.js` that
+never fetches the new one.
+
+The install button is the last one in the dock and is `hidden` until
+`beforeinstallprompt` fires. A button promising an install the browser will not
+perform — Firefox and Safari on desktop, or plain http — is worse than no
+button. It is last because it is the rarest action and the only one that leaves
+for good once used. iOS fires no such event: there the path is Safari's own "Add
+to Home Screen", which is what the `apple-mobile-web-app-*` metas serve. They,
+not the manifest, carry the name and the standalone mode on iOS.
+
+Losing the address bar costs nothing here, because `roomBtn` already switches
+rooms without one.
+
+**The icons are the delivered `thoth` favicon set, copied byte-for-byte, and
+they stay that way.** They live at the root of `public/` because that is what
+the set's own `head.html` assumes. Do not resize, recolour, recentre or
+reassemble them, and never synthesise a maskable icon by extracting the paths
+out of `favicon.svg` and filling them: that inverts the mark, and the result is
+not the brand. There is no maskable icon in the set, so the manifest declares
+none and Android shrinks the 512 inside its own background; a maskable one has
+to be delivered, not derived. What is ours to pick is the manifest's
+`theme_color` and `background_color`, which follow `--bg` so the splash and the
+title bar match the call floor.
+
 ## Two things that will bite you
 
 **Secure context.** `getDisplayMedia` only exists in a secure context.
@@ -553,6 +603,16 @@ second machine. The client JS can only be syntax-checked:
 ```bash
 python3 -c "import re;h=open('public/index.html').read();open('/tmp/c.js','w').write(re.search(r'<script>(.*)</script>',h,re.S).group(1))" && node --check /tmp/c.js
 ```
+
+The **PWA is verified headless** on the same CDP rig: the worker reaches
+`activated` and controls the page, Chrome parses the manifest with zero errors,
+every icon answers 200, the shell is in `caches`, and a reload with the network
+emulated offline still renders the page. Two traps there, both of which produced
+wrong numbers first. `Page.navigate` to a URL differing only in the hash is a
+**same-document navigation** — the DOM survives, so a page mutated by an earlier
+check is still mutated; use `Page.reload`. And `beforeinstallprompt` fires about
+a second after load, so anything measured before that is measuring a dock
+without the install button.
 
 The **layout** can be verified headless, unlike WebRTC. Drive Chrome over CDP,
 then inject fake sharers into the live page — `canvas.captureStream()` fed to
