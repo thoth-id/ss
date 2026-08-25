@@ -110,6 +110,10 @@ maior incógnita do projeto e ainda não foi exercitada uma única vez.**
   que existe um vídeo, os monogramas descem pra uma trilha com teto de 132px:
   monograma não carrega informação por pixel, e tela compartilhada encolhida
   deixa de ser texto legível. Sozinho não há roster, e o card de vazio aparece.
+  A minha pílula diz **`Nome (você)`**, não só "você": num palco de cinco quem
+  procura a própria tela procura o nome que digitou. A marca é elemento irmão do
+  nome (`.who em`, `flex: none`), então quem corta com reticências em tile
+  estreito é o nome — cortar a marca apagaria justo o que identifica o quadro.
 - Nome **obrigatório** no cliente, mínimo de 3 grafemas (`MIN_NAME`), guardado no
   `localStorage` e mandado no `join`. A portaria é a porta: `entrar()` só manda
   `join` com nome válido, então quem não respondeu está conectado mas fora de

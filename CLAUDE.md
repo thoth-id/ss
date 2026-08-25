@@ -300,6 +300,17 @@ happens against a client that does not enforce it. A named peer shows the first
 uppercased. Somebody in `sharers` whose video has not arrived yet reads
 `conectando…` in accent; before this, that person was invisible.
 
+My own pill reads **`Name (você)`**, not just `você`: on a stage of five,
+whoever is looking for their own screen is looking for the name they typed. The
+marker is a sibling element of the name (`.who em`, `flex: none`, shown by
+`.who.eu`), so on a narrow tile the *name* is what ellipsizes — truncating the
+marker would cut the one thing that says whose frame it is. The name comes from
+`myName` and not `nameOf(myId)` because the `names` broadcast lands after
+`joined`, and in that gap I would show up by id. With no valid name (another
+client, or before the portaria) it falls back to a bare `você`, which does not
+qualify itself twice. `pill()` writes both, and `render()` calls it for every
+tile, so a rename lands without rebuilding anything.
+
 ### Your rooms are your history, not a directory
 
 The chips in the portaria are the rooms **this browser** has visited, kept in

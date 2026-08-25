@@ -138,6 +138,11 @@
     white-space: nowrap; overflow: hidden;
   }
   .who b { font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
+  /* O "(você)" é irmão do nome, não parte dele: num tile estreito quem corta
+     com reticências é o nome, e cortar justo a marca apagaria a única coisa
+     que diz de quem é aquele quadro. Por isso `flex: none`. */
+  .who em { display: none; flex: none; font-style: normal; color: var(--dim); }
+  .who.eu em { display: block; }
   .who i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
   .tile.peer .who i { display: none; }
   .tile.wait .who b { color: var(--accent); }
@@ -948,12 +953,12 @@ function attachTile(id, stream, isSelf = false) {
           '<button class="act focus"></button>' +
           '<button class="act full">tela cheia</button>' +
         '</div>' +
-        '<span class="who"><i></i><b></b></span>' +
+        '<span class="who"><i></i><b></b><em>(você)</em></span>' +
         '<div class="tel"><span class="rate"></span><span class="size"></span>' +
         '<span class="path"></span><canvas class="wave" aria-hidden="true"></canvas></div>' +
       '</div>';
 
-    tile.querySelector(".who b").textContent = isSelf ? "você" : nameOf(id);
+    pill(tile, id);
     tile.querySelector(".frame").onclick = () => toggleFocus(id);
     tile.querySelector(".focus").onclick = (e) => {
       e.stopPropagation();
@@ -1004,7 +1009,7 @@ function plate(id) {
   tile.dataset.id = id;
   tile.innerHTML =
     '<div class="frame"><span class="glyph" aria-hidden="true"></span></div>' +
-    '<span class="who"><i></i><b></b></span>';
+    '<span class="who"><i></i><b></b><em>(você)</em></span>';
   tiles.set(id, tile);
   $("stage").append(tile);
   return tile;
@@ -1272,6 +1277,20 @@ function nameOf(id) {
   return names.get(id) || id;
 }
 
+// A pílula do meu tile dizia só "você", que some no meio de uma sala cheia:
+// quem procura a própria tela procura o nome que digitou. Escreve o nome e
+// acende a marca "(você)" ao lado. O nome sai de `myName` e não de
+// `nameOf(myId)` porque o broadcast `names` chega depois do `joined` — nesse
+// intervalo eu apareceria pelo id. Sem nome válido (outro cliente, ou antes da
+// portaria) sobra "você" sozinho, que não se qualifica duas vezes.
+function pill(tile, id) {
+  const eu = id === myId;
+  const nome = eu ? (nameOk(myName) ? myName : "você") : nameOf(id);
+  tile.querySelector(".who b").textContent = nome;
+  tile.querySelector(".who").classList.toggle("eu", eu && nome !== "você");
+  return nome;
+}
+
 // localStorage lança em contexto restrito (cookies bloqueados, iframe sandbox).
 // Não lembrar o nome não é motivo pra derrubar a página.
 function loadName() {
@@ -1504,7 +1523,9 @@ function render() {
   $("gridBtn").disabled = !focusId;
 
   for (const [id, tile] of tiles) {
-    const quem = id === myId ? "você" : nameOf(id);
+    // O nome pode mudar depois do tile existir, então a pílula é reescrita a
+    // cada render, não só na criação.
+    pill(tile, id);
     if (tile.classList.contains("peer")) {
       const named = names.has(id);
       const waiting = sharers.has(id);
@@ -1514,16 +1535,13 @@ function render() {
       // slice(0,1) partiria o par surrogate no meio.
       tile.querySelector(".glyph").textContent =
         named ? [...nameOf(id)][0].toUpperCase() : "_";
-      tile.querySelector(".who b").textContent = waiting ? "conectando…" : quem;
+      if (waiting) tile.querySelector(".who b").textContent = "conectando…";
       // Dois homônimos na sala só se distinguem pelo id.
       tile.title = named ? `${nameOf(id)} · ${id}` : id;
       continue;
     }
     const on = id === focusId;
     tile.classList.toggle("focused", on);
-    // O nome pode mudar depois do tile existir, então a pílula é reescrita a
-    // cada render, não só na criação. textContent: nome é texto de terceiro.
-    tile.querySelector(".who b").textContent = quem;
     const alvo = id === myId ? "sua tela" : nameOf(id);
     const btn = tile.querySelector(".focus");
     btn.textContent = on ? "sair do foco" : "focar";

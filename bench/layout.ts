@@ -258,8 +258,13 @@ await digita("Gabriel");
 await evalJS(`document.getElementById("gateGo").click()`);
 await Bun.sleep(500);
 checa("nome sobe pro servidor e volta", (await evalJS(`names.get(myId)`)) === "Gabriel", await evalJS("myName"));
-checa("a pílula do meu tile diz você",
-  (await evalJS(`[...document.querySelectorAll(".tile")].find((t) => t.dataset.id === myId).querySelector(".who b").textContent`)) === "você");
+const minhaPilula = await evalJS(`(() => {
+  const w = [...document.querySelectorAll(".tile")].find((t) => t.dataset.id === myId).querySelector(".who");
+  const em = w.querySelector("em");
+  return { nome: w.querySelector("b").textContent, marca: em.textContent, visivel: getComputedStyle(em).display !== "none" };
+})()`);
+checa("a pílula do meu tile diz o nome", minhaPilula.nome === "Gabriel", JSON.stringify(minhaPilula));
+checa("e a marca (você) ao lado", minhaPilula.marca === "(você)" && minhaPilula.visivel);
 
 console.log("\n--- troca de sala ---");
 const idAntes = await evalJS("myId");
