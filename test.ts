@@ -4,7 +4,7 @@
 // WebRTC não é coberto aqui — precisa de browser e duas máquinas (T0).
 //
 //   (bun run server.ts > /tmp/s.log 2>&1 & echo $! > /tmp/p); sleep 2; \
-//     timeout 60 bun run test.ts; kill $(cat /tmp/p)
+//     timeout 90 bun run test.ts; kill $(cat /tmp/p)
 
 import dgram from "node:dgram";
 
