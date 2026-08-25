@@ -259,6 +259,8 @@
     @keyframes lampejo { from { opacity: .9; } to { opacity: 0; } }
   }
   .dock button:disabled { opacity: .35; cursor: not-allowed; background: var(--raise); }
+  .dock button.off { color: var(--dim); }
+  .dock button.off:hover { background: var(--raise); color: var(--dim); }
   .dock .sep { width: 1px; height: 24px; background: var(--line); flex: none; }
 
   /* === empty stage === */
@@ -407,6 +409,9 @@
   <button id="gridBtn" title="Leave focus" aria-label="Leave focus" disabled>
     <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>
   </button>
+  <button id="soundBtn" title="Mute sounds" aria-label="Mute sounds">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H2.5v6H6l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M17.2 6.2a8 8 0 0 1 0 11.6"/></svg>
+  </button>
 </div>
 
 <div class="gate" id="gate" hidden role="dialog" aria-modal="true" aria-labelledby="gateTitle">
@@ -466,6 +471,80 @@ let dead = false;                 // got `denied`: stop reconnecting
 let retry = 0;                    // reconnect timer, cancellable on a room switch
 let gateOpen = false;
 let gateLocked = false;            // gate with no way out: still no name
+/* ---------- sound ---------- */
+
+const SOUND_KEY = "ss:sound";
+function loadSound() {
+  try {
+    const v = localStorage.getItem(SOUND_KEY);
+    if (v === null) return true;
+    return v === "1" || v === "true";
+  } catch { return true; }
+}
+function storeSound(v) {
+  try { localStorage.setItem(SOUND_KEY, v ? "1" : "0"); } catch {}
+}
+let soundOn = loadSound();
+let audioCtx = null;
+function ensureAudio() {
+  if (!soundOn) return null;
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+    return audioCtx;
+  } catch { return null; }
+}
+function tone(f0, f1, dur, type, vol, delay) {
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const t0 = ctx.currentTime + (delay || 0);
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || "sine";
+    osc.frequency.setValueAtTime(f0, t0);
+    if (f1 && f1 !== f0) osc.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + dur * 0.9);
+    gain.gain.setValueAtTime(0, t0);
+    gain.gain.linearRampToValueAtTime(vol ?? 0.12, t0 + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.03);
+  } catch {}
+}
+function playJoin() {
+  if (!soundOn) return;
+  tone(620, 900, 0.12, "sine", 0.14);
+}
+function playLeave() {
+  if (!soundOn) return;
+  tone(880, 320, 0.14, "sine", 0.10);
+}
+function playShareStart() {
+  if (!soundOn) return;
+  tone(880, 880, 0.13, "triangle", 0.11);
+  tone(1320, 1320, 0.13, "triangle", 0.09, 0.09);
+}
+function playShareStop() {
+  if (!soundOn) return;
+  tone(300, 150, 0.16, "sine", 0.11);
+}
+const SOUND_ICON_ON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H2.5v6H6l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M17.2 6.2a8 8 0 0 1 0 11.6"/></svg>';
+const SOUND_ICON_OFF = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H2.5v6H6l5 4V5Z"/><path d="M3 3l18 18"/></svg>';
+function renderSoundBtn() {
+  const b = $("soundBtn");
+  if (!b) return;
+  b.classList.toggle("off", !soundOn);
+  b.innerHTML = soundOn ? SOUND_ICON_ON : SOUND_ICON_OFF;
+  const label = soundOn ? "Mute sounds" : "Unmute sounds";
+  b.title = label;
+  b.setAttribute("aria-label", label);
+  b.setAttribute("aria-pressed", String(!soundOn));
+}
+addEventListener("click", () => { if (soundOn) ensureAudio(); });
+addEventListener("keydown", () => { if (soundOn) ensureAudio(); });
+
 /* ---------- setup ---------- */
 
 async function boot() {
@@ -479,6 +558,7 @@ async function boot() {
   paintRoom();
   remember(ROOM);
   render();
+  renderSoundBtn();
   // no stored name means the gate blocks until it is answered. with one, the
   // link opens straight into its room, which is the point of sending a link.
   if (!nameOk(myName)) openGate(true);
@@ -591,6 +671,7 @@ function handle(msg) {
   if (msg.t === "peer-joined") {
     peers.add(msg.id);
     if (localStream && sharers.has(myId)) openSend(msg.id);
+    if (myId && soundOn && msg.id !== myId) playJoin();
     render();
     return;
   }
@@ -602,13 +683,17 @@ function handle(msg) {
     sending.delete(msg.id);
     receiving.delete(msg.id);
     dropTile(msg.id);
+    if (myId && soundOn) playLeave();
     render();
     return;
   }
 
   if (msg.t === "sharers") {
     const next = new Set(msg.ids);
-
+    if (myId && soundOn) {
+      for (const id of next) if (!sharers.has(id) && id !== myId) playShareStart();
+      for (const id of sharers) if (!next.has(id) && id !== myId) playShareStop();
+    }
     // whoever left the set: drop the receiving PC and the tile right away,
     // rather than waiting for connectionstatechange to fall on its own.
     for (const id of sharers) {
@@ -617,12 +702,9 @@ function handle(msg) {
       receiving.delete(id);
       dropTile(id);
     }
-
     sharers = next;
-
     // accepted as a sharer: now open the sends.
     if (localStream && sharers.has(myId)) peers.forEach(openSend);
-
     render();
     return;
   }
@@ -1817,6 +1899,12 @@ $("meBtn").onclick = () => {
 $("gridBtn").onclick = () => {
   focusId = null;
   render();
+};
+$("soundBtn").onclick = () => {
+  soundOn = !soundOn;
+  storeSound(soundOn);
+  renderSoundBtn();
+  if (soundOn) ensureAudio();
 };
 
 /* ---------- telemetry ---------- */
