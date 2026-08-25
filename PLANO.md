@@ -64,11 +64,14 @@ maior incógnita do projeto e ainda não foi exercitada uma única vez.**
 - Fila de ICE candidates chegados antes de `setRemoteDescription` (`pc.pending`).
 - Layout de tiles calculado em JS (`layout()`), não em CSS grid: o palco tem
   altura fixa e cada tile é encaixado dentro dela pela proporção real do vídeo.
-  A página não rola em nenhuma contagem de telas. `STRIP_LINE` (24) e
-  `STRIP_BAND` (40) têm que continuar iguais às alturas da faixa no CSS, e as
-  bordas dos tiles são `box-shadow: inset` justamente para não somarem altura.
-  Qual das duas vale sai de um segundo passe: encaixa com a linha, e se o tile
-  mais estreito ficou abaixo de `BAND_BELOW` (600px), refaz com a faixa.
+  A página não rola em nenhuma contagem de telas. O tile é só a caixa do vídeo:
+  rótulo e telemetria são pílulas flutuando sobre ele, então não há régua pra
+  descontar e não há segundo passe de encaixe (`STRIP_LINE`, `STRIP_BAND` e
+  `BAND_BELOW` deixaram de existir). As duas pílulas dividem uma linha e
+  degradam em dois estágios medidos contra a sobreposição real das caixas:
+  abaixo de `WAVE_BELOW` (520) cai a fita, abaixo de `TEL_BELOW` (340) cai a
+  telemetria inteira e fica o nome. As bordas dos tiles continuam
+  `box-shadow: inset` justamente para não somarem altura.
 - Modo foco: clique numa tela joga ela no palco inteiro e manda as outras para
   uma trilha de miniaturas (à direita, ou embaixo em tela estreita). `esc` sai.
   Os tiles nunca trocam de pai no DOM — mover um `<video>` com `srcObject` pisca.
@@ -80,23 +83,46 @@ maior incógnita do projeto e ainda não foi exercitada uma única vez.**
 - `maxBitrate` 1.5 Mb/s, `maxFramerate` 30, `degradationPreference:
   "maintain-resolution"`, `contentHint = "detail"`.
 - Telemetria por tile a cada 1s: bitrate, resolução, fps, tipo de candidate, RTT.
-- Sala pelo hash da URL (`#nome`). Reconnect automático do WebSocket.
-- Campo de nome no cabeçalho: opcional, guardado no `localStorage`, mandado no
-  `join` e por `rename` com debounce de 400ms (blur e Enter mandam na hora).
-  Quem não escolhe nome aparece pelo id em toda a interface (`nameOf`).
-- Placa de presença: quem está na sala e não transmite ganha um tile com
-  monograma (`.tile.peer`), derivado de `peers`/`names`/`sharers` em
-  `syncRoster()`, sem mudança nenhuma no servidor nem no protocolo — o cliente
-  já sabia quem estava lá. **As placas não disputam área com o vídeo**: ficam
-  numa trilha embaixo com teto de 132px, e só herdam o palco quando não há
-  nenhum tile de vídeo (teto de 220px). Dar célula cheia de grid pra elas
-  colocaria a tela compartilhada em um terço do palco, que é onde o texto dela
-  deixa de ser legível — foi medido a olho nas capturas. Sozinho não há roster
-  (uma placa só não informa nada), então `tiles.size` continua 0 e o card de
-  vazio aparece como antes. Sem nome escolhido a placa mostra `_`, o cursor do
-  prompt, porque o id é hex e a inicial dele não diz nada. Quem está em
-  `sharers` mas cujo vídeo ainda não chegou aparece como `conectando…` — antes
-  essa pessoa era invisível.
+- Sala pelo hash da URL (`#nome`), e ela **não é constante**: `switchRoom()`
+  troca de sala sem recarregar (fecha o socket soltando os handlers antes, limpa
+  `peers`/`names`/`sharers`, chama `resetConnections()` e reconecta). O servidor
+  dá id novo por socket, então o `joined` cai no mesmo caminho do reconnect, e
+  quem estava transmitindo mantém o stream e pede a vaga de novo na sala nova.
+  `hashchange` passa pela mesma função. Reconnect automático do WebSocket.
+- Casca de call: o palco é a janela inteira e todo o cromo flutua por cima —
+  marca no canto, pílula de estado no topo (`#sala · 2/3 no ar · 4 na sala`) e
+  dock de botões redondos embaixo. O encaixe reserva duas faixas pra esse cromo
+  (`PAD_TOP` 52, `PAD_BOT` 84), e o bench mede as caixas do dock e da pílula
+  contra cada tile em vez de confiar nas constantes. O dock tem cinco botões, e
+  cada um é uma capacidade que já existe: compartilhar (verde pra começar,
+  vermelho pra parar), copiar link, sala, nome, sair do foco. Não inventar botão
+  de áudio, câmera ou desligar só porque a referência de call tem. **Verde
+  parado no dock é modo ligado** — é o que o botão de compartilhar diz. Copiar
+  não é modo: confirma com um pulso que nasce no botão e some em meio segundo,
+  não pintando o botão de verde por 1,4s.
+- Tipografia em dois papéis: mono pra verdade de máquina (id, taxa, resolução,
+  caminho, nome de sala, a marca `tela`), sans do **sistema** pra palavra de
+  gente. Nada de webfont: o projeto não busca nada na rede.
+- Presença é tile de call: quem está na sala e não transmite ganha um monograma
+  redondo no lugar do vídeo, derivado de `peers`/`names`/`sharers` em
+  `syncRoster()`, sem mudança nenhuma no servidor. **Com ninguém transmitindo, a
+  grade de monogramas é a chamada inteira**, célula igual pra todo mundo. Assim
+  que existe um vídeo, os monogramas descem pra uma trilha com teto de 132px:
+  monograma não carrega informação por pixel, e tela compartilhada encolhida
+  deixa de ser texto legível. Sozinho não há roster, e o card de vazio aparece.
+  A minha pílula diz **`Nome (você)`**, não só "você": num palco de cinco quem
+  procura a própria tela procura o nome que digitou. A marca é elemento irmão do
+  nome (`.who em`, `flex: none`), então quem corta com reticências em tile
+  estreito é o nome — cortar a marca apagaria justo o que identifica o quadro.
+- Nome **obrigatório** no cliente, mínimo de 3 grafemas (`MIN_NAME`), guardado no
+  `localStorage` e mandado no `join`. A portaria é a porta: `entrar()` só manda
+  `join` com nome válido, então quem não respondeu está conectado mas fora de
+  qualquer sala, e a trava não fecha no esc nem no clique fora. O servidor
+  continua aceitando nome vazio (é como se apaga um nome), então a regra é do
+  cliente: outro cliente ainda pode entrar sem nome, e `nameOf` cai no id. Sem
+  debounce de rename: uma confirmação, um `rename`.
+- Portaria também troca de sala, e oferece as salas deste navegador
+  (`localStorage`, 8 mais recentes). Não é diretório da rede; ver I6.
 
 ### Lacunas reais
 
@@ -189,6 +215,18 @@ quebraria a premissa do STUN e passaria a exigir TURN.
 **I5. HTTPS via `tailscale serve`, não self-signed.**
 `getDisplayMedia` só existe em secure context. `tailscale serve --bg 3000` emite
 cert Let's Encrypt válido para o nome `.ts.net`.
+
+**I6. A lista de salas é histórico local, não diretório da rede.**
+A portaria lê o `localStorage`, e ocupação só aparece na sala em que você está. Não é
+por ser P2P: o vídeo é P2P, o sinal não. Todos os sockets vivem no mesmo
+processo e `rooms: Map<string, Set<Socket>>` é um mapa vivo no servidor, que
+sabe agora mesmo quais salas têm gente. O que o cliente recebe é só a sala dele
+(`peers`, `names`, `sharers`), e sala vazia deixa de existir (`rooms.delete` no
+close), então nem haveria o que guardar. Um diretório de verdade custa ~10
+linhas (uma mensagem `t: "rooms"` com nome e contagem, publicada no join e no
+close), mas o preço não é o código: **sem autenticação, o nome da sala é a única
+divisória que existe**, e listar as salas entrega todas elas a qualquer um do
+tailnet. Ver I4. Não adicionar sem decidir essa troca de propósito.
 
 ---
 
@@ -343,6 +381,19 @@ invocação separada não sobrevive):
 (bun run server.ts > /tmp/s.log 2>&1 & echo $! > /tmp/p); sleep 2; \
   timeout 30 bun run test.ts; kill $(cat /tmp/p)
 ```
+
+**Layout: headless, por CDP.** O encaixe dá pra verificar sem duas máquinas.
+`bench/layout.ts` sobe o Chrome, abre o cliente real e injeta sharers falsos
+com `canvas.captureStream()` em `attachTile()` — tudo no script do cliente é
+global. A asserção que importa é `document.documentElement.scrollHeight ===
+innerHeight` em cada estado (portaria travada, sala povoada sem vídeo, um vídeo
+com a trilha de presença, dois de proporções diferentes, foco, 430px, troca de
+nome e troca de sala), mais duas que só a casca nova precisa: nenhum tile
+encosta no dock ou na pílula, e as pílulas de nome e telemetria não se
+encavalam. **Assentar as
+transições antes de medir**: `.tile` transiciona `left/top/width` em .16s e o
+vídeo transiciona `height`; medir dois rAFs depois lê geometria em voo e produz
+falha falsa. ~320ms, o dobro da transição.
 
 **WebRTC: só manualmente, com duas máquinas no tailnet.** Não há como cobrir
 isso headless aqui. `chrome://webrtc-internals` é a ferramenta.
