@@ -100,7 +100,7 @@ async function testStatic() {
   const root = await fetch(HTTP + "/");
   const body = await root.text();
   ok("GET / responde 200", root.status === 200, root.status);
-  ok("GET / serve o index.html", body.includes("<title>tela</title>"));
+  ok("GET / serve o index.html", body.includes("<title>ss</title>"));
   ok("index tem o botão de compartilhar", body.includes('id="shareBtn"'));
 
   const cfg = await fetch(HTTP + "/config");

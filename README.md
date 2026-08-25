@@ -1,4 +1,4 @@
-# tela
+# ss
 
 Browser-to-browser screen sharing, no audio, for a small group on a network you
 already trust (a Tailscale tailnet, for instance). No TURN, no SFU, no accounts,
@@ -229,7 +229,7 @@ appear.
   characters): the `join` only leaves after it, so an unnamed person stays
   connected but in no room. Up to 24 characters, kept in the browser's
   `localStorage` and resent on reconnect. It is a label and nothing more, with
-  no login or identity behind it — the server still accepts erasing it with an
+  no login or identity behind it. The server still accepts erasing it with an
   empty `rename`, and then you show up by id.
 - Anyone in the room who is not transmitting appears on a plate with the initial
   of their name, in a rail below the screens. Whoever picked no name shows `_`
