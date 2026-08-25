@@ -170,7 +170,7 @@ Client to server:
 Server to client:
 
 ```jsonc
-{ "t": "joined",       "id": "<myId>", "peers": ["<id>", ...] }
+{ "t": "joined",       "id": "<myId>", "peers": ["<id>", ...], "startedAt": <epoch ms> }
 { "t": "denied",       "reason": "room-full" }
 { "t": "peer-joined",  "id": "<id>" }
 { "t": "peer-left",    "id": "<id>" }
@@ -185,6 +185,12 @@ change, plus a snapshot for whoever just joined. That makes it idempotent, it
 survives a reconnect, and the client never has to rebuild state from deltas. An
 id that leaves the set has its tile and its PC torn down at once, without
 waiting for `connectionstatechange`.
+
+`startedAt` is the room session clock: the epoch (ms) when the first peer
+joined, sent once on `joined`. Every client counts from that single timestamp
+locally, so there is no periodic sync. It shares the room's lifecycle — it is
+born when the first peer joins and dies when the room empties — because an empty
+room does not exist here.
 
 `names` follows the same idea and is **derived from the sockets**: the name
 lives on the peer's socket rather than in a separate `Map`, and the published

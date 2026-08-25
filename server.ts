@@ -95,6 +95,13 @@ type Socket = ServerWebSocket<Client>;
 const rooms = new Map<string, Set<Socket>>();
 const sharers = new Map<string, Set<string>>();
 
+// room session clock: the epoch (ms) when the first peer joined. it lives in
+// the same lifecycle as the room itself — set when the room is born, deleted
+// when it empties — so the whole room counts from one timestamp and nobody
+// needs periodic syncing. client-side skew between machines is sub-second and
+// irrelevant; everyone anchors on the same value.
+const sessions = new Map<string, number>();
+
 function broadcast(room: string, payload: unknown, except?: Socket) {
   const set = rooms.get(room);
   if (!set) return;
@@ -200,9 +207,14 @@ Bun.serve<Client>({
         ws.data.room = room;
         ws.data.name = cleanName(msg.name);
         const peers = [...set].map((p) => p.data.id);
+        // the first peer in an empty room is also the room's birth: that is
+        // when the session clock starts. backfill if the room pre-dated sessions
+        // (deploy with live rooms) so the payload never ships undefined.
+        if (set.size === 0) sessions.set(room, Date.now());
+        if (!sessions.has(room)) sessions.set(room, Date.now());
         set.add(ws);
 
-        ws.send(JSON.stringify({ t: "joined", id: ws.data.id, peers }));
+        ws.send(JSON.stringify({ t: "joined", id: ws.data.id, peers, startedAt: sessions.get(room)! }));
         // snapshot of who is transmitting, for whoever just arrived. this is
         // what makes the state-based broadcast survive a reconnect.
         ws.send(JSON.stringify({ t: "sharers", ids: [...sharersOf(room)] }));
@@ -273,6 +285,7 @@ Bun.serve<Client>({
       if (!set.size) {
         rooms.delete(room);
         sharers.delete(room);
+        sessions.delete(room);
         return;
       }
 
