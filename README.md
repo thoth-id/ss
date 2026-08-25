@@ -94,7 +94,7 @@ after it was spawned. `--stop --port <n>` kills whatever that pidfile registers.
 ## Rooms
 
 The room comes from the URL hash: `/#retro`, `/#pair`. With no hash it falls
-back to `sala`.
+back to `room`.
 
 ## Why there is a STUN server here
 
@@ -160,7 +160,7 @@ JSON over WebSocket at `/ws`, discriminated by `t`.
 Client to server:
 
 ```jsonc
-{ "t": "join",   "room": "sala", "name": "gabriel" }   // name is optional
+{ "t": "join",   "room": "standup", "name": "gabriel" }   // name is optional
 { "t": "rename", "name": "gabriel" }
 { "t": "signal", "to": "<peerId>", "data": { /* opaque */ } }
 { "t": "share-start" }
