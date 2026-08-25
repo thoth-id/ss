@@ -57,8 +57,17 @@ refer to itself that way. Only the not-yet-installed, run-once-via-`bunx` case
 needs the package name; everything downstream of installation uses the command
 name. Be consistent about which is which when writing docs.
 
-Code comments and UI strings are in Brazilian Portuguese. Match that when
-editing.
+**Everything written for a human to read is in English**: code comments, UI
+strings, CLI help, stderr messages, docs. Comments start with a lowercase
+letter and use no em-dashes. They earn their place by saying *why*, never by
+restating what the line already says: the measured numbers, the bug that was
+reproduced, the alternative that looks right and is not. If the code says it,
+delete the comment.
+
+Some identifiers are still Portuguese (`resolverEstatico`, `caixaAlvo`,
+`filho`, `lupa`), as are the two `localStorage` keys (`ss:nome`, `ss:salas`).
+The keys stay for a reason: renaming them would silently drop every user's
+stored name and room history, and a missing name reopens the blocking gate.
 
 ## Commands
 

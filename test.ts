@@ -1,39 +1,39 @@
-// Suíte headless. Cobre servidor estático, signaling, STUN, teto de peers (T1),
-// arbitragem de sharers (T2), nomes de peers e a parte servidor do reconnect (T3).
+// headless suite. covers static files, signaling, STUN, the room cap (T1),
+// sharer arbitration (T2), peer names and the server side of reconnect (T3).
 //
-// WebRTC não é coberto aqui — precisa de browser e duas máquinas (T0).
+// WebRTC is not covered here: that needs a browser and two machines (T0).
 //
 //   (bun run server.ts > /tmp/s.log 2>&1 & echo $! > /tmp/p); sleep 2; \
 //     timeout 90 bun run test.ts; kill $(cat /tmp/p)
 
 import dgram from "node:dgram";
 
-// Mesmas variáveis que o servidor lê, pra poder subir a suíte numa porta livre
-// sem derrubar um servidor que já esteja rodando em 3000.
+// the same variables the server reads, so the suite can run on a free port
+// without taking down a server already up on 3000.
 const PORT = Number(process.env.PORT ?? 3000);
 const STUN_PORT = Number(process.env.STUN_PORT ?? 3478);
 
 const HTTP = `http://127.0.0.1:${PORT}`;
 const WS = `ws://127.0.0.1:${PORT}/ws`;
 
-/* Os tetos vêm do /config, não de cópias literais aqui. O servidor passou a
-   lê-los do ambiente, e uma cópia local quebraria a suíte em falso só por
-   MAX_PEERS estar exportado no shell de quem roda — falha que não é do produto.
-   O /config é a mesma fonte que o cliente usa, e a suíte já o buscava. */
+/* the caps come from /config, not from literals copied here. the server reads
+   them from the environment, and a local copy would fail the suite in false
+   just because MAX_PEERS is exported in the runner's shell, a failure that is
+   not the product's. /config is the same source the client uses. */
 const cfgResp = await fetch(HTTP + "/config").catch(() => null);
 if (!cfgResp || !cfgResp.ok) {
-  console.log(`não consegui ler ${HTTP}/config. O servidor está de pé nesta porta?`);
+  console.log(`could not read ${HTTP}/config. Is the server up on this port?`);
   process.exit(1);
 }
 const CFG: any = await cfgResp.json();
 const MAX_PEERS: number = CFG.maxPeers;
 const MAX_SHARERS: number = CFG.maxSharers;
 
-// T2 monta uma sala de MAX_SHARERS+1 para ver a arbitragem negar o excedente,
-// e isso só cabe se o teto de sala for maior que o de sharers. Dizer isso aqui
-// evita que uma configuração incompatível apareça como um teste falhando.
+// T2 builds a room of MAX_SHARERS+1 to watch arbitration deny the extra one,
+// which only fits if the room cap is greater than the sharer cap. saying so
+// here keeps an incompatible configuration from looking like a failing test.
 if (!(MAX_PEERS > MAX_SHARERS)) {
-  console.log(`configuração incompatível: T2 precisa de ${MAX_SHARERS + 1} peers numa sala de ${MAX_PEERS}.`);
+  console.log(`incompatible configuration: T2 needs ${MAX_SHARERS + 1} peers in a room of ${MAX_PEERS}.`);
   process.exit(1);
 }
 
@@ -55,17 +55,17 @@ function eq(name: string, got: unknown, want: unknown) {
   ok(name, same, same ? undefined : { got, want });
 }
 
-/** Abre um socket que acumula tudo que chega num array. */
+/** opens a socket that accumulates everything it receives in an array. */
 async function peer(label: string) {
   const ws = new WebSocket(WS);
   const msgs: any[] = [];
   ws.onmessage = (e) => msgs.push(JSON.parse(String(e.data)));
   await new Promise<void>((res, rej) => {
     ws.onopen = () => res();
-    ws.onerror = () => rej(new Error(`${label}: falha ao abrir`));
+    ws.onerror = () => rej(new Error(`${label}: failed to open`));
   });
   const send = (o: unknown) => ws.send(JSON.stringify(o));
-  // name é opcional no protocolo; só entra na mensagem quem passar.
+  // name is optional in the protocol; only whoever passes one sends the field.
   const join = (room: string, name?: string) =>
     send(name === undefined ? { t: "join", room } : { t: "join", room, name });
   const of = (t: string) => msgs.filter((m) => m.t === t);
@@ -80,7 +80,7 @@ async function peer(label: string) {
 
 const settle = () => Bun.sleep(300);
 
-/** N peers na mesma sala, cada um já com `joined`. */
+/** N peers in the same room, each already `joined`. */
 async function room(name: string, n: number) {
   const ps = [];
   for (let i = 0; i < n; i++) {
@@ -92,37 +92,35 @@ async function room(name: string, n: number) {
   return ps;
 }
 
-/* ---------- estático ---------- */
+/* ---------- static ---------- */
 
 async function testStatic() {
-  console.log("\nestático + /config");
+  console.log("\nstatic + /config");
 
   const root = await fetch(HTTP + "/");
   const body = await root.text();
-  ok("GET / responde 200", root.status === 200, root.status);
-  ok("GET / serve o index.html", body.includes("<title>ss</title>"));
-  ok("index tem o botão de compartilhar", body.includes('id="shareBtn"'));
+  ok("GET / answers 200", root.status === 200, root.status);
+  ok("GET / serves index.html", body.includes("<title>ss</title>"));
+  ok("index has the share button", body.includes('id="shareBtn"'));
 
   const cfg = await fetch(HTTP + "/config");
   const json: any = await cfg.json();
-  ok("GET /config responde 200", cfg.status === 200, cfg.status);
-  eq("/config devolve stunPort", json.stunPort, STUN_PORT);
-  // Forma, não valor: o valor é justamente o que a suíte derivou daqui, então
-  // compará-lo consigo mesmo não afirmaria nada.
-  // Os três são inteiros positivos pela mesma regra — o `int()` do server.ts
-  // não devolve outra coisa. Três predicados diferentes para uma regra só
-  // convidavam a divergirem.
-  const inteiroPositivo = (v: unknown) => Number.isInteger(v) && (v as number) > 0;
-  for (const campo of ["maxPeers", "maxSharers", "maxCapturePixels"]) {
+  ok("GET /config answers 200", cfg.status === 200, cfg.status);
+  eq("/config returns stunPort", json.stunPort, STUN_PORT);
+  // shape, not value: the value is what the suite derived from here, so
+  // comparing it against itself would assert nothing. all three are positive
+  // integers by the same rule, since server.ts's int() returns nothing else.
+  const positiveInt = (v: unknown) => Number.isInteger(v) && (v as number) > 0;
+  for (const field of ["maxPeers", "maxSharers", "maxCapturePixels"]) {
     ok(
-      `/config devolve ${campo} como inteiro > 0`,
-      inteiroPositivo(json[campo]),
-      json[campo],
+      `/config returns ${field} as an integer > 0`,
+      positiveInt(json[field]),
+      json[field],
     );
   }
 
-  const miss = await fetch(HTTP + "/nao-existe");
-  eq("rota inexistente dá 404", miss.status, 404);
+  const miss = await fetch(HTTP + "/does-not-exist");
+  eq("unknown route gives 404", miss.status, 404);
 }
 
 /* ---------- signaling ---------- */
@@ -135,19 +133,19 @@ async function testJoin() {
   await settle();
 
   const joined = a.first("joined");
-  ok("primeiro peer recebe joined", !!joined);
-  ok("joined traz um id", typeof joined?.id === "string" && joined.id.length > 0, joined?.id);
-  eq("primeiro peer vê a sala vazia", joined?.peers, []);
-  eq("primeiro peer recebe snapshot de sharers vazio", a.first("sharers")?.ids, []);
-  eq("primeiro peer recebe snapshot de names vazio", a.first("names")?.map, {});
+  ok("first peer receives joined", !!joined);
+  ok("joined carries an id", typeof joined?.id === "string" && joined.id.length > 0, joined?.id);
+  eq("first peer sees an empty room", joined?.peers, []);
+  eq("first peer receives an empty sharers snapshot", a.first("sharers")?.ids, []);
+  eq("first peer receives an empty names snapshot", a.first("names")?.map, {});
 
   const b = await peer("b");
   b.join("r-join");
   await settle();
 
-  eq("segundo peer vê o primeiro na lista", b.first("joined")?.peers, [joined.id]);
-  eq("primeiro peer é notificado do segundo", a.first("peer-joined")?.id, b.id());
-  ok("quem entra não recebe peer-joined de si mesmo", b.of("peer-joined").length === 0);
+  eq("second peer sees the first in the list", b.first("joined")?.peers, [joined.id]);
+  eq("first peer is told about the second", a.first("peer-joined")?.id, b.id());
+  ok("whoever joins gets no peer-joined for themselves", b.of("peer-joined").length === 0);
 
   a.close();
   b.close();
@@ -162,34 +160,33 @@ async function testLeave() {
   b.close();
   await settle();
 
-  eq("close propaga peer-left com o id certo", a.first("peer-left")?.id, bId);
+  eq("close propagates peer-left with the right id", a.first("peer-left")?.id, bId);
 
   a.close();
   await settle();
 }
 
 async function testRoomIsolation() {
-  console.log("\nisolamento entre salas");
+  console.log("\nisolation between rooms");
 
   const a = await peer("a");
   const b = await peer("b");
-  a.join("sala-1");
+  a.join("room-1");
   await settle();
-  b.join("sala-2");
+  b.join("room-2");
   await settle();
 
-  eq("peer de outra sala não aparece na lista", b.first("joined")?.peers, []);
-  ok("peer de outra sala não gera peer-joined", a.of("peer-joined").length === 0);
+  eq("a peer from another room is not in the list", b.first("joined")?.peers, []);
+  ok("a peer from another room generates no peer-joined", a.of("peer-joined").length === 0);
 
   b.send({ t: "signal", to: a.id(), data: { kind: "offer", sdp: "x" } });
   await settle();
-  ok("signal não atravessa sala", a.of("signal").length === 0, a.of("signal"));
+  ok("signal does not cross rooms", a.of("signal").length === 0, a.of("signal"));
 
-  // sharer numa sala não vaza pra outra
   a.send({ t: "share-start" });
   await settle();
-  eq("sharers de sala-1 tem o peer", a.last("sharers")?.ids, [a.id()]);
-  eq("sharers não vaza pra sala-2", b.last("sharers")?.ids, []);
+  eq("sharers of room-1 has the peer", a.last("sharers")?.ids, [a.id()]);
+  eq("sharers do not leak into room-2", b.last("sharers")?.ids, []);
 
   a.close();
   b.close();
@@ -197,64 +194,63 @@ async function testRoomIsolation() {
 }
 
 async function testSignalRelay() {
-  console.log("\nrelay de signal");
+  console.log("\nsignal relay");
 
   const [a, b, c] = await room("r-sig", 3);
   const aId = a.id();
 
-  // data com forma arbitrária: o servidor não deve inspecionar nem validar (I2)
+  // arbitrarily shaped data: the server must neither inspect nor validate (I2)
   const payload = { kind: "offer", sdp: { type: "offer", sdp: "v=0\r\n" }, nested: { x: [1, 2] } };
   a.send({ t: "signal", to: b.id(), data: payload });
   await settle();
 
   const got = b.first("signal");
-  ok("destinatário recebe o signal", !!got);
-  eq("signal preserva o from", got?.from, aId);
-  eq("servidor repassa data intacto (I2)", got?.data, payload);
-  ok("remetente não recebe eco", a.of("signal").length === 0);
-  ok("terceiro peer não recebe o signal", c.of("signal").length === 0, c.of("signal"));
+  ok("the recipient receives the signal", !!got);
+  eq("signal preserves from", got?.from, aId);
+  eq("server relays data untouched (I2)", got?.data, payload);
+  ok("the sender gets no echo", a.of("signal").length === 0);
+  ok("a third peer does not receive the signal", c.of("signal").length === 0, c.of("signal"));
 
   a.send({ t: "signal", to: "ffffffff", data: { kind: "ice" } });
   await settle();
-  ok("signal para id inexistente é ignorado sem quebrar", a.ws.readyState === WebSocket.OPEN);
+  ok("signal to an unknown id is ignored without breaking", a.ws.readyState === WebSocket.OPEN);
 
-  a.ws.send("{isso nao e json");
+  a.ws.send("{this is not json");
   await settle();
-  ok("json inválido não derruba a conexão", a.ws.readyState === WebSocket.OPEN);
+  ok("invalid json does not drop the connection", a.ws.readyState === WebSocket.OPEN);
 
   a.close(); b.close(); c.close();
   await settle();
 }
 
-/* ---------- T1: teto de peers ---------- */
+/* ---------- T1: room cap ---------- */
 
 async function testMaxPeers() {
-  console.log(`\nT1: teto de ${MAX_PEERS} peers`);
+  console.log(`\nT1: cap of ${MAX_PEERS} peers`);
 
-  const ps = await room("cheia", MAX_PEERS);
-  ok(`os ${MAX_PEERS} primeiros entram`, ps.every((p) => !!p.id()), ps.map((p) => p.id()));
+  const ps = await room("full", MAX_PEERS);
+  ok(`the first ${MAX_PEERS} get in`, ps.every((p) => !!p.id()), ps.map((p) => p.id()));
 
-  const extra = await peer("sexto");
-  extra.join("cheia");
+  const extra = await peer("sixth");
+  extra.join("full");
   await settle();
 
-  eq("6º peer recebe denied", extra.first("denied")?.reason, "room-full");
-  ok("6º peer não recebe joined", !extra.first("joined"), extra.msgs);
-  ok("6º peer não recebe snapshot de sharers", !extra.first("sharers"));
-  ok("6º peer não recebe snapshot de names", !extra.first("names"));
+  eq("the 6th peer receives denied", extra.first("denied")?.reason, "room-full");
+  ok("the 6th peer receives no joined", !extra.first("joined"), extra.msgs);
+  ok("the 6th peer receives no sharers snapshot", !extra.first("sharers"));
+  ok("the 6th peer receives no names snapshot", !extra.first("names"));
 
-  // Ninguém viu o sexto entrar: o primeiro peer só viu os outros 4.
-  eq("6º não aparece na lista de ninguém", ps[0].of("peer-joined").length, MAX_PEERS - 1);
-  ok("os 5 primeiros seguem conectados", ps.every((p) => p.ws.readyState === WebSocket.OPEN));
+  // nobody saw the sixth arrive: the first peer only saw the other 4.
+  eq("the 6th appears in nobody's list", ps[0].of("peer-joined").length, MAX_PEERS - 1);
+  ok("the first 5 stay connected", ps.every((p) => p.ws.readyState === WebSocket.OPEN));
 
-  // Uma vaga liberada deixa o próximo entrar.
   ps[0].close();
   await settle();
-  const late = await peer("setimo");
-  late.join("cheia");
+  const late = await peer("seventh");
+  late.join("full");
   await settle();
-  ok("vaga liberada permite nova entrada", !!late.first("joined"), late.msgs);
-  ok("quem entrou na vaga não recebeu denied", !late.first("denied"));
+  ok("a freed slot lets a new peer in", !!late.first("joined"), late.msgs);
+  ok("whoever took the slot got no denied", !late.first("denied"));
 
   extra.close();
   late.close();
@@ -262,63 +258,58 @@ async function testMaxPeers() {
   await settle();
 }
 
-/* ---------- T2: arbitragem de sharers ---------- */
+/* ---------- T2: sharer arbitration ---------- */
 
 async function testSharerArbitration() {
-  console.log(`\nT2: arbitragem, máximo ${MAX_SHARERS} sharers`);
+  console.log(`\nT2: arbitration, at most ${MAX_SHARERS} sharers`);
 
-  // Uma pessoa a mais que o teto: a última é justamente a que precisa ser
-  // negada. Tudo deriva de MAX_SHARERS para que mexer no teto continue sendo
-  // trocar um número só, aqui e no servidor.
+  // one person more than the cap: the last is exactly the one that has to be
+  // denied. everything derives from MAX_SHARERS so that changing the cap stays
+  // a single number, here and in the server.
   const ps = await room("arb", MAX_SHARERS + 1);
   const ids = ps.map((p) => p.id()!);
-  const extra = ps[MAX_SHARERS];          // o que não cabe
+  const extra = ps[MAX_SHARERS];          // the one that does not fit
   const extraId = ids[MAX_SHARERS];
 
   for (let i = 0; i < MAX_SHARERS; i++) {
     ps[i].send({ t: "share-start" });
     await settle();
-    eq(`${i + 1}º sharer entra no conjunto`, ps[i].last("sharers")?.ids, ids.slice(0, i + 1));
+    eq(`sharer ${i + 1} enters the set`, ps[i].last("sharers")?.ids, ids.slice(0, i + 1));
   }
-  eq("broadcast chega na sala inteira", extra.last("sharers")?.ids, ids.slice(0, MAX_SHARERS));
+  eq("the broadcast reaches the whole room", extra.last("sharers")?.ids, ids.slice(0, MAX_SHARERS));
 
   const before = extra.of("sharers").length;
   extra.send({ t: "share-start" });
   await settle();
-  eq(`${MAX_SHARERS + 1}ª tentativa recebe share-denied`, extra.first("share-denied")?.reason, "limit");
-  eq("share-denied não gera broadcast", extra.of("sharers").length, before);
-  ok("quem foi negado não entra no conjunto", !extra.last("sharers")?.ids.includes(extraId));
-  ok("share-denied vai só pro remetente", ps[0].of("share-denied").length === 0);
+  eq(`attempt ${MAX_SHARERS + 1} receives share-denied`, extra.first("share-denied")?.reason, "limit");
+  eq("share-denied generates no broadcast", extra.of("sharers").length, before);
+  ok("whoever was denied does not enter the set", !extra.last("sharers")?.ids.includes(extraId));
+  ok("share-denied goes only to the sender", ps[0].of("share-denied").length === 0);
 
-  // Nenhum broadcast em nenhum momento passou do teto.
-  const todos = ps.flatMap((p) => p.of("sharers"));
+  const all = ps.flatMap((p) => p.of("sharers"));
   ok(
-    `nenhum broadcast passou de ${MAX_SHARERS} ids`,
-    todos.every((m) => m.ids.length <= MAX_SHARERS),
-    todos.map((m) => m.ids.length)
+    `no broadcast ever passed ${MAX_SHARERS} ids`,
+    all.every((m) => m.ids.length <= MAX_SHARERS),
+    all.map((m) => m.ids.length)
   );
 
-  // share-start repetido é idempotente e não re-broadcasta.
-  const antes = extra.of("sharers").length;
+  const beforeRepeat = extra.of("sharers").length;
   ps[0].send({ t: "share-start" });
   await settle();
-  eq("share-start repetido não re-broadcasta", extra.of("sharers").length, antes);
+  eq("a repeated share-start does not re-broadcast", extra.of("sharers").length, beforeRepeat);
 
-  // share-stop libera a vaga.
   ps[0].send({ t: "share-stop" });
   await settle();
-  eq("share-stop remove do conjunto", extra.last("sharers")?.ids, ids.slice(1, MAX_SHARERS));
+  eq("share-stop removes from the set", extra.last("sharers")?.ids, ids.slice(1, MAX_SHARERS));
 
-  // share-stop de quem não está compartilhando é no-op.
-  const antesStop = extra.of("sharers").length;
+  const beforeStop = extra.of("sharers").length;
   ps[0].send({ t: "share-stop" });
   await settle();
-  eq("share-stop redundante é no-op", extra.of("sharers").length, antesStop);
+  eq("a redundant share-stop is a no-op", extra.of("sharers").length, beforeStop);
 
-  // Com vaga aberta, o antes negado consegue.
   extra.send({ t: "share-start" });
   await settle();
-  eq("vaga liberada permite novo sharer", extra.last("sharers")?.ids,
+  eq("a freed slot lets a new sharer in", extra.last("sharers")?.ids,
      [...ids.slice(1, MAX_SHARERS), extraId]);
 
   ps.forEach((p) => p.close());
@@ -326,44 +317,43 @@ async function testSharerArbitration() {
 }
 
 async function testSharerLeave() {
-  console.log("\nT2: fechar aba libera a vaga");
+  console.log("\nT2: closing the tab frees the slot");
 
-  const [a, b, c] = await room("saida", 3);
+  const [a, b, c] = await room("leaving", 3);
   const [aId, bId] = [a.id(), b.id()];
 
   a.send({ t: "share-start" });
   b.send({ t: "share-start" });
   await settle();
-  eq("dois sharers ativos", c.last("sharers")?.ids, [aId, bId]);
+  eq("two active sharers", c.last("sharers")?.ids, [aId, bId]);
 
-  // Fechamento de aba do sharer.
   a.close();
   await settle();
-  eq("close do sharer libera a vaga", c.last("sharers")?.ids, [bId]);
-  eq("close também emite peer-left", c.first("peer-left")?.id, aId);
+  eq("the sharer's close frees the slot", c.last("sharers")?.ids, [bId]);
+  eq("close also emits peer-left", c.first("peer-left")?.id, aId);
 
-  // Quem não era sharer não deve gerar broadcast de sharers ao sair.
-  const antes = b.of("sharers").length;
+  // somebody who was not a sharer must generate no sharers broadcast on leaving
+  const before = b.of("sharers").length;
   c.close();
   await settle();
-  eq("saída de não-sharer não re-broadcasta sharers", b.of("sharers").length, antes);
+  eq("a non-sharer leaving does not re-broadcast sharers", b.of("sharers").length, before);
 
   b.close();
   await settle();
 }
 
 async function testSharerSnapshot() {
-  console.log("\nT2: snapshot pra quem chega depois");
+  console.log("\nT2: snapshot for whoever arrives later");
 
   const [a] = await room("snap", 1);
   a.send({ t: "share-start" });
   await settle();
 
-  const late = await peer("atrasado");
+  const late = await peer("late");
   late.join("snap");
   await settle();
 
-  eq("quem chega depois recebe o conjunto atual", late.first("sharers")?.ids, [a.id()]);
+  eq("whoever arrives later receives the current set", late.first("sharers")?.ids, [a.id()]);
 
   a.close();
   late.close();
@@ -371,132 +361,124 @@ async function testSharerSnapshot() {
 }
 
 async function testShareBeforeJoin() {
-  console.log("\nT2: share fora de sala");
+  console.log("\nT2: sharing outside a room");
 
-  const orphan = await peer("orfao");
+  const orphan = await peer("orphan");
   orphan.send({ t: "share-start" });
   orphan.send({ t: "share-stop" });
   orphan.send({ t: "signal", to: "abc", data: {} });
   await settle();
 
-  ok("share-start sem join é ignorado", orphan.of("sharers").length === 0, orphan.msgs);
-  ok("conexão sobrevive", orphan.ws.readyState === WebSocket.OPEN);
+  ok("share-start without a join is ignored", orphan.of("sharers").length === 0, orphan.msgs);
+  ok("the connection survives", orphan.ws.readyState === WebSocket.OPEN);
 
   orphan.close();
   await settle();
 }
 
-/* ---------- nomes ---------- */
+/* ---------- names ---------- */
 
-/** Compara mapas de nome sem depender da ordem das chaves. */
+/** compares name maps without depending on key order. */
 function eqMap(name: string, got: unknown, want: Record<string, string>) {
   const norm = (o: any) => Object.entries(o ?? {}).sort(([x], [y]) => (x < y ? -1 : 1));
   eq(name, norm(got), norm(want));
 }
 
 async function testNames() {
-  console.log("\nnomes de peers");
+  console.log("\npeer names");
 
   const a = await peer("a");
-  a.join("nomes", "gabriel");
+  a.join("names", "gabriel");
   await settle();
   const aId = a.id()!;
 
-  eqMap("quem entra com nome já se vê no mapa", a.last("names")?.map, { [aId]: "gabriel" });
+  eqMap("joining with a name puts you in the map", a.last("names")?.map, { [aId]: "gabriel" });
 
   const b = await peer("b");
-  b.join("nomes");
+  b.join("names");
   await settle();
   const bId = b.id()!;
 
-  // Snapshot: quem chega depois recebe os nomes de quem já estava.
-  eqMap("snapshot traz o nome de quem já estava", b.last("names")?.map, { [aId]: "gabriel" });
-  ok("quem entra sem nome não aparece no mapa", !(bId in (b.last("names")?.map ?? {})));
+  eqMap("the snapshot carries the name of whoever was there", b.last("names")?.map, { [aId]: "gabriel" });
+  ok("joining without a name stays out of the map", !(bId in (b.last("names")?.map ?? {})));
 
-  // Nome de quem entra chega nos demais.
   const c = await peer("c");
-  c.join("nomes", "ana");
+  c.join("names", "ana");
   await settle();
   const cId = c.id()!;
-  eqMap("nome de quem entra chega nos demais", a.last("names")?.map, {
+  eqMap("the name of whoever joins reaches the others", a.last("names")?.map, {
     [aId]: "gabriel",
     [cId]: "ana",
   });
 
-  // rename propaga pra sala inteira.
   b.send({ t: "rename", name: "beatriz" });
   await settle();
-  const esperado = { [aId]: "gabriel", [bId]: "beatriz", [cId]: "ana" };
-  eqMap("rename chega em quem já estava", a.last("names")?.map, esperado);
-  eqMap("rename chega em quem entrou depois", c.last("names")?.map, esperado);
-  eqMap("quem renomeou também recebe o mapa", b.last("names")?.map, esperado);
+  const expected = { [aId]: "gabriel", [bId]: "beatriz", [cId]: "ana" };
+  eqMap("rename reaches whoever was already there", a.last("names")?.map, expected);
+  eqMap("rename reaches whoever joined later", c.last("names")?.map, expected);
+  eqMap("whoever renamed also receives the map", b.last("names")?.map, expected);
 
-  const antesIgual = a.of("names").length;
+  const beforeSame = a.of("names").length;
   b.send({ t: "rename", name: "beatriz" });
   await settle();
-  eq("rename com o mesmo nome não re-broadcasta", a.of("names").length, antesIgual);
+  eq("renaming to the same name does not re-broadcast", a.of("names").length, beforeSame);
 
-  // Saneamento: corte em 24 e colapso de espaços.
   b.send({ t: "rename", name: "z".repeat(40) });
   await settle();
-  eq("nome de 40 chars chega cortado em 24", a.last("names")?.map[bId], "z".repeat(24));
+  eq("a 40-char name arrives cut at 24", a.last("names")?.map[bId], "z".repeat(24));
 
   b.send({ t: "rename", name: "  ana   maria \n silva  " });
   await settle();
-  eq("espaços colapsados e aparados", a.last("names")?.map[bId], "ana maria silva");
+  eq("whitespace collapsed and trimmed", a.last("names")?.map[bId], "ana maria silva");
 
-  // Nome vazio é o caminho de apagar o próprio nome.
+  // an empty name is how you erase your own
   b.send({ t: "rename", name: "   " });
   await settle();
-  ok("nome só de espaços some do mapa", !(bId in a.last("names").map), a.last("names").map);
-  eqMap("apagar o nome não mexe no dos outros", a.last("names")?.map, {
+  ok("a whitespace-only name leaves the map", !(bId in a.last("names").map), a.last("names").map);
+  eqMap("erasing a name does not touch the others", a.last("names")?.map, {
     [aId]: "gabriel",
     [cId]: "ana",
   });
 
-  // join também sanea, não só rename.
   const d = await peer("d");
-  d.join("nomes", "   " + "w".repeat(30));
+  d.join("names", "   " + "w".repeat(30));
   await settle();
-  eq("nome no join também é saneado", a.last("names")?.map[d.id()!], "w".repeat(24));
+  eq("a name in the join is sanitized too", a.last("names")?.map[d.id()!], "w".repeat(24));
 
-  // Nomes não vazam entre salas.
   const e = await peer("e");
-  e.join("outra-sala", "carla");
+  e.join("other-room", "carla");
   await settle();
-  eqMap("outra sala só vê o próprio nome", e.last("names")?.map, { [e.id()!]: "carla" });
+  eqMap("another room only sees its own name", e.last("names")?.map, { [e.id()!]: "carla" });
   ok(
-    "nome não atravessa sala",
+    "a name does not cross rooms",
     !Object.values(a.last("names")?.map ?? {}).includes("carla"),
     a.last("names")?.map,
   );
 
-  // Sair da sala tira o nome do mapa de quem fica — o nome mora no socket.
+  // leaving the room takes the name out of the map: the name lives on the socket
   a.close();
   await settle();
-  eqMap("saída remove o nome do mapa", c.last("names")?.map, {
+  eqMap("leaving removes the name from the map", c.last("names")?.map, {
     [cId]: "ana",
     [d.id()!]: "w".repeat(24),
   });
 
-  // Quem sai sem nome não muda o mapa e não deve gerar broadcast.
-  const antesSaida = c.of("names").length;
+  const beforeLeave = c.of("names").length;
   b.close();
   await settle();
-  eq("saída de quem não tem nome não re-broadcasta", c.of("names").length, antesSaida);
+  eq("somebody unnamed leaving does not re-broadcast", c.of("names").length, beforeLeave);
 
-  // rename fora de sala é ignorado, como share-start.
-  const orphan = await peer("orfao-nome");
-  orphan.send({ t: "rename", name: "ninguem" });
+  const orphan = await peer("orphan-name");
+  orphan.send({ t: "rename", name: "nobody" });
   await settle();
-  ok("rename sem join é ignorado", orphan.of("names").length === 0, orphan.msgs);
-  ok("conexão sobrevive ao rename fora de sala", orphan.ws.readyState === WebSocket.OPEN);
+  ok("rename without a join is ignored", orphan.of("names").length === 0, orphan.msgs);
+  ok("the connection survives a rename outside a room", orphan.ws.readyState === WebSocket.OPEN);
 
   orphan.close(); c.close(); d.close(); e.close();
   await settle();
 }
 
-/* ---------- T3: reconnect (lado servidor) ---------- */
+/* ---------- T3: reconnect (server side) ---------- */
 
 async function testReconnect() {
   console.log("\nT3: reconnect");
@@ -507,28 +489,27 @@ async function testReconnect() {
 
   a.send({ t: "share-start" });
   await settle();
-  eq("sharer registrado antes da queda", b.last("sharers")?.ids, [aId]);
+  eq("sharer registered before the drop", b.last("sharers")?.ids, [aId]);
 
-  // Queda do socket do sharer.
   a.close();
   await settle();
-  eq("queda libera a vaga do sharer", b.last("sharers")?.ids, []);
-  eq("queda emite peer-left", b.first("peer-left")?.id, aId);
+  eq("the drop frees the sharer slot", b.last("sharers")?.ids, []);
+  eq("the drop emits peer-left", b.first("peer-left")?.id, aId);
 
-  // Volta com id novo e repede a vaga, como o cliente faz em `joined`.
-  const a2 = await peer("a-reconectado");
+  // comes back with a new id and asks for the slot again, as the client does
+  const a2 = await peer("a-reconnected");
   a2.join("recon");
   await settle();
 
   const newId = a2.id();
-  ok("reconnect recebe um id novo", !!newId && newId !== aId, { aId, newId });
-  eq("reconnect vê o peer que ficou", a2.first("joined")?.peers, [bId]);
-  eq("snapshot mostra ninguém compartilhando", a2.first("sharers")?.ids, []);
+  ok("the reconnect receives a new id", !!newId && newId !== aId, { aId, newId });
+  eq("the reconnect sees the peer that stayed", a2.first("joined")?.peers, [bId]);
+  eq("the snapshot shows nobody sharing", a2.first("sharers")?.ids, []);
 
   a2.send({ t: "share-start" });
   await settle();
-  eq("reconnect recupera a vaga com o id novo", b.last("sharers")?.ids, [newId]);
-  ok("id antigo não aparece no conjunto", !b.last("sharers")?.ids.includes(aId));
+  eq("the reconnect recovers the slot under the new id", b.last("sharers")?.ids, [newId]);
+  ok("the old id is not in the set", !b.last("sharers")?.ids.includes(aId));
 
   a2.close();
   b.close();
@@ -547,12 +528,12 @@ async function testStun() {
 
   const req = Buffer.alloc(20);
   req.writeUInt16BE(0x0001, 0); // Binding Request
-  req.writeUInt16BE(0, 2); // sem atributos
+  req.writeUInt16BE(0, 2); // no attributes
   req.writeUInt32BE(MAGIC, 4);
   Buffer.from(tid).copy(req, 8);
 
   const answer = new Promise<{ buf: Buffer; localPort: number }>((res, rej) => {
-    const timer = setTimeout(() => rej(new Error("STUN não respondeu em 3s")), 3000);
+    const timer = setTimeout(() => rej(new Error("STUN did not answer within 3s")), 3000);
     sock.on("message", (buf) => {
       clearTimeout(timer);
       res({ buf, localPort: sock.address().port });
@@ -566,30 +547,30 @@ async function testStun() {
   try {
     ({ buf, localPort } = await answer);
   } catch (e) {
-    ok("STUN responde ao Binding Request", false, String(e));
+    ok("STUN answers a Binding Request", false, String(e));
     sock.close();
     return;
   }
 
-  ok("STUN responde ao Binding Request", true);
-  eq("tipo é Binding Success Response", buf.readUInt16BE(0), 0x0101);
-  eq("magic cookie ecoado", buf.readUInt32BE(4), MAGIC);
-  eq("transaction id espelhado", [...buf.subarray(8, 20)], [...tid]);
-  eq("length cobre o atributo", buf.readUInt16BE(2), 12);
-  eq("atributo é XOR-MAPPED-ADDRESS", buf.readUInt16BE(20), 0x0020);
-  eq("tamanho do atributo", buf.readUInt16BE(22), 8);
-  eq("family é IPv4", buf.readUInt8(25), 0x01);
+  ok("STUN answers a Binding Request", true);
+  eq("type is Binding Success Response", buf.readUInt16BE(0), 0x0101);
+  eq("magic cookie echoed", buf.readUInt32BE(4), MAGIC);
+  eq("transaction id mirrored", [...buf.subarray(8, 20)], [...tid]);
+  eq("length covers the attribute", buf.readUInt16BE(2), 12);
+  eq("the attribute is XOR-MAPPED-ADDRESS", buf.readUInt16BE(20), 0x0020);
+  eq("attribute length", buf.readUInt16BE(22), 8);
+  eq("family is IPv4", buf.readUInt8(25), 0x01);
 
   const port = buf.readUInt16BE(26) ^ (MAGIC >>> 16);
   const addr = (buf.readUInt32BE(28) ^ MAGIC) >>> 0;
   const ip = [addr >>> 24, (addr >>> 16) & 255, (addr >>> 8) & 255, addr & 255].join(".");
 
-  eq("porta decodificada bate com a de origem", port, localPort);
-  eq("IP decodificado bate com a origem", ip, "127.0.0.1");
+  eq("the decoded port matches the source", port, localPort);
+  eq("the decoded IP matches the source", ip, "127.0.0.1");
 
   sock.send(Buffer.from([1, 2, 3]), STUN_PORT, "127.0.0.1");
   await Bun.sleep(200);
-  ok("lixo em UDP não mata o STUN", true);
+  ok("garbage over UDP does not kill STUN", true);
 
   sock.close();
 }
@@ -610,5 +591,5 @@ await testNames();
 await testReconnect();
 await testStun();
 
-console.log(`\n${pass} passaram, ${fail} falharam`);
+console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

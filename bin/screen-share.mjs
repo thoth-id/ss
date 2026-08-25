@@ -1,24 +1,22 @@
 #!/usr/bin/env node
-/* Lançador do screen-share.
+/* ss launcher.
 
-   Este arquivo existe por causa do shebang, e por nenhum outro motivo. No
-   POSIX o npm liga `node_modules/.bin/screen-share` direto no arquivo do
-   campo `bin`, então quem escolhe o interpretador é a primeira linha dele.
-   Com `bin` apontando para o cli.ts — shebang `bun` — quem rodava
-   `npx @thoth-dev/screen-share` sem Bun instalado recebia
+   this file exists because of the shebang, and for no other reason. on POSIX
+   npm links `node_modules/.bin/screen-share` straight at the file named in
+   `bin`, so its first line picks the interpreter. with `bin` pointing at
+   cli.ts, shebang `bun`, anyone running `npx @thoth-dev/screen-share` without
+   Bun installed got
 
      env: 'bun': No such file or directory
 
-   e nenhuma linha do nosso código chegava a rodar: o `env` morria antes.
-   Nenhuma mensagem escrita dentro do cli.ts podia aparecer ali. Por isso o
-   `bin` passou a apontar para cá, um arquivo que o Node executa, cuja única
-   função é achar o Bun ou explicar por que não achou.
+   and not one line of our code ever ran: `env` died first, so no message
+   written inside cli.ts could have appeared there. hence a file Node can
+   execute, whose only job is to find Bun or explain why it could not.
 
-   O runtime não é preferência de estilo: o server.ts usa Bun.serve para o
-   WebSocket do signaling e não há equivalente em Node.
+   the runtime is not a style preference: server.ts uses Bun.serve for the
+   signaling WebSocket and there is no equivalent in Node.
 
-   Nada de lógica de CLI aqui — flags, --bg e --stop continuam todos no
-   cli.ts, que é quem sabe o que fazer com eles. */
+   no CLI logic here. flags, --bg and --stop all stay in cli.ts. */
 
 import { spawn } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
@@ -31,11 +29,11 @@ const CLI = path.join(AQUI, "cli.ts");
 
 const EXE = process.platform === "win32" ? ["bun.exe", "bun"] : ["bun"];
 
-/* Onde procurar, em ordem. O PATH é o caso normal; os dois seguintes são o
-   caso chato e o mais provável de todos: Bun instalado em ~/.bun/bin, que o
-   instalador escreve no rc do shell, e `npx` rodando num shell não
-   interativo que nunca leu esse rc. Achar o binário ali é a diferença entre
-   funcionar e mandar o usuário reinstalar o que ele já tem. */
+/* where to look, in order. PATH is the normal case; the two after it are the
+   annoying one and the likeliest of all: Bun installed in ~/.bun/bin, which the
+   installer writes into the shell rc, and `npx` running in a non-login shell
+   that never read that rc. finding the binary there is the difference between
+   working and telling the user to reinstall what they already have. */
 const diretorios = () => {
   const dirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
   const bunInstall = process.env.BUN_INSTALL;
@@ -45,8 +43,8 @@ const diretorios = () => {
   return dirs;
 };
 
-// Executável de verdade: existir não basta, e um diretório chamado `bun` no
-// PATH passaria por um teste que só olha existência.
+// existing is not enough: a directory named `bun` on PATH would pass a test
+// that only looks for presence.
 const executavel = (p) => {
   try {
     if (!statSync(p).isFile()) return false;
@@ -67,28 +65,28 @@ const acharBun = () => {
   return null;
 };
 
-const FALTA = `screen-share precisa do Bun, e não encontrei nenhum nesta máquina.
+const FALTA = `ss needs Bun, and I could not find one on this machine.
 
-  O servidor usa Bun.serve para o WebSocket do signaling, e não existe
-  equivalente em Node — falta o runtime, não uma dependência.
+  The server uses Bun.serve for the signaling WebSocket, and Node has no
+  equivalent. What is missing is the runtime, not a dependency.
 
-  Instale:
+  Install it:
 
     curl -fsSL https://bun.sh/install | bash
 
-  E rode:
+  And run:
 
     bunx @thoth-dev/screen-share
 
-  Se o Bun já está instalado, então o shell que rodou este comando não tem o
-  diretório dele no PATH — procurei no PATH, em $BUN_INSTALL/bin e em
-  ~/.bun/bin. Exporte BUN_INSTALL ou chame o bun por caminho completo.
+  If Bun is already installed, then the shell that ran this command does not
+  have its directory on PATH. I looked in PATH, in $BUN_INSTALL/bin and in
+  ~/.bun/bin. Export BUN_INSTALL or call bun by its full path.
 `;
 
-/* Já estamos dentro do Bun — `bunx`, ou um `bun bin/screen-share.mjs` à mão.
-   Importar o cli.ts direto poupa um processo e, mais importante, mantém o
-   process.argv que ele espera: quem lê `argv.slice(2)` não pode ganhar um
-   nível de indireção no meio. */
+/* already inside Bun, via `bunx` or a hand-written `bun bin/screen-share.mjs`.
+   importing cli.ts directly saves a process and, more importantly, keeps the
+   process.argv it expects: whoever reads `argv.slice(2)` cannot be handed an
+   extra level of indirection. */
 if (process.versions.bun) {
   await import(pathToFileURL(CLI).href);
 } else {
@@ -100,19 +98,19 @@ if (process.versions.bun) {
 
   const filho = spawn(bun, [CLI, ...process.argv.slice(2)], { stdio: "inherit" });
 
-  // Sem este ouvinte um spawn que falha emite 'error' sem quem escute, e o
-  // Node derruba o processo com um stack trace no lugar de uma frase.
+  // without this listener a failed spawn emits 'error' with nobody listening,
+  // and Node takes the process down with a stack trace instead of a sentence.
   filho.on("error", (err) => {
-    process.stderr.write(`não consegui executar ${bun}: ${err.message}\n`);
+    process.stderr.write(`could not execute ${bun}: ${err.message}\n`);
     process.exit(1);
   });
 
-  /* Repassar sinal é obrigação de quem virou intermediário. Enquanto o `bin`
-     era o próprio cli.ts, o pid que o usuário via era o do bun e um
-     `kill <pid>` derrubava o servidor. Com uma camada no meio o mesmo kill
-     mata só o lançador e deixa o bun órfão segurando a porta — medido, não
-     suposto. Ctrl-C escapa disso porque o terminal sinaliza o grupo inteiro;
-     um kill mirado, não. */
+  /* relaying signals is the duty of whoever became the middle process. while
+     `bin` was cli.ts itself, the pid the user saw was bun's and `kill <pid>`
+     stopped the server. with a layer in between the same kill hits only the
+     launcher and leaves bun orphaned holding the port, measured, not assumed.
+     Ctrl-C hides this because the terminal signals the whole process group; a
+     targeted kill does not. */
   const SINAIS = ["SIGINT", "SIGTERM", "SIGHUP"];
   for (const sinal of SINAIS) {
     process.on(sinal, () => {
@@ -120,13 +118,13 @@ if (process.versions.bun) {
     });
   }
 
-  /* O código de saída é do cli.ts, não nosso: --stop que não achou pidfile
-     sai 1, e quem chamou precisa ver esse 1. Morte por sinal não tem código
-     — repassar como 0 diria que deu tudo certo, então nos matamos com o
-     mesmo sinal e deixamos o shell relatar o que de fato aconteceu. O
-     removeAllListeners não é adorno: com o ouvinte de cima ainda instalado, o
-     Node entrega o sinal a ele em vez de morrer, e o lançador ficaria pendurado
-     tentando matar um filho que já morreu. */
+  /* the exit code is cli.ts's, not ours: a --stop that found no pidfile exits
+     1, and the caller needs to see that 1. death by signal has no code, and
+     relaying it as 0 would claim success, so we kill ourselves with the same
+     signal and let the shell report what happened. removeAllListeners is not
+     decoration: with the listener above still installed, Node hands the signal
+     to it instead of dying, and the launcher would hang trying to kill a child
+     that is already dead. */
   filho.on("exit", (codigo, sinal) => {
     if (sinal) {
       process.removeAllListeners(sinal);

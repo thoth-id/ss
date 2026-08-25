@@ -1,13 +1,13 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ss</title>
 <style>
   :root {
-    /* Chão de call: quase preto, com o viés frio do acento. Os tiles sobem
-       dele, e o cromo flutua por cima dos dois. */
+    /* call floor: near black, with the accent's cold bias. tiles rise out of
+       it and the chrome floats over both. */
     --void:   #040607;
     --bg:     #090c0e;
     --tile:   #11171a;
@@ -22,17 +22,17 @@
     --stop:   #d9534a;
     --ink:    #05221e;
     --glass:  rgba(10,14,16,.72);
-    /* Mono é verdade de máquina (id, taxa, resolução, caminho, nome de sala, e
-       a marca `tela`, que é um comando). Sans é palavra de gente. A sans é a do
-       sistema: este projeto não busca nada na rede, e webfont quebraria isso e
-       o caso offline de uma vez. */
+    /* mono is machine truth (ids, rates, resolutions, paths, room names, and
+       the `ss` wordmark, which is a command). sans is human words, and it is
+       the system stack: this project fetches nothing from the network, and a
+       webfont would break that and the offline case at once. */
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
-  /* Nada de scroll: o palco tem a altura que sobra e encaixa os tiles dentro
-     dela. Se um tile pudesse crescer além disso, a página rolaria. */
+  /* no scrolling: the stage takes the height that is left and fits the tiles
+     inside it. a tile allowed to grow past that would scroll the page. */
   body {
     margin: 0; overflow: hidden; background: var(--bg); color: var(--fg);
     font: 13px/1.5 var(--sans);
@@ -40,12 +40,12 @@
   }
   kbd { font-family: var(--mono); }
 
-  /* O palco é a janela inteira. Todo o cromo flutua por cima dele, e as faixas
-     que ele ocupa em cima e embaixo estão no JS (PAD_TOP / PAD_BOT): tile
-     nenhum passa por baixo da pílula ou do dock. */
+  /* the stage is the whole window. every piece of chrome floats over it, and
+     the bands it takes at top and bottom live in the JS (PAD_TOP / PAD_BOT):
+     no tile ever runs under the pill or the dock. */
   main { position: absolute; inset: 0; overflow: hidden; }
 
-  /* === marca e pílula de cima === */
+  /* === wordmark and top pill === */
 
   .mark {
     position: absolute; top: 18px; left: 18px; z-index: 6;
@@ -73,8 +73,8 @@
   .top span:last-child { border-radius: 0 8px 8px 0; }
   .top span.cheio { color: var(--warn); }
 
-  /* Aviso pode ser longo (o texto de HTTPS é). Rola por dentro, e continua
-     flutuando: empurrar o palco mudaria o encaixe. */
+  /* a notice can be long (the HTTPS one is). it scrolls inside itself and
+     keeps floating: pushing the stage would change the fit. */
   .notice {
     position: absolute; top: 52px; left: 50%; transform: translateX(-50%);
     z-index: 7; width: min(680px, calc(100% - 36px)); max-height: 34%;
@@ -85,8 +85,8 @@
 
   /* === tile === */
 
-  /* Tile posicionado e dimensionado pelo layout() em px. A borda é box-shadow
-     inset de propósito: borda de verdade somaria altura e o encaixe erraria. */
+  /* placed and sized by layout(), in px. the border is an inset box-shadow on
+     purpose: a real border would add height and the fit would be wrong. */
   .tile {
     position: absolute; left: 0; top: 0; height: var(--vh, 180px);
     border-radius: 12px; overflow: hidden; background: var(--tile);
@@ -96,9 +96,9 @@
   .tile:hover, .tile:focus-within { box-shadow: inset 0 0 0 1px var(--line-hi); }
   .tile.focused { box-shadow: inset 0 0 0 1px var(--accent); }
 
-  /* overflow no quadro, e não só no .tile: em tela cheia o .frame vira o
-     elemento de topo, fora do fluxo, e o recorte do .tile não alcança mais o
-     vídeo ampliado — vazaria por cima da tela inteira. */
+  /* overflow on the frame, not only on .tile: in fullscreen .frame becomes the
+     top element, out of the flow, and .tile's clip no longer reaches the
+     magnified video, which would spill over the whole screen. */
   .frame { position: relative; height: 100%; overflow: hidden; cursor: zoom-in; background: var(--void); }
   .tile.focused .frame { cursor: zoom-out; }
   .tile.peer .frame { cursor: default; background: var(--tile); display: grid; place-items: center; }
@@ -106,23 +106,20 @@
     display: block; width: 100%; height: 100%;
     object-fit: contain; background: var(--void);
   }
-  /* A própria tela em espelho confunde; escurece um pouco, menos no foco. */
+  /* your own screen mirrored back is confusing; dim it, less so in focus. */
   .tile.self .frame video { opacity: .72; }
   .tile.self.focused .frame video { opacity: 1; }
   .frame:fullscreen video { opacity: 1; }
-  /* Zoom de quem vê: transform no vídeo, nunca no tile. Nenhuma caixa muda de
-     tamanho, então o encaixe em px, o foco e a página-sem-scroll ficam exatos.
-     O cursor empresta o gesto do mapa: mão fechada enquanto arrasta. */
-  /* Com zoom o clique não desfoca, então "zoom-out" mentiria. O seletor repete
-     .tile.focused porque .tile.focused .frame vence .frame.zoomed na cascata, e
-     em foco é justamente onde ampliar acontece. */
+  /* zoomed, a click does not unfocus, so "zoom-out" would lie. the selector
+     repeats .tile.focused because .tile.focused .frame beats .frame.zoomed in
+     the cascade, and focus is exactly where magnifying happens. */
   .frame.zoomed, .tile.focused .frame.zoomed { cursor: grab; touch-action: none; }
   .frame.zoomed.dragging, .tile.focused .frame.zoomed.dragging { cursor: grabbing; }
-  /* Zoom é um modo, e modo ligado precisa ser visível. Fica FORA do .tel de
-     propósito: aquela pílula só existe com medida no ar (.vivo) e desaparece em
-     .narrow — que é justamente a tela pequena onde ampliar mais importa. Canto
-     livre: .ctl mora em cima à direita, .who embaixo à esquerda, .tel embaixo à
-     direita. Mono, porque um fator de escala é verdade de máquina. */
+  /* zoom is a mode, and a mode that is on has to be visible. deliberately
+     outside .tel: that pill only exists once a measurement is live (.vivo) and
+     disappears at .narrow, which is the small screen where magnifying matters
+     most. this is the free corner: .ctl top right, .who bottom left, .tel
+     bottom right. */
   .zoom {
     position: absolute; left: 10px; top: 10px; z-index: 3;
     padding: 4px 8px; border: 0; border-radius: 8px; cursor: pointer;
@@ -130,15 +127,15 @@
     font-family: var(--mono); font-size: 10.5px; color: var(--accent);
     font-variant-numeric: tabular-nums;
   }
-  /* Medido: num palco de 1440 o vídeo em foco já sai a 0.785 px de dispositivo
-     por px de fonte, então ampliar recupera detalhe de verdade até o nativo. Daí
-     pra cima é interpolação, e a cor é o que diz onde essa fronteira ficou. */
+  /* measured: on a 1440 stage a focused video already renders at 0.785 device
+     px per source px, so magnifying recovers real detail up to native. past
+     that it is interpolation, and the colour is what marks the line. */
   .zoom.up { color: var(--warn); }
   .tile.mini .zoom { display: none; }
 
-  /* Monograma de quem está na sala e não transmite: o mesmo tile, com um
-     círculo no lugar do vídeo. Redondo, e não quadrado como era a placa, porque
-     numa call é o rosto que ocupa esse lugar. */
+  /* monogram for whoever is in the room and not transmitting: the same tile
+     with a circle where the video goes, which is the shape a call gives
+     somebody with the camera off. */
   .glyph {
     width: min(calc(var(--vh, 120px) * .40), 124px); aspect-ratio: 1;
     border-radius: 50%; display: grid; place-items: center;
@@ -146,17 +143,16 @@
     font-family: var(--mono); font-size: min(calc(var(--vh, 120px) * .16), 46px);
     line-height: 1; user-select: none;
   }
-  /* Sem nome não há inicial que signifique nada: o id é hex, e "3" não é
-     ninguém. Só acontece com cliente de outra versão, porque aqui o nome é
-     obrigatório, mas o estado existe e precisa de desenho. */
+  /* with no name there is no initial worth showing: ids are hex, and "3" is
+     nobody. only reachable from another client, since a name is mandatory here,
+     but the state exists and needs a drawing. */
   .tile.anon .glyph { background: transparent; border: 1px dashed var(--line-hi); color: var(--dim); }
-  /* Pediu a vaga de sharer e o vídeo ainda não chegou. */
+  /* asked for a sharer slot, video has not arrived yet. */
   .tile.wait .glyph { box-shadow: 0 0 0 1px var(--accent); animation: pulse 1.8s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .55; } }
 
-  /* Rótulo e telemetria são pílulas sobre o vídeo, não faixa embaixo dele: o
-     tile passa a ser só a caixa do vídeo, e o encaixe não precisa mais
-     descontar altura de régua nenhuma. */
+  /* name and telemetry are pills over the video, not a strip below it: the
+     tile is only the video box, so the fit subtracts no strip height. */
   .who {
     position: absolute; left: 10px; bottom: 10px; z-index: 2; max-width: calc(100% - 20px);
     display: flex; align-items: center; gap: 7px;
@@ -166,17 +162,17 @@
     white-space: nowrap; overflow: hidden;
   }
   .who b { font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
-  /* O "(você)" é irmão do nome, não parte dele: num tile estreito quem corta
-     com reticências é o nome, e cortar justo a marca apagaria a única coisa
-     que diz de quem é aquele quadro. Por isso `flex: none`. */
+  /* "(you)" is a sibling of the name, not part of it: on a narrow tile the
+     name is what ellipsizes, and truncating the marker instead would cut the
+     one thing that says whose frame this is. hence `flex: none`. */
   .who em { display: none; flex: none; font-style: normal; color: var(--dim); }
   .who.eu em { display: block; }
   .who i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
   .tile.peer .who i { display: none; }
   .tile.wait .who b { color: var(--accent); }
 
-  /* Só aparece quando a primeira medida chega: pílula vazia no canto do vídeo
-     parece defeito, e antes do primeiro segundo não há o que dizer. */
+  /* shown only once the first measurement lands: an empty pill in the corner
+     reads as a defect, and before the first second there is nothing to say. */
   .tel {
     position: absolute; right: 10px; bottom: 10px; z-index: 2;
     display: none; align-items: center; gap: 9px;
@@ -188,12 +184,12 @@
   .tel.vivo { display: flex; }
   .tel .hi { color: var(--accent); }
   .tel .warn { color: var(--warn); }
-  /* O medidor: uma barra por segundo do último minuto, fatia fixa de 3px, pra
-     que o ritmo das barras seja o mesmo em qualquer tamanho de tile. */
+  /* the gauge: one bar per second of the last minute, fixed 3px slot, so the
+     bar rhythm is identical at every tile size. */
   .wave { display: block; width: 180px; height: 14px; flex: none; }
-  /* As duas pílulas dividem uma linha só, e ela encolhe com o tile. Primeiro
-     cai a fita (o número continua lá), depois a telemetria inteira. O nome é o
-     que nunca sai: sem ele não dá pra saber de quem é a tela. */
+  /* the two pills share one line, and it shrinks with the tile. first the tape
+     drops (the number stays), then the whole telemetry. the name never goes:
+     without it there is no telling whose screen this is. */
   .tile.tight .wave { display: none; }
   .tile.narrow .tel, .tile.mini .tel { display: none; }
 
@@ -209,8 +205,8 @@
     background: var(--glass); backdrop-filter: blur(6px);
   }
   .act:hover { border-color: var(--accent); color: var(--accent); }
-  /* Na miniatura o botão no canto tapava o vídeo: vira uma camada sobre o
-     quadro todo, que é o alvo de clique de qualquer jeito. */
+  /* on a thumbnail a corner button covered the video, so it becomes a layer
+     over the whole frame, which is the click target anyway. */
   .tile.mini .ctl { inset: 0; align-items: center; justify-content: center; background: rgba(4,7,9,.5); }
   .tile.mini .full { display: none; }
   .tile.mini .who { left: 6px; bottom: 6px; padding: 2px 7px; font-size: 10.5px; }
@@ -243,9 +239,9 @@
   .dock button.on:hover { background: #6bd8c4; }
   .dock button.stop { background: var(--stop); color: #fff; }
   .dock button.stop:hover { background: #e35f55; }
-  /* Copiar não é um estado. O botão ficava verde por 1.4s, e verde parado no
-     dock é o vocabulário do `.on` — modo ligado, como o de compartilhar. O que
-     confirma um clique sem virar modo é o pulso: nasce no botão, sai e some. */
+  /* copying is not a state. the button used to go green for 1.4s, and a steady
+     green in the dock is `.on`'s vocabulary, meaning a mode is on. what
+     confirms a click without becoming a mode is a pulse. */
   .dock button.tap { animation: tap .34s ease; }
   .dock button.tap::after {
     content: ""; position: absolute; inset: -1px; border-radius: 50%;
@@ -256,7 +252,7 @@
     from { opacity: .9; transform: scale(1); }
     to   { opacity: 0;  transform: scale(1.45); }
   }
-  /* Sem movimento o pulso vira um lampejo no lugar: some do mesmo jeito. */
+  /* without motion the pulse becomes a flash in place: it fades the same. */
   @media (prefers-reduced-motion: reduce) {
     .dock button.tap { animation: none; }
     .dock button.tap::after { animation: lampejo .5s ease-out forwards; }
@@ -265,7 +261,7 @@
   .dock button:disabled { opacity: .35; cursor: not-allowed; background: var(--raise); }
   .dock .sep { width: 1px; height: 24px; background: var(--line); flex: none; }
 
-  /* === palco vazio === */
+  /* === empty stage === */
 
   .empty {
     position: absolute; inset: 0; z-index: 3;
@@ -288,10 +284,11 @@
   .hint { color: var(--dim); }
   kbd { font-size: 11.5px; padding: 1px 6px; border-radius: 3px; box-shadow: inset 0 0 0 1px var(--line-hi); }
 
-  /* === portaria === */
+  /* === gate === */
 
-  /* Nome é obrigatório: sem ele a portaria não fecha, e o `join` não sai. Quem
-     entra numa sala aparece pra todo mundo, e "3f9a1b2c" não é uma pessoa. */
+  /* the name is mandatory: without one the gate does not close and no `join`
+     goes out. whoever enters a room shows up to everybody, and "3f9a1b2c" is
+     not a person. */
   .gate { position: fixed; inset: 0; z-index: 50; display: flex; }
   .gate[hidden] { display: none; }
   .gate .scrim { position: absolute; inset: 0; background: rgba(3,6,8,.78); backdrop-filter: blur(4px); }
@@ -368,8 +365,8 @@
 <span class="mark">ss<i id="live"></i></span>
 
 <div class="top">
-  <span id="topRoom">#sala</span>
-  <span id="topAir">conectando</span>
+  <span id="topRoom">#room</span>
+  <span id="topAir">connecting</span>
   <span id="topPeers">1</span>
 </div>
 
@@ -377,36 +374,36 @@
 
 <section class="empty" id="empty" hidden>
   <div class="card">
-    <h1>Nada no ar nesta sala.</h1>
-    <p>Compartilhe a sua tela, ou mande o link desta página pra quem vai assistir.
-      Só quem está no tailnet consegue abrir: não há login porque não há porta pra fora.</p>
+    <h1>Nothing on air in this room.</h1>
+    <p>Share your screen, or send the link to this page to whoever is watching.
+      Only the tailnet can open it: there is no login because there is no door out.</p>
     <dl class="facts">
-      <dt>sala</dt><dd id="fRoom">...</dd>
+      <dt>room</dt><dd id="fRoom">...</dd>
       <dt>peers</dt><dd id="fPeers">...</dd>
-      <dt>transmitindo</dt><dd id="fSharers">...</dd>
-      <dt>captura</dt><dd id="fCap">...</dd>
-      <dt>vídeo</dt><dd class="note">direto entre os navegadores: o servidor só apresenta os dois</dd>
+      <dt>sharing</dt><dd id="fSharers">...</dd>
+      <dt>capture</dt><dd id="fCap">...</dd>
+      <dt>video</dt><dd class="note">straight between the browsers: the server only introduces them</dd>
     </dl>
-    <p class="hint">Com duas telas no ar, clique numa delas para focar. <kbd>esc</kbd> volta.
-      Roda do mouse dá zoom em qualquer tela; duplo clique restaura.</p>
+    <p class="hint">With two screens on air, click one to focus it. <kbd>esc</kbd> goes back.
+      The mouse wheel zooms any screen; double click restores it.</p>
   </div>
 </section>
 
 <div class="dock">
-  <button id="shareBtn" title="Compartilhar tela" aria-label="Compartilhar tela">
+  <button id="shareBtn" title="Share screen" aria-label="Share screen">
     <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8.5 20.5h7M12 17v3.5"/></svg>
   </button>
-  <button id="copyBtn" title="Copiar link" aria-label="Copiar link">
+  <button id="copyBtn" title="Copy link" aria-label="Copy link">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 13.5a4.5 4.5 0 0 0 6.4 0l2.6-2.6a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M13.5 10.5a4.5 4.5 0 0 0-6.4 0l-2.6 2.6a4.5 4.5 0 0 0 6.4 6.4l1-1"/></svg>
   </button>
   <span class="sep"></span>
-  <button id="roomBtn" title="Trocar de sala" aria-label="Trocar de sala">
+  <button id="roomBtn" title="Switch room" aria-label="Switch room">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 9h15M4.5 15h15M10 3.5 8 20.5M16 3.5l-2 17"/></svg>
   </button>
-  <button id="meBtn" title="Seu nome" aria-label="Seu nome">
+  <button id="meBtn" title="Your name" aria-label="Your name">
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>
   </button>
-  <button id="gridBtn" title="Sair do foco" aria-label="Sair do foco" disabled>
+  <button id="gridBtn" title="Leave focus" aria-label="Leave focus" disabled>
     <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>
   </button>
 </div>
@@ -414,59 +411,59 @@
 <div class="gate" id="gate" hidden role="dialog" aria-modal="true" aria-labelledby="gateTitle">
   <div class="scrim" id="gateScrim"></div>
   <div class="card">
-    <h2 id="gateTitle">Quem entra na sala</h2>
-    <p id="gateSub">O nome é como a sala te chama, e é obrigatório: quem está do outro
-      lado precisa saber de quem é a tela. A sala é qualquer palavra, e quem abrir
-      o mesmo link cai no mesmo lugar.</p>
+    <h2 id="gateTitle">Who is joining</h2>
+    <p id="gateSub">The name is what the room calls you, and it is mandatory: whoever
+      is on the other side needs to know whose screen this is. The room is any word,
+      and anyone opening the same link lands in the same place.</p>
     <div class="fl">
-      <span class="k">seu nome <em id="gateHint">mínimo 3 letras</em></span>
+      <span class="k">your name <em id="gateHint">3 letters minimum</em></span>
       <div class="field">
         <span class="av anon" id="gateAv">_</span>
         <input id="gateName" maxlength="24" spellcheck="false" autocomplete="off"
-          placeholder="como te chamam" aria-label="Seu nome">
+          placeholder="what people call you" aria-label="Your name">
       </div>
     </div>
     <div class="fl">
-      <span class="k">sala</span>
+      <span class="k">room</span>
       <div class="field">
         <span class="hash">#</span>
         <input id="gateRoom" maxlength="64" spellcheck="false" autocomplete="off"
-          aria-label="Nome da sala">
+          aria-label="Room name">
       </div>
     </div>
     <div class="recents" id="gateRecents"></div>
-    <button class="go" id="gateGo">Entrar</button>
+    <button class="go" id="gateGo">Enter</button>
     <span class="url" id="gateUrl"></span>
   </div>
 </div>
 
 <script>
-// A sala vem do fragmento, mas não é constante: o dock troca de sala em tempo
-// de execução, e o `#` editado na mão continua valendo.
+// the room comes from the fragment, but it is not constant: the dock switches
+// rooms at runtime, and a hand-edited `#` still counts.
 let ROOM = "";
-const CAP_BITRATE = 1_500_000;   // por peer
+const CAP_BITRATE = 1_500_000;   // per peer
 const CAP_FRAMERATE = 30;
 
 const $ = (id) => document.getElementById(id);
 ROOM = cleanRoom(decodeURIComponent(location.hash.slice(1)));
 
-const peers = new Set();          // ids na sala
-const sending = new Map();        // peerId -> RTCPeerConnection (eu envio)
-const receiving = new Map();      // peerId -> RTCPeerConnection (eu recebo)
-const tiles = new Map();          // peerId -> elemento
-const names = new Map();          // peerId -> nome, segundo o servidor
-let sharers = new Set();          // quem está transmitindo, segundo o servidor
+const peers = new Set();          // ids in the room
+const sending = new Map();        // peerId -> RTCPeerConnection (I send)
+const receiving = new Map();      // peerId -> RTCPeerConnection (I receive)
+const tiles = new Map();          // peerId -> element
+const names = new Map();          // peerId -> name, according to the server
+let sharers = new Set();          // who is transmitting, according to the server
 let localStream = null;
 let iceServers = [];
 let maxSharers = 3;
-let maxCapturePixels = 1_440_000; // teto de pixels na captura; ver startShare()
+let maxCapturePixels = 1_440_000; // capture pixel budget; see startShare()
 let myId = null;
-let myName = "";                  // nome escolhido aqui, já saneado
+let myName = "";                  // name chosen here, already sanitized
 let ws = null;
-let dead = false;                 // recebeu `denied`: para de reconectar
-let retry = 0;                    // timer do reconnect, cancelável na troca de sala
+let dead = false;                 // got `denied`: stop reconnecting
+let retry = 0;                    // reconnect timer, cancellable on a room switch
 let gateOpen = false;
-let gateTrava = false;            // portaria sem saída: ainda não há nome
+let gateTrava = false;            // gate with no way out: still no name
 
 /* ---------- setup ---------- */
 
@@ -476,16 +473,16 @@ async function boot() {
     .catch(() => ({ stunPort: 3478, maxSharers: 3, maxCapturePixels: 1_440_000 }));
   maxSharers = cfg.maxSharers ?? 3;
   maxCapturePixels = cfg.maxCapturePixels ?? 1_440_000;
-  // Avisa de cara, em vez de deixar a pessoa clicar num botão que não faz nada.
+  // say so up front instead of leaving a button that does nothing.
   if (!canShare()) notice(whyCantShare());
   paintRoom();
   remember(ROOM);
   render();
-  // Nome é obrigatório: sem um guardado a portaria trava até ser respondida.
-  // Com um guardado, o link abre direto na sala dele, que é o ponto do link.
+  // no stored name means the gate blocks until it is answered. with one, the
+  // link opens straight into its room, which is the point of sending a link.
   if (!nameOk(myName)) openGate(true);
-  // O hostname aqui é o MagicDNS do tailnet, que resolve pro 100.x.
-  // O STUN devolve esse mesmo 100.x como srflx candidate.
+  // the hostname here is the tailnet MagicDNS name, which resolves to the
+  // 100.x that STUN hands back as an srflx candidate.
   iceServers = [{ urls: `stun:${location.hostname}:${cfg.stunPort}` }];
   connect();
 }
@@ -496,13 +493,13 @@ function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws`);
 
-  // O nome vai no join, então o reconnect o restabelece sozinho: o servidor
-  // perdeu o socket antigo e com ele o nome, que morava lá. Sem nome válido não
-  // há join: quem ainda está na portaria não está em sala nenhuma.
+  // the name travels in the join, so a reconnect restores it by itself: the
+  // server lost the old socket and the name that lived on it. no valid name
+  // means no join, and whoever is still at the gate is in no room at all.
   ws.onopen = entrar;
   ws.onclose = () => {
     if (dead) return;
-    $("topAir").textContent = "reconectando";
+    $("topAir").textContent = "reconnecting";
     retry = setTimeout(connect, 1500);
   };
   ws.onmessage = (e) => handle(JSON.parse(e.data));
@@ -523,9 +520,9 @@ function notice(text) {
   relayout();
 }
 
-// getDisplayMedia só existe em secure context. http://100.x e http://192.168.x
-// NÃO contam; localhost e https:// contam. Sem isso a API nem aparece no
-// navigator.mediaDevices, e o clique no botão não teria o que chamar.
+// getDisplayMedia only exists in a secure context. http://100.x and
+// http://192.168.x do NOT count; localhost and https:// do. without one the API
+// is absent from navigator.mediaDevices and the button has nothing to call.
 function canShare() {
   return typeof navigator.mediaDevices?.getDisplayMedia === "function";
 }
@@ -534,16 +531,16 @@ function whyCantShare() {
   if (canShare()) return "";
   if (!window.isSecureContext) {
     return (
-      `Sem HTTPS não é possível compartilhar: o navegador só expõe a captura de ` +
-      `tela em contexto seguro, e ${location.origin} não é um. Abra por ` +
-      `http://localhost:${location.port || 80} nesta máquina, ou publique com ` +
-      `"tailscale serve --bg ${location.port || 3000}" e use a URL .ts.net.`
+      `Without HTTPS there is no sharing: the browser only exposes screen ` +
+      `capture in a secure context, and ${location.origin} is not one. Open ` +
+      `http://localhost:${location.port || 80} on this machine, or publish it ` +
+      `with "tailscale serve --bg ${location.port || 3000}" and use the .ts.net URL.`
     );
   }
-  return "Este navegador não expõe getDisplayMedia. Use Chrome, Edge ou Firefox no desktop.";
+  return "This browser does not expose getDisplayMedia. Use Chrome, Edge or Firefox on the desktop.";
 }
 
-/* Derruba tudo: usado quando o servidor nos dá um id novo (reconnect). */
+/* tears everything down: used when the server hands us a new id (reconnect). */
 function resetConnections() {
   for (const pc of sending.values()) pc.close();
   for (const pc of receiving.values()) pc.close();
@@ -559,8 +556,8 @@ function handle(msg) {
     ws?.close();
     notice(
       msg.reason === "room-full"
-        ? "Sala cheia. Espere alguém sair, ou entre em outra sala pelo dock."
-        : `Entrada recusada (${msg.reason}).`
+        ? "Room is full. Wait for somebody to leave, or switch rooms from the dock."
+        : `Entry refused (${msg.reason}).`
     );
     render();
     return;
@@ -570,16 +567,16 @@ function handle(msg) {
     const previous = myId;
     myId = msg.id;
 
-    // Reconnect: o id anterior morreu junto com o socket, e com ele todas as
-    // PCs que apontavam pra ele. Fecha antes de reabrir, senão vaza conexão.
+    // reconnect: the previous id died with the socket, and so did every PC
+    // pointing at it. close before reopening or the connections leak.
     if (previous && previous !== myId) resetConnections();
 
     peers.clear();
     msg.peers.forEach((id) => peers.add(id));
 
-    // Se estávamos transmitindo, o servidor já nos tirou do conjunto de
-    // sharers no close. Pede a vaga de novo; o envio começa quando o
-    // broadcast `sharers` confirmar.
+    // if we were transmitting, the server already dropped us from the sharer
+    // set on close. ask for the slot again; sending starts when the `sharers`
+    // broadcast confirms it.
     if (localStream) {
       attachTile(myId, localStream, true);
       send({ t: "share-start" });
@@ -609,8 +606,8 @@ function handle(msg) {
   if (msg.t === "sharers") {
     const next = new Set(msg.ids);
 
-    // Quem saiu do conjunto: derruba a PC de recepção e o tile na hora, em vez
-    // de esperar o connectionstatechange cair sozinho.
+    // whoever left the set: drop the receiving PC and the tile right away,
+    // rather than waiting for connectionstatechange to fall on its own.
     for (const id of sharers) {
       if (next.has(id) || id === myId) continue;
       receiving.get(id)?.close();
@@ -620,7 +617,7 @@ function handle(msg) {
 
     sharers = next;
 
-    // Fui aceito como sharer: agora sim abre os envios.
+    // accepted as a sharer: now open the sends.
     if (localStream && sharers.has(myId)) peers.forEach(openSend);
 
     render();
@@ -628,7 +625,7 @@ function handle(msg) {
   }
 
   if (msg.t === "names") {
-    // Mapa inteiro toda vez, como os sharers: nada de deltas pra reconstruir.
+    // the whole map every time, like sharers: no deltas to rebuild.
     names.clear();
     for (const [id, raw] of Object.entries(msg.map || {})) {
       const v = cleanName(raw);
@@ -639,14 +636,14 @@ function handle(msg) {
   }
 
   if (msg.t === "share-denied") {
-    // Já tínhamos o stream do picker; não houve vaga, então descarta.
-    // Sem `share-stop` nem teardown de envios: o servidor nunca nos registrou,
-    // então não há vaga a liberar nem PC aberta.
+    // the picker already gave us the stream and there was no slot, so drop it.
+    // no `share-stop` and no teardown: the server never registered us, so there
+    // is no slot to free and no PC open.
     discardCapture();
     notice(
       msg.reason === "limit"
-        ? `Já tem ${maxSharers} pessoa${maxSharers > 1 ? "s" : ""} compartilhando. Espere alguém parar.`
-        : `Compartilhamento recusado (${msg.reason}).`
+        ? `${maxSharers} ${maxSharers > 1 ? "people are" : "person is"} already sharing. Wait for somebody to stop.`
+        : `Sharing refused (${msg.reason}).`
     );
     render();
     return;
@@ -669,31 +666,26 @@ async function flush(pc) {
   }
 }
 
-// Params idênticos em todos os peers. NÃO assuma que isso faz o Chrome
-// reaproveitar uma única instância de encoder — o comportamento usual é um
-// encoder por PeerConnection. Se capacidade importar, medir CPU com 4 destinos.
+// there is one encoder per PeerConnection: identical parameters do NOT make
+// Chrome reuse a single instance.
 //
-// O que importa aqui é `maintain-resolution`. Sem ela o encoder troca pixels
-// por quadros: desce uma escada de frações da captura (¼, ⅜, ½, ¾) e demora
-// para voltar — medido, 30 a 40s para subir de volta num loopback de 1ms sem
-// perda, e com conteúdo em movimento não subiu nenhum degrau em 90s. Com ela em
-// vigor a resolução não se mexe nem quando o fps cai para 2. Um vídeo chegando
-// em 640×360 a 30fps é exatamente esta política ausente: 640×360 é o degrau ½
-// de 1280×720, não um tamanho de captura.
+// what matters here is `maintain-resolution`. without it the encoder trades
+// pixels for frames, descending a ladder of capture fractions (¼, ⅜, ½, ¾),
+// and it is slow to climb back: measured, 30 to 40s on a 1ms lossless loopback,
+// and with moving content it did not climb a single rung in 90s. with it in
+// force the resolution does not move even at 2fps. video arriving at 640×360
+// and 30fps is exactly this policy missing: 640×360 is the ½ rung of 1280×720,
+// not a capture size.
 //
-// `encodings[0]` sempre existe: a spec (WebRTC 1.0 § 5.2, *create an
-// RTCRtpSender*, passo 11) manda criar uma entrada quando `sendEncodings` vem
-// vazio, e nenhum algoritmo dela esvazia a lista depois. Já houve aqui um
-// `if (!params.encodings?.length) params.encodings = [{}]` para "garantir" esse
-// slot; ele mudava o comprimento de `encodings`, que é justamente o que o
-// `setParameters` recusa com `InvalidModificationError`. Defesa que só podia
-// causar o dano que dizia evitar. Se um dia a lista vier vazia de verdade, é
-// bug de browser e o `catch` abaixo mostra.
+// `encodings[0]` always exists: the spec (WebRTC 1.0 § 5.2, *create an
+// RTCRtpSender*, step 11) requires an entry when `sendEncodings` is empty, and
+// no algorithm empties the list afterwards. filling it in by hand would change
+// the length of `encodings`, which is the one thing `setParameters` rejects.
 //
-// O que vale mesmo é não engolir a falha: o `catch {}` que estava aqui
-// transformava "a política não entrou" em "o vídeo está estranho" descoberto
-// dias depois. E `setParameters` resolver não prova que o campo pegou — o
-// `degradationPreference` é lido de volta.
+// what really counts is not swallowing the failure: the `catch {}` that used to
+// be here turned "the policy did not apply" into "the video looks strange"
+// found days later. and setParameters resolving does not prove the field took,
+// so `degradationPreference` is read back.
 async function applyEncoding(pc) {
   const sender = pc.getSenders().find((s) => s.track?.kind === "video");
   if (!sender) return;
@@ -706,7 +698,7 @@ async function applyEncoding(pc) {
   try {
     await sender.setParameters(params);
   } catch (err) {
-    pc.policy = `política recusada: ${err?.name || err}`;
+    pc.policy = `policy refused: ${err?.name || err}`;
     console.warn("applyEncoding falhou", err);
     return;
   }
@@ -715,10 +707,10 @@ async function applyEncoding(pc) {
   pc.policy =
     got.degradationPreference === "maintain-resolution"
       ? null
-      : "política não confirmada";
+      : "policy not confirmed";
   if (pc.policy) {
     console.warn(
-      `applyEncoding: degradationPreference voltou ${JSON.stringify(got.degradationPreference)}`,
+      `applyEncoding: degradationPreference came back as ${JSON.stringify(got.degradationPreference)}`,
     );
   }
 }
@@ -769,7 +761,7 @@ async function route(from, data) {
   }
 
   if (data.kind === "ice") {
-    // dir é do ponto de vista de quem enviou, então inverte aqui.
+    // dir is from the sender's point of view, so invert it here.
     const pc = data.dir === "tx" ? receiving.get(from) : sending.get(from);
     if (!pc) return;
     if (pc.remoteDescription) await pc.addIceCandidate(data.candidate).catch(() => {});
@@ -777,26 +769,23 @@ async function route(from, data) {
   }
 }
 
-/* ---------- compartilhar ---------- */
+/* ---------- sharing ---------- */
 
-// Geometria REAL da fonte, tirada do primeiro quadro.
+// the REAL geometry of the source, taken from the first frame.
 //
-// `track.getSettings()` logo após o `getDisplayMedia` não serve para isto: se a
-// fonte for maior que a caixa pedida, ele devolve o ECO DA CAIXA — as dimensões
-// que nós mesmos pedimos — e não o que a fonte tem. Medido: numa tela 1920×1200
-// com caixa 1838×1034, `getSettings()` responde 1838×1034, aspecto 16:9, quando
-// a fonte é 16:10. Calcular o corte a partir daí é calcular a partir do próprio
-// palpite, e foi por isso que a captura continuou saindo em 90% do orçamento
-// mesmo depois de a caixa ser corrigida.
+// `track.getSettings()` right after getDisplayMedia does not answer this: if
+// the source is larger than the box we asked for, it echoes THE BOX back, not
+// what the source has. measured: on a 1920×1200 screen with a 1838×1034 box it
+// reports 1838×1034, a 16:9 aspect, for a 16:10 source. computing the crop from
+// that is computing from our own guess.
 //
-// O primeiro quadro é melhor, não perfeito: medido, ele às vezes chega num
-// tamanho transitório (56px mais alto que a fonte em quatro geometrias da
-// bancada), e é isso que explica as linhas que assentam em 96% em vez de 99%.
-// Esperar mais quadros trocaria esses pontos percentuais por atraso no início
-// do compartilhamento; não vale.
+// the first frame is better, not perfect: measured, it sometimes arrives at a
+// transient size (56px taller than the source in four bench geometries), which
+// is why some rows settle at 96% of the budget instead of 99%. waiting for more
+// frames would trade those points for a slower start.
 //
-// O timeout existe para que uma fonte que nunca produza quadro não trave o
-// compartilhamento: nesse caso cai no `getSettings()`, que é o que havia antes.
+// the timeout keeps a source that never produces a frame from blocking the
+// share: it falls back to getSettings(), which is what came before.
 function geometriaReal(track) {
   return new Promise((resolve) => {
     const v = document.createElement("video");
@@ -820,11 +809,10 @@ function geometriaReal(track) {
   });
 }
 
-// Caixa 16:9 que cabe num orçamento de pixels, com dimensões pares (encoders
-// trabalham em macroblocos). Serve tanto à dica do picker — que passa o
-// orçamento COM a folga de 1,32, para a captura chegar acima do teto e o corte
-// de applyConstraints ter o que cortar — quanto ao card de sala vazia, que
-// anuncia o orçamento puro. Uma fórmula só: mudar aqui muda nos dois lugares.
+// a 16:9 box that fits a pixel budget, with even dimensions (encoders work in
+// macroblocks). it serves both the picker hint, which passes the budget WITH
+// the 1.32 slack so the capture lands above the cap and applyConstraints has
+// something to crop, and the empty-room card, which announces the plain budget.
 function boxFor(pixels) {
   const w = Math.round(Math.sqrt((pixels * 16) / 9) / 2) * 2;
   return { w, h: Math.round((w * 9) / 16 / 2) * 2 };
@@ -838,46 +826,35 @@ async function startShare() {
 
   notice("");
 
-  // Teto pedido ao picker. Ele NÃO é o orçamento: é o orçamento com folga, e a
-  // folga é o ponto. Quem faz o corte exato é o `applyConstraints` logo abaixo,
-  // que conhece o aspecto real do que chegou — mas ele só encolhe, então
-  // precisa que a captura chegue ACIMA do orçamento para ter o que cortar.
+  // the cap asked of the picker. it is NOT the budget, it is the budget plus
+  // slack, and the slack is the point: applyConstraints below does the exact
+  // crop, knowing the real aspect of what arrived, but it only shrinks, so the
+  // capture has to land ABOVE the budget for it to have anything to cut.
   //
-  // Era exatamente isso que estava quebrado. A caixa saía com a área exata do
-  // orçamento (1600×900), e o navegador honra o pedido encaixando a fonte nela
-  // preservando o aspecto DELA, nunca recortando. Então qualquer fonte que não
-  // fosse 16:9 chegava ABAIXO do teto — 90% em 16:10, 84% em 3:2, 75% em 4:3,
-  // 70% em 5:4 — e o ajuste abaixo nunca rodava, porque nunca havia excesso
-  // para cortar. Quem aplicava o teto era esta caixa, sozinha, e aplicava
-  // errado. O bloco de ajuste era código morto sempre que o navegador
-  // respeitava o pedido.
+  // that is what used to be broken. the box carried the budget's exact area
+  // (1600×900), and the browser honours the request by fitting the source in
+  // preserving ITS OWN aspect, never cropping. so any non-16:9 source arrived
+  // BELOW the cap (90% at 16:10, 84% at 3:2, 75% at 4:3, 70% at 5:4) and the
+  // crop below never ran, because there was never any excess. with 32% slack
+  // the source lands above the budget at every usual aspect and the crop takes
+  // it to the exact cap: 100% at 16:9, 16:10 and 3:2, 99% at 4:3, 98% at 21:9.
   //
-  // Com 32% de folga a fonte chega acima do orçamento em todo aspecto usual e o
-  // corte a leva ao teto exato: 100% em 16:9, 16:10 e 3:2, 99% em 4:3, 98% em
-  // 21:9. Nenhum aspecto de fonte ficou pior do que era.
+  // the box is fixed 16:9 on purpose, not derived from `screen`. following the
+  // monitor's aspect was measured and is worse: `screen` describes the MONITOR,
+  // not the source picked in the picker, and on a portrait monitor sharing a
+  // 16:9 window the box becomes 900×1600 and delivers 31% of the budget.
   //
-  // A caixa é 16:9 fixa de propósito, e não derivada de `screen`. Tentar seguir
-  // o aspecto do monitor foi medido e é pior: `screen` descreve o MONITOR, não
-  // a fonte escolhida no picker, e num monitor retrato compartilhando uma
-  // janela 16:9 a caixa vira 900×1600 e entrega 31% do orçamento. O aspecto do
-  // monitor não prevê o da fonte; a folga não precisa prever nada.
-  //
-  // A folga é sempre 32%, sem teto absoluto. Houve aqui um `Math.min(..., 2e6)`
-  // para prometer que a captura nunca alcança o degrau de CPU de 2.073.600 px —
-  // promessa que se desfazia sozinha: com `--pixels` acima de 2.000.000 a conta
-  // colapsava para a área exata, folga zero, e o corte abaixo voltava a ser o
-  // código morto que esta caixa existe para matar. Uma garantia que evapora
-  // justamente quando alguém mexe no número é pior que garantia nenhuma.
-  //
-  // O que vale é a aritmética do padrão: 1.440.000 × 1,32 = 1.900.800, abaixo
-  // dos 2.073.600 onde o encode salta de ~2 para ~10 cores (medido, ver
-  // CLAUDE.md). Quem sobe `--pixels` sai dessa faixa — mas já saiu ao subir o
-  // orçamento, que é o número que governa o encoder de verdade.
+  // the slack has no absolute ceiling on top of it. a `Math.min(..., 2e6)` used
+  // to promise the capture never reaches the 2,073,600 px CPU cliff, and the
+  // promise undid itself: with `--pixels` above 2,000,000 the arithmetic
+  // collapsed to the exact area, zero slack, and the crop went back to being
+  // dead code. the default's arithmetic is what holds: 1,440,000 × 1.32 =
+  // 1,900,800, below the 2,073,600 where encoding jumps from ~2 to ~10 cores.
   const { w: hintW, h: hintH } = boxFor(maxCapturePixels * 1.32);
 
   let stream;
   try {
-    // O picker precisa do gesto do usuário, então vem antes do round-trip.
+    // the picker needs the user gesture, so it comes before any round trip.
     stream = await navigator.mediaDevices.getDisplayMedia({
       video: {
         frameRate: CAP_FRAMERATE,
@@ -887,47 +864,41 @@ async function startShare() {
       audio: false,
     });
   } catch (err) {
-    // Cancelar no picker é NotAllowedError e não merece aviso. Qualquer outra
-    // coisa é falha de verdade e precisa aparecer, em vez de morrer calada.
+    // cancelling in the picker is NotAllowedError and deserves no notice.
+    // anything else is a real failure and has to surface.
     if (err?.name !== "NotAllowedError") {
-      notice(`Falha ao capturar a tela: ${err?.name || err}. ${err?.message || ""}`.trim());
+      notice(`Screen capture failed: ${err?.name || err}. ${err?.message || ""}`.trim());
     }
     return;
   }
 
   localStream = stream;
   const track = stream.getVideoTracks()[0];
-  track.contentHint = "detail"; // prioriza nitidez de texto sobre fluidez
+  track.contentHint = "detail"; // sharp text over smooth motion
   track.onended = stopShare;
 
-  // Corte de resolução na FONTE, não por PeerConnection. O custo de CPU de quem
-  // compartilha não é curva, é degrau: o WebRTC usa ~8 threads de encode por PC
-  // acima de 1920×1080 e ~3 abaixo. Medido no renderer do sharer: 51 threads em
-  // 1920×1080 contra 33 em 1600×900 (ocioso 18). Com 4 destinos são 32 threads
-  // disputando 12 lógicas — oversubscription de thread, não custo de pixel.
-  // Com 4 destinos, libvpx/VP8 em software: 1920×1080 come 10,12 cores de 12 e
-  // entrega 6–9 fps; 1600×900 custa 1,95 cores com 30 fps cheios. Até 1856×1044,
-  // só 7% menos pixels que 1080p, já custa 3,75 cores.
-  // Cortar aqui é UMA redução, compartilhada pelos N encoders; cortar por
-  // PeerConnection seriam N reduções, uma por conexão, e o degrau é do encoder.
-  // Medidos e descartados: baixar framerate PIOROU (11,15 cores a 15fps contra
-  // 10,12 a 30fps) e degradationPreference "balanced" não mudou nada (10,44).
-  // Este é o corte que vale: a caixa acima só garante que a captura chegue
-  // acima do orçamento, e é aqui que ela desce até ele preservando o aspecto
-  // REAL da fonte. Dimensões pares porque encoders trabalham em macroblocos.
+  // the resolution cut happens at the SOURCE, not per PeerConnection. the
+  // sharer's CPU cost is a step, not a curve: WebRTC gives each PC ~8 encode
+  // threads above 1920×1080 and ~3 below. measured in the sharer's renderer, 51
+  // threads at 1920×1080 against 33 at 1600×900 (18 idle). with 4 destinations
+  // that is 32 threads over 12 logical CPUs, thread oversubscription rather
+  // than pixel cost: 1920×1080 eats 10.12 of 12 cores at 6-9 fps while
+  // 1600×900 costs 1.95 cores at a full 30.
   //
-  // O fator é limitado a 1 porque isto só encolhe: crescer além do que a fonte
-  // entrega seria upscale, que gasta banda para inventar pixel. E a comparação
-  // é entre as dimensões calculadas e as atuais, não entre área e orçamento —
-  // a versão antiga perguntava `área > orçamento`, o que deixava passar o caso
-  // em que a área bate exatamente no teto, e chamava à toa quando não precisava.
+  // cutting here is ONE reduction shared by the N encoders; cutting per
+  // PeerConnection would be N of them, and the step belongs to the encoder.
+  // measured and discarded: lowering the framerate made it WORSE (11.15 cores
+  // at 15fps against 10.12 at 30) and "balanced" changed nothing (10.44).
+  //
+  // the factor is capped at 1 because this only shrinks: growing past what the
+  // source delivers would be upscale, spending bandwidth to invent pixels.
   const s = await geometriaReal(track);
 
-  // Parar de compartilhar durante o await acima deixava um rastro: o
-  // `share-stop` saía antes do `share-start`, o servidor via a ordem invertida,
-  // a vaga de sharer ficava queimada e quem assistia travava em "conectando…"
-  // para sempre. Reproduzido parando aos 200ms. `stopShare` zera `localStream`,
-  // então essa comparação é a pergunta "ainda é o meu compartilhamento?".
+  // stopping the share during the await above left a trail: `share-stop` went
+  // out before `share-start`, the server saw them inverted, the sharer slot
+  // stayed burnt and viewers hung on "connecting…" forever. reproduced by
+  // stopping at 200ms. stopShare clears localStream, so this comparison asks
+  // "is this still my share?".
   if (localStream !== stream) return;
 
   if (s.width && s.height) {
@@ -938,10 +909,10 @@ async function startShare() {
       try {
         await track.applyConstraints({ width: w, height: h });
       } catch (err) {
-        // Falhar aqui significa encodar a fonte inteira. Numa tela 4K isso é o
-        // penhasco de CPU (~2 cores viram ~10), então não pode morrer calado.
+        // failing here means encoding the whole source. on a 4K screen that is
+        // the CPU cliff (~2 cores become ~10), so it cannot die silently.
         console.warn(
-          `applyConstraints falhou: captura segue em ${s.width}×${s.height}`,
+          `applyConstraints failed: capture stays at ${s.width}×${s.height}`,
           err,
         );
       }
@@ -949,15 +920,15 @@ async function startShare() {
   }
 
   attachTile(myId, stream, true);
-  // Nada é enviado até o servidor confirmar a vaga via broadcast `sharers`.
+  // nothing is sent until the server confirms the slot via the broadcast.
   send({ t: "share-start" });
   render();
 }
 
-// Fim de um compartilhamento: para os tracks locais e derruba o tile próprio.
-// A parte que difere entre "parei" e "fui negado" fica com quem chama: só quem
-// PAROU precisa avisar o servidor (`share-stop`) e fechar as PCs de envio —
-// quem foi negado nunca teve vaga, logo não tem nada disso.
+// end of a share: stops the local tracks and drops our own tile. what differs
+// between "I stopped" and "I was denied" stays with the caller: only whoever
+// STOPPED has to tell the server and close the sending PCs, since a denied
+// peer never held a slot.
 function discardCapture() {
   localStream?.getTracks().forEach((t) => t.stop());
   localStream = null;
@@ -974,12 +945,12 @@ function stopShare() {
 
 /* ---------- tiles ---------- */
 
-let focusId = null;               // tile no palco inteiro, ou null
+let focusId = null;               // tile owning the whole stage, or null
 
 function attachTile(id, stream, isSelf = false) {
   let tile = tiles.get(id);
-  // A placa de presença mora no mesmo mapa, sob o mesmo id. Descarta antes de
-  // montar o tile de vídeo — placa não tem srcObject, então nada pisca.
+  // the presence tile lives in the same map under the same id. drop it before
+  // building the video tile: it has no srcObject, so nothing flickers.
   if (tile && tile.classList.contains("peer")) {
     tile.remove();
     tiles.delete(id);
@@ -989,17 +960,15 @@ function attachTile(id, stream, isSelf = false) {
     tile = document.createElement("div");
     tile.className = "tile" + (isSelf ? " self" : "");
     tile.dataset.id = id;
-    // Rótulo e telemetria são pílulas sobre o vídeo, como numa call: o tile
-    // passa a ser só a caixa do vídeo, e o encaixe não desconta régua nenhuma.
     tile.innerHTML =
       '<div class="frame">' +
         '<video autoplay playsinline muted></video>' +
         '<button class="zoom" hidden></button>' +
         '<div class="ctl">' +
           '<button class="act focus"></button>' +
-          '<button class="act full">tela cheia</button>' +
+          '<button class="act full">fullscreen</button>' +
         '</div>' +
-        '<span class="who"><i></i><b></b><em>(você)</em></span>' +
+        '<span class="who"><i></i><b></b><em>(you)</em></span>' +
         '<div class="tel"><span class="rate"></span><span class="size"></span>' +
         '<span class="path"></span><canvas class="wave" aria-hidden="true"></canvas></div>' +
       '</div>';
@@ -1015,12 +984,10 @@ function attachTile(id, stream, isSelf = false) {
       if (document.fullscreenElement) document.exitFullscreen();
       else frame.requestFullscreen?.().catch(() => {});
     };
-    // Clique, roda, pan e duplo clique dividem o mesmo quadro; as regras de
-    // convivência moram todas no bindZoom.
     bindZoom(tile, id);
 
-    // A proporção real só aparece com o primeiro frame, e pode mudar no meio
-    // (a pessoa troca a janela capturada). Refaz o layout nos dois casos.
+    // the real aspect ratio only shows up with the first frame, and it can
+    // change mid-call when the sharer switches the captured window.
     const video = tile.querySelector("video");
     video.onloadedmetadata = relayout;
     video.onresize = relayout;
@@ -1048,32 +1015,29 @@ function toggleFocus(id) {
 
 /* ---------- zoom ---------- */
 
-// Zoom é do lado de quem vê e mora num transform no <video> dentro do quadro.
-// Nenhuma caixa muda de tamanho: o encaixe em px, o modo foco, as pílulas por
-// cima do vídeo e a página-sem-scroll ficam exatos — o bench de layout não
-// sabe que o zoom existe, e é assim de propósito.
+// receiver-side zoom, living in a transform on the <video> inside the frame.
+// no box changes size, so the px fit, focus mode, the pills over the video and
+// the never-scrolling page are all untouched.
 //
-// O teto de qualidade não é daqui: a captura já entra no orçamento de pixels
-// (MAX_CAPTURE_PIXELS), então ampliar além do tamanho nativo é ver upscale
-// borrado. O ZOOM_MAX cobre inspeção de texto, não milagre.
+// the quality ceiling is not set here: the capture already enters within
+// MAX_CAPTURE_PIXELS, so magnifying past native size is blurry upscale.
+// ZOOM_MAX covers inspecting text, not miracles.
 //
-// Gesto: roda aproxima ancorado no cursor (a pinça de trackpad chega como
-// ctrl+roda e cai no mesmo caminho), arrastar move quando há zoom, duplo
-// clique restaura. Clique simples continua sendo foco — mas não dispara depois
-// de um pan, nem enquanto o tile está ampliado: quem está lendo de perto não
-// quer ser arrancado pro grid. Miniatura não carrega zoom; nela o gesto é só
-// navegação, e focar dá mais pixels do que qualquer zoom numa trilha de 150px.
+// gesture: the wheel magnifies anchored at the cursor (trackpad pinch arrives
+// as ctrl+wheel and lands in the same handler), dragging pans when zoomed,
+// double click restores. a plain click still focuses, but not after a pan and
+// not while the tile is magnified: somebody reading up close does not want to
+// be yanked back to the grid.
 const ZOOM_MAX = 4;
-const zooms = new Map();          // peerId -> { k, x, y }; ausente é identidade
+const zooms = new Map();          // peerId -> { k, x, y }; absent is identity
 
-// A caixa que o confinamento tem que usar é a de DESTINO, não a que está na
-// tela agora: o .tile transiciona width/height em .16s, e o passe de clamp roda
-// dentro do layout(), no mesmo tique em que place() acabou de escrever o alvo.
-// Ler clientWidth ali devolve a largura interpolada, o pan é confinado contra
-// uma caixa que já não existe, e o vídeo fica fora do quadro de vez — o mesmo
-// erro que o bench evita esperando a transição assentar. O alvo está no style
-// inline que place() escreveu. Em tela cheia o quadro deixa o fluxo e o .tile
-// não manda mais nele, então ali a medida da tela é a verdadeira.
+// the clamp has to use the TARGET box, not the one on screen right now: .tile
+// transitions width/height over .16s, and the clamp pass runs inside layout(),
+// in the same tick place() just wrote the target. reading clientWidth there
+// returns the interpolated width, the pan is confined against a box that no
+// longer exists, and the video ends up wholly outside its frame. the target is
+// in the inline style place() wrote. in fullscreen the frame leaves the flow
+// and .tile no longer governs it, so there the measured box is the true one.
 function caixaAlvo(tile, frame) {
   if (document.fullscreenElement === frame) {
     return { W: frame.clientWidth || 1, H: frame.clientHeight || 1 };
@@ -1091,47 +1055,47 @@ function applyZoom(id) {
   if (!frame || !video) return;
   const z = zooms.get(id);
   if (!z || z.k <= 1) {
-    // Identidade: some da memória junto com o transform, sem estado fantasma.
+    // identity: leaves the map along with the transform, no phantom state.
     zooms.delete(id);
     video.style.transform = "";
     frame.classList.remove("zoomed", "dragging");
-    frame.title = "clique foca · roda dá zoom · duplo clique restaura";
+    frame.title = "click focuses · wheel zooms · double click restores";
     if (lupa) { lupa.hidden = true; lupa.classList.remove("up"); }
     return;
   }
-  // Pan confinado à própria caixa: o vídeo ampliado nunca deixa de cobrir o
-  // quadro, então não há como perder a imagem fora da vista.
+  // the pan is confined to the box, so the magnified video never stops
+  // covering the frame and the image cannot be lost off screen.
   const { W, H } = caixaAlvo(tile, frame);
   z.x = Math.min(0, Math.max(W * (1 - z.k), z.x));
   z.y = Math.min(0, Math.max(H * (1 - z.k), z.y));
   video.style.transformOrigin = "0 0";
   video.style.transform = `translate(${z.x}px, ${z.y}px) scale(${z.k})`;
   frame.classList.add("zoomed");
-  frame.title = "arrasta pra mover · roda ajusta · duplo clique restaura";
+  frame.title = "drag to move · wheel adjusts · double click restores";
   if (lupa) {
-    // Até onde há detalhe pra recuperar: o quadro exibe o vídeo já reduzido, e
-    // essa razão diz quanto. Acima dela não entra pixel novo, só interpolação.
-    // Sem metadado ainda não se sabe nada: Infinity é "assume que há detalhe",
-    // porque dizer "é interpolação" antes do primeiro frame é dizer uma
-    // falsidade justamente onde nada é conhecido.
+    // how much detail is left to recover: the frame shows the video already
+    // shrunk, and this ratio says by how much. past it no new pixel arrives,
+    // only interpolation. with no metadata yet, Infinity means "assume there is
+    // detail", because claiming interpolation before the first frame would be
+    // asserting a falsehood exactly where nothing is known.
     const nativo = video.videoWidth ? video.videoWidth / (W * devicePixelRatio) : Infinity;
     const up = z.k > Math.max(1, nativo);
     lupa.hidden = false;
     lupa.textContent = z.k.toFixed(1) + "×";
     lupa.classList.toggle("up", up);
     lupa.title = up
-      ? `${z.k.toFixed(1)}× · além do nativo, é interpolação · clique restaura`
-      : `${z.k.toFixed(1)}× · ainda dentro do detalhe que chegou · clique restaura`;
+      ? `${z.k.toFixed(1)}× · past native, this is interpolation · click restores`
+      : `${z.k.toFixed(1)}× · still within the detail that arrived · click restores`;
   }
 }
 
 function bindZoom(tile, id) {
   const frame = tile.querySelector(".frame");
-  // A dica mora no title do quadro, não num botão novo: zoom não é modo do
-  // dock, é gesto sobre o vídeo.
-  frame.title = "clique foca · roda dá zoom · duplo clique restaura";
-  let drag = null;                // { px, py, zx, zy } — pan em curso
-  let panned = false;             // o clique que vem depois do pan não vira foco
+  // the hint lives in the frame's title, not in a new button: zoom is not a
+  // dock mode, it is a gesture over the video.
+  frame.title = "click focuses · wheel zooms · double click restores";
+  let drag = null;                // { px, py, zx, zy } while panning
+  let panned = false;             // the click after a pan must not focus
 
   frame.onclick = () => {
     if (panned) { panned = false; return; }
@@ -1140,26 +1104,25 @@ function bindZoom(tile, id) {
   };
 
   frame.addEventListener("wheel", (e) => {
-    // Miniatura não tem zoom, e a regra tem que morar AQUI e não só no layout():
-    // ampliar uma miniatura dava um recorte ilegível, sem indicador (que o
-    // .tile.mini esconde) e sem pan (o .ctl da mini cobre o quadro inteiro) — e
-    // pior, o clique passava a não focar mais, que é o único uso da trilha.
+    // a thumbnail has no zoom, and the rule has to live HERE and not only in
+    // layout(): magnifying one gave an unreadable crop with no indicator
+    // (.tile.mini hides it) and no pan (.ctl covers the whole frame), and worse,
+    // the click stopped focusing, which is the rail's only use.
     if (tile.classList.contains("mini")) return;
-    // deltaMode 1 conta linhas (Firefox): ~3 por entalhe ≈ 100px.
+    // deltaMode 1 counts lines (Firefox): ~3 per notch ≈ 100px.
     const dy = e.deltaY * (e.deltaMode === 1 ? 33 : 1);
     if (!dy) return;
     e.preventDefault();
     const z = zooms.get(id) || { k: 1, x: 0, y: 0 };
     const k = Math.min(ZOOM_MAX, Math.max(1, z.k * Math.exp(-dy * 0.002)));
     if (k === z.k && !zooms.has(id)) return;
-    // Ancora no cursor: o ponto do vídeo sob ele não anda. Com origem (0,0) o
-    // mapa é s = k·p + t, então o ponto sob o cursor é p = (c − t)/k, e manter
-    // k'·p + t' = c dá t' = c·(1 − r) + t·r, com r = k'/k.
+    // anchored at the cursor: the point of video under it does not move. with
+    // origin (0,0) the map is s = k·p + t, so that point is p = (c − t)/k, and
+    // holding k'·p + t' = c gives t' = c·(1 − r) + t·r, with r = k'/k.
     //
-    // O termo t·r é o que se perde fácil, e ele só aparece quando t ≠ 0: no
-    // PRIMEIRO entalhe t é zero e qualquer versão acerta. Foi assim que uma
-    // fórmula sem ele passou desapercebida — a deriva começa no segundo, e o
-    // bench dá três de propósito.
+    // the t·r term is the one easily lost, and it only shows up once t ≠ 0: on
+    // the FIRST notch t is zero and any version looks right. the drift starts
+    // on the second, which is why the bench gives three.
     const r = frame.getBoundingClientRect();
     const q = k / z.k;
     z.x = (e.clientX - r.left) * (1 - q) + z.x * q;
@@ -1185,9 +1148,9 @@ function bindZoom(tile, id) {
 
   frame.addEventListener("pointerdown", (e) => {
     panned = false;
-    // Os botões flutuantes são filhos do quadro e só param a propagação do
-    // click, não a do pointerdown. Sem esta saída, apertar "tela cheia" e mexer
-    // 10px arrastava o vídeo por baixo junto com o clique.
+    // the floating buttons are children of the frame and only stop click
+    // propagation, not pointerdown. without this bail, pressing "fullscreen"
+    // and moving 10px panned the video underneath.
     if (e.target.closest(".ctl, .zoom")) return;
     const z = zooms.get(id);
     if (e.button !== 0 || !z) return;
@@ -1196,13 +1159,13 @@ function bindZoom(tile, id) {
   });
   frame.addEventListener("pointermove", (e) => {
     if (!drag) return;
-    // Botão já solto e ninguém avisou (release fora da janela em alguns
-    // gerenciadores): sem isto o tile continua panando no mouse solto.
+    // the button was released and nobody said so (release outside the window
+    // in some window managers): without this the tile keeps panning.
     if (!e.buttons) return solta(e);
     const z = zooms.get(id);
     if (!z) { drag = null; return; }
     const dx = e.clientX - drag.px, dy = e.clientY - drag.py;
-    // Limiar de 4px separa pan de clique: tremido não move nada.
+    // a 4px threshold separates a pan from a click: a shaky hand moves nothing.
     if (!panned && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
       panned = true;
       frame.classList.add("dragging");
@@ -1221,11 +1184,11 @@ function bindZoom(tile, id) {
   });
 }
 
-// Presença: quem está na sala aparece no palco mesmo sem transmitir, com um
-// monograma no lugar do vídeo — é o tile de quem está com a câmera fechada numa
-// call. Sai de `peers` e `sharers`, como todo o resto: não existe um segundo
-// mapa pra dessincronizar. Não tem controles: focar num monograma não leva a
-// nada.
+// presence: whoever is in the room appears on stage even without transmitting,
+// a monogram where the video goes, which is the tile a call gives somebody with
+// the camera off. derived from `peers` and `sharers` like everything else, so
+// there is no second map to drift. no controls: focusing a monogram leads
+// nowhere.
 function plate(id) {
   let tile = tiles.get(id);
   if (tile) return tile;
@@ -1234,19 +1197,20 @@ function plate(id) {
   tile.dataset.id = id;
   tile.innerHTML =
     '<div class="frame"><span class="glyph" aria-hidden="true"></span></div>' +
-    '<span class="who"><i></i><b></b><em>(você)</em></span>';
+    '<span class="who"><i></i><b></b><em>(you)</em></span>';
   tiles.set(id, tile);
   $("stage").append(tile);
   return tile;
 }
 
-// Sozinho não há roster: uma placa só não informa nada, e o palco vazio é o que
-// deixa o card de "nada no ar" aparecer. Chamado no início de render(), então
-// não pode usar attachTile/dropTile — os dois chamam render() de volta.
+// alone there is no roster: one tile informs nothing, and an empty stage is
+// what lets the "nothing on air" card appear. called at the top of render(), so
+// it cannot use attachTile/dropTile, which both call render() back.
 function syncRoster() {
   const want = peers.size ? new Set([myId, ...peers]) : new Set();
   for (const id of want) {
-    // Quem já tem vídeo no palco não ganha placa: o tile dele é a presença.
+    // whoever already has video on stage gets no monogram: that tile is their
+    // presence.
     if (!tiles.has(id) || tiles.get(id).classList.contains("peer")) plate(id);
   }
   for (const [id, tile] of [...tiles]) {
@@ -1258,31 +1222,30 @@ function syncRoster() {
 
 /* ---------- layout ---------- */
 
-// O encaixe é calculado aqui, em px, não pelo CSS. Motivo: o palco tem altura
-// fixa e cada tela compartilhada tem a proporção dela (1600×900 e 1440×900
-// convivem na mesma sala). Dimensionar por largura, como fazia o grid de CSS,
-// deixava o tile mais alto que a viewport e a página passava a rolar — a faixa
-// de telemetria ficava embaixo da dobra.
-const GAP = 12;                   // entre tiles
-const PAD_X = 14;                 // borda lateral do palco
-// O cromo flutua sobre o palco, mas não pode cobrir tile: estas duas faixas são
-// a pílula de cima e o dock de baixo, e saem da altura disponível.
+// the fit is computed here, in px, not by the CSS. the stage has a fixed height
+// and every shared screen has its own aspect ratio (1600×900 and 1440×900
+// coexist in one room). sizing by width, as the old CSS grid did, made a tile
+// taller than the viewport and the page started scrolling.
+const GAP = 12;                   // between tiles
+const PAD_X = 14;                 // stage side margin
+// the chrome floats over the stage but must not cover a tile: these two bands
+// are the top pill and the bottom dock, taken out of the available height.
 const PAD_TOP = 52;
 const PAD_BOT = 84;
-const WAVE_LEN = 60;              // amostras guardadas, uma por segundo
-const WAVE_SLOT = 3;              // px por amostra: barra de 2 mais 1 de ar
+const WAVE_LEN = 60;              // samples kept, one per second
+const WAVE_SLOT = 3;              // px per sample: a 2px bar plus 1 of air
 const WAVE_H = 14;
-// Os dois limiares da linha de pílulas, medidos contra a sobreposição real do
-// rótulo com a telemetria: abaixo do primeiro a fita não cabe junto com os
-// números, abaixo do segundo nem os números cabem junto com o nome.
+// the two thresholds of the pill line, set by measuring the name and telemetry
+// boxes actually overlapping: below the first the tape does not fit alongside
+// the numbers, below the second not even the numbers fit alongside the name.
 const WAVE_BELOW = 520;
 const TEL_BELOW = 340;
-// Presença tem a forma de um tile de call, não de um quadrado: quando ninguém
-// transmite, a grade de monogramas é a chamada inteira.
+// presence has the shape of a call tile, not a square: with nobody transmitting
+// the grid of monograms is the whole call.
 const PRES_AR = 16 / 9;
-// Com vídeo no palco a presença desce pra uma trilha com teto. O teto é o ponto
-// todo: monograma não carrega informação por pixel, e tela compartilhada
-// encolhida deixa de ser texto legível.
+// with video on stage presence drops to a capped rail. the cap is the whole
+// point: a monogram carries almost no information per pixel, while a shared
+// screen shrunk down stops being readable text.
 const PRES_RAIL = 132;
 
 let pending = 0;
@@ -1301,7 +1264,7 @@ function arOf(tile) {
   return v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 16 / 9;
 }
 
-// Maior vídeo com proporção ar que cabe em W×H.
+// the largest box of aspect `ar` that fits in W×H.
 function fitBox(ar, W, H) {
   const h = Math.max(24, Math.min(H, W / ar));
   return { w: Math.min(W, h * ar), h };
@@ -1330,15 +1293,15 @@ function layout() {
   const vids = list.filter((t) => !isPlate(t));
   const plates = list.filter(isPlate);
 
-  // No foco a presença entra na trilha como qualquer miniatura: o roster não
-  // desaparece justo quando alguém está olhando uma tela de perto.
+  // in focus, presence joins the rail like any thumbnail: the roster does not
+  // vanish just when somebody is looking at a screen up close.
   if (focused && list.length > 1) fitFocus(list, focused, PAD_X, PAD_TOP, W, H);
-  // Ninguém transmitindo: a grade de monogramas é a call inteira, célula igual
-  // pra todo mundo. É o único estado em que presença pode ocupar o palco.
+  // nobody transmitting: the grid of monograms is the whole call, equal cells.
+  // this is the only state where presence owns the stage.
   else if (!vids.length) fitGrid(plates, PAD_X, PAD_TOP, W, H);
   else if (!plates.length) fitGrid(vids, PAD_X, PAD_TOP, W, H);
   else {
-    // O piso de 64 não pode comer o palco numa janela baixa, daí o 0.4.
+    // the 64px floor must not eat the stage in a short window, hence the 0.4.
     const rail = Math.min(Math.max(64, H * 0.22), H * 0.4, PRES_RAIL);
     fitGrid(vids, PAD_X, PAD_TOP, W, H - rail - GAP);
     fitRoster(plates, PAD_X, PAD_TOP + H - rail, W, rail);
@@ -1346,9 +1309,9 @@ function layout() {
 
   for (const tile of vids) sizeWave(tile);
 
-  // O zoom guarda offsets em px, então a caixa nova do tile reconfina o pan —
-  // e quem caiu na trilha de miniaturas perde o zoom, que lá não tem gesto.
-  // Transform não participa do encaixe: isto roda DEPOIS de place(), só lê.
+  // zoom keeps offsets in px, so the tile's new box re-confines the pan, and
+  // whoever dropped into the thumbnail rail loses it, since there is no gesture
+  // there. transform plays no part in the fit: this runs AFTER place().
   for (const [id] of [...zooms]) {
     const t = tiles.get(id);
     if (!t || t.classList.contains("mini")) zooms.delete(id);
@@ -1356,19 +1319,18 @@ function layout() {
   }
 }
 
-// Escolhe o número de colunas que maximiza a área total de vídeo. Não é
-// ceil(sqrt(n)): com proporções diferentes na mesma sala, o arranjo ótimo
-// depende delas, e o palco raramente é quadrado.
+// picks the column count that maximizes total video area. not ceil(sqrt(n)):
+// with different aspect ratios in one room the best arrangement depends on
+// them, and the stage is rarely square.
 //
-// Dentro de cada linha todos os tiles têm a MESMA altura e as larguras saem da
-// proporção de cada um, como numa galeria justificada. As linhas são empilhadas
-// coladas e o bloco todo é centralizado — centralizar cada tile na sua célula
-// abria buracos irregulares entre eles.
+// inside a row every tile shares the SAME height and the widths come from each
+// aspect ratio, like a justified gallery. rows stack flush and the whole block
+// is centred; centring each tile in its own cell opened ragged gaps.
 function rowsFor(list, ars, cols, W, H) {
   const n = list.length;
   const nRows = Math.ceil(n / cols);
-  // Teto de altura por linha. Uniforme de propósito: é o que garante que a soma
-  // das linhas nunca passe de H, ou seja, que nada precise de scroll.
+  // height ceiling per row. uniform on purpose: it is what guarantees the rows
+  // never sum past H, which is what keeps the page from scrolling.
   const budget = (H - GAP * (nRows - 1)) / nRows;
   const rows = [];
   for (let r = 0; r < nRows; r++) {
@@ -1408,9 +1370,9 @@ function fitGrid(list, X, Y, W, H) {
   }
 }
 
-// Trilha de presença: uma linha de monogramas embaixo do vídeo, com teto de
-// altura. Existe pra que quem está na sala não suma do palco quando alguém
-// compartilha, sem tomar área de quem compartilhou.
+// presence rail: a row of monograms under the video, height-capped, so that
+// whoever is in the room does not vanish from the stage when somebody shares,
+// without taking area from the share itself.
 function fitRoster(list, X, Y, W, H) {
   const k = list.length;
   const slot = (W - GAP * (k - 1)) / k;
@@ -1425,9 +1387,10 @@ function fitRoster(list, X, Y, W, H) {
   }
 }
 
-// Foco: um tile no palco, os outros numa trilha. À direita quando há largura,
-// embaixo quando não há. Ninguém troca de pai no DOM — mover um `<video>` com
-// srcObject pisca — só muda de tamanho e de lugar.
+// focus: one tile on the stage, the others in a rail, on the right when there
+// is width and at the bottom when there is not. nothing changes parent in the
+// DOM, since moving a <video> with a live srcObject makes it flicker; tiles
+// only change size and position.
 function fitFocus(list, focused, X, Y, W, H) {
   const others = list.filter((t) => t !== focused);
   const k = others.length;
@@ -1441,8 +1404,8 @@ function fitFocus(list, focused, X, Y, W, H) {
   if (side) {
     const top = Y + (mainH - box.h) / 2;
     place(focused, X + (mainW - box.w) / 2, top, box.w, box.h, false);
-    // Trilha pendurada na borda de cima do tile em foco: os dois viram um bloco
-    // só. Centralizar a trilha na altura do palco a deixava solta.
+    // the rail hangs off the focused tile's top edge so the two read as one
+    // block; centring it on the stage height left it floating.
     const slot = (H - GAP * (k - 1)) / k;
     const boxes = others.map((t) => fitBox(arOf(t), railW, slot));
     const total = boxes.reduce((sum, b) => sum + b.h, 0) + GAP * (k - 1);
@@ -1454,7 +1417,7 @@ function fitFocus(list, focused, X, Y, W, H) {
     return;
   }
 
-  // Retrato: foco e trilha colados, bloco centralizado.
+  // portrait: focus and rail flush, the block centred.
   const slot = (W - GAP * (k - 1)) / k;
   const boxes = others.map((t) => fitBox(arOf(t), slot, railH));
   const miniH = Math.max(...boxes.map((b) => b.h));
@@ -1476,24 +1439,24 @@ document.addEventListener("fullscreenchange", relayout);
 addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (gateOpen) return closeGate();
-  // Em tela cheia o esc é do navegador; aqui só sai do foco.
+  // in fullscreen esc belongs to the browser; here it only leaves focus.
   if (focusId && !document.fullscreenElement) {
     focusId = null;
     render();
   }
 });
 
-/* ---------- nome ---------- */
+/* ---------- name ---------- */
 
 const NAME_KEY = "ss:nome";
-// Obrigatório, e com piso: uma letra não distingue duas pessoas, e quem entra
-// numa sala precisa ser reconhecível por quem já está lá. O servidor continua
-// aceitando vazio (é como se apaga um nome), então esta regra é do cliente:
-// outro cliente ainda poderia entrar sem nome, e aí `nameOf` cai no id.
+// mandatory, with a floor: one letter does not tell two people apart, and
+// whoever joins has to be recognizable to those already there. the server still
+// accepts empty, which is how a name is erased, so this rule is the client's:
+// another client could still join unnamed, and then `nameOf` falls back to id.
 const MIN_NAME = 3;
 
-// Mesmo saneamento do servidor. Ele já corta em 24, mas o mapa chega de outra
-// máquina e o campo é digitado aqui: os dois lados cortam, ninguém confia.
+// same sanitizing as the server. it already cuts at 24, but the map arrives
+// from another machine and the field is typed here: both sides cut.
 function cleanName(raw) {
   return String(raw ?? "").replace(/\s+/g, " ").trim().slice(0, 24);
 }
@@ -1502,14 +1465,13 @@ function nameOk(raw) {
   return [...cleanName(raw)].length >= MIN_NAME;
 }
 
-// Primeiro GRAFEMA, não primeiro char: `slice(0,1)` partiria o par surrogate
-// no meio, e `[...nome][0]` — que itera code points — ainda parte o que a
-// pessoa vê como uma letra só: 🇧🇷 são dois regional indicators, e um emoji
-// com tom de pele é base + modificador. Nos dois casos o monograma saía uma
-// caixinha. `Intl.Segmenter` é o único que segmenta pelo que se enxerga; onde
-// ele não existir, cai nos code points, que já é melhor que `slice`.
-// Vazio devolve o cursor `_`, que é o desenho de quem ainda não se apresentou
-// — usado pelo monograma do tile e pelo avatar da portaria.
+// first GRAPHEME, not first char: slice(0,1) would split a surrogate pair, and
+// [...name][0], which iterates code points, still splits what a person sees as
+// one letter (🇧🇷 is two regional indicators, and an emoji with a skin tone is
+// base + modifier). both came out as a tofu box. Intl.Segmenter is the only one
+// that segments by what is seen; without it, code points still beat slice.
+// empty returns the `_` cursor, the drawing for somebody yet to introduce
+// themselves.
 const SEG = typeof Intl.Segmenter === "function"
   ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
   : null;
@@ -1519,28 +1481,28 @@ function initial(nome) {
   return primeiro?.toUpperCase() ?? "_";
 }
 
-// Quem não tem nome aparece pelo id, que é o único identificador que o servidor
-// garante.
+// whoever has no name shows up by id, the only identifier the server
+// guarantees.
 function nameOf(id) {
   return names.get(id) || id;
 }
 
-// A pílula do meu tile dizia só "você", que some no meio de uma sala cheia:
-// quem procura a própria tela procura o nome que digitou. Escreve o nome e
-// acende a marca "(você)" ao lado. O nome sai de `myName` e não de
-// `nameOf(myId)` porque o broadcast `names` chega depois do `joined` — nesse
-// intervalo eu apareceria pelo id. Sem nome válido (outro cliente, ou antes da
-// portaria) sobra "você" sozinho, que não se qualifica duas vezes.
+// on a stage of five, whoever is looking for their own screen is looking for
+// the name they typed, so the pill writes the name and lights the "(you)"
+// marker beside it. the name comes from `myName` and not nameOf(myId) because
+// the `names` broadcast lands after `joined`, and in that gap I would show up
+// by id. with no valid name it falls back to a bare "you", which does not
+// qualify itself twice.
 function pill(tile, id) {
   const eu = id === myId;
-  const nome = eu ? (nameOk(myName) ? myName : "você") : nameOf(id);
+  const nome = eu ? (nameOk(myName) ? myName : "you") : nameOf(id);
   tile.querySelector(".who b").textContent = nome;
-  tile.querySelector(".who").classList.toggle("eu", eu && nome !== "você");
+  tile.querySelector(".who").classList.toggle("eu", eu && nome !== "you");
   return nome;
 }
 
-// localStorage lança em contexto restrito (cookies bloqueados, iframe sandbox).
-// Não lembrar o nome não é motivo pra derrubar a página.
+// localStorage throws in a restricted context (cookies blocked, sandboxed
+// iframe). not remembering a name is no reason to take the page down.
 function loadName() {
   try { return cleanName(localStorage.getItem(NAME_KEY)); } catch { return ""; }
 }
@@ -1549,8 +1511,8 @@ function storeName(v) {
   try { localStorage.setItem(NAME_KEY, v); } catch {}
 }
 
-// Sem debounce: o nome não é mais digitado ao vivo no cabeçalho, é confirmado
-// na portaria. Uma confirmação, um `rename`.
+// no debounce: the name is not typed live into the header any more, it is
+// confirmed at the gate. one confirmation, one `rename`.
 function setName(raw) {
   const v = cleanName(raw);
   if (!nameOk(v) || v === myName) return;
@@ -1560,9 +1522,9 @@ function setName(raw) {
   render();
 }
 
-// Entrar é mandar `join`, e isso só acontece com nome válido. Enquanto a
-// portaria não for respondida o socket existe mas a pessoa não está em sala
-// nenhuma: o servidor ignora tudo que chega antes do join.
+// entering means sending `join`, and that only happens with a valid name.
+// until the gate is answered the socket exists but the person is in no room:
+// the server ignores everything that arrives before a join.
 function entrar() {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   if (myId || !nameOk(myName)) return;
@@ -1571,22 +1533,22 @@ function entrar() {
 
 myName = loadName();
 
-/* ---------- salas ---------- */
+/* ---------- rooms ---------- */
 
 const ROOMS_KEY = "ss:salas";
 const ROOMS_MAX = 8;
 
-// Mesmo corte do servidor (String, 64), mais o colapso de espaços que o
-// fragmento deixa passar. Vazio cai em "sala", o padrão dos dois lados.
+// the same cut as the server (String, 64), plus the whitespace collapse the
+// fragment lets through. empty falls back to "room", the default on both sides.
 function cleanRoom(raw) {
-  return String(raw ?? "").replace(/\s+/g, " ").trim().slice(0, 64) || "sala";
+  return String(raw ?? "").replace(/\s+/g, " ").trim().slice(0, 64) || "room";
 }
 
-// As salas que a portaria oferece são o histórico DESTE navegador, não um
-// diretório da rede. O servidor sabe quais salas têm gente agora (o mapa
-// `rooms`, em server.ts), mas não conta isso pro cliente: cada um só recebe
-// peers, names e sharers da sala em que está. E sala vazia deixa de existir lá
-// no close. Ocupação, portanto, só na sala atual.
+// the rooms the gate offers are THIS browser's history, not a directory of the
+// network. the server knows which rooms have people in them right now (the
+// `rooms` map in server.ts) but never tells the client: each one only receives
+// peers, names and sharers for the room it is in, and an empty room stops
+// existing on close. occupancy, therefore, only for the current room.
 function loadRooms() {
   try {
     const v = JSON.parse(localStorage.getItem(ROOMS_KEY) || "[]");
@@ -1605,10 +1567,10 @@ function paintRoom() {
   document.title = `#${ROOM} · ss`;
 }
 
-// Troca de sala sem recarregar. O socket novo ganha um id novo do servidor, e o
-// `joined` já sabe derrubar o que era do id velho: é o mesmo caminho do
-// reconnect. Quem estava transmitindo continua, e a vaga de sharer é pedida de
-// novo na sala nova.
+// switching rooms without a reload. the new socket gets a new id from the
+// server, and `joined` already knows how to tear down what belonged to the old
+// one: same path as a reconnect. whoever was transmitting keeps going and asks
+// for a sharer slot again in the new room.
 function switchRoom(nome) {
   const alvo = cleanRoom(nome);
   if (alvo === ROOM) return;
@@ -1618,14 +1580,14 @@ function switchRoom(nome) {
   paintRoom();
   history.replaceState(null, "", "#" + encodeURIComponent(ROOM));
 
-  // Recusa da sala anterior não vale na próxima.
+  // a refusal from the previous room does not carry into the next.
   dead = false;
   notice("");
 
   clearTimeout(retry);
   if (ws) {
-    // Solta os handlers antes de fechar: senão o onclose do socket velho agenda
-    // um reconnect que corre junto com o connect() de baixo.
+    // release the handlers before closing, or the old socket's onclose
+    // schedules a reconnect that races the connect() below.
     ws.onclose = null;
     ws.onmessage = null;
     ws.close();
@@ -1640,25 +1602,25 @@ function switchRoom(nome) {
   connect();
 }
 
-// O `#` continua sendo o endereço da sala: editar na barra troca de sala como o
-// dock troca. replaceState não dispara hashchange, então isto só pega a edição
-// de gente.
+// the `#` is still the room's address: editing it in the bar switches rooms
+// like the dock does. replaceState fires no hashchange, so this only catches
+// edits made by a person.
 addEventListener("hashchange", () => {
   switchRoom(cleanRoom(decodeURIComponent(location.hash.slice(1))));
 });
 
-/* ---------- portaria ---------- */
+/* ---------- gate ---------- */
 
-// Ela é a porta: o `join` só sai com nome válido, então enquanto a portaria não
-// for respondida a pessoa não está na sala. É por isso que ela não fecha no esc
-// nem no clique fora quando ainda não há nome. Depois, o mesmo modal serve pra
-// trocar de sala ou de nome, e aí fechar sem responder é legítimo.
+// the modal IS the door: `join` only goes out with a valid name, so until the
+// gate is answered the person is in no room. that is why it does not close on
+// esc or on a click outside while there is still no name. afterwards the same
+// modal serves to switch room or name, and closing it unanswered is legitimate.
 function openGate(trava) {
   gateOpen = true;
   gateTrava = !!trava;
   $("gateName").value = myName;
   $("gateRoom").value = ROOM;
-  $("gateTitle").textContent = trava ? "Quem entra na sala" : "Sala e nome";
+  $("gateTitle").textContent = trava ? "Who is joining" : "Room and name";
   $("gateSub").hidden = !trava;
   paintGate();
   $("gate").hidden = false;
@@ -1668,8 +1630,8 @@ function openGate(trava) {
 }
 
 function closeGate() {
-  // Sem nome não há saída: a portaria é a única coisa entre a pessoa e uma sala
-  // onde ela apareceria como "3f9a1b2c" pra todo mundo.
+  // with no name there is no way out: the gate is the only thing between the
+  // person and a room where they would show up as "3f9a1b2c" to everybody.
   if (gateTrava) return;
   gateOpen = false;
   $("gate").hidden = true;
@@ -1684,25 +1646,25 @@ function paintGate() {
   av.textContent = initial(nome);
   av.className = "av" + (ok ? "" : " anon");
 
-  // Só reclama depois que a pessoa digitou alguma coisa: campo intocado com
-  // aviso aceso é bronca antes do erro.
+  // only complain once something has been typed: an untouched field with a
+  // warning lit is a telling-off before the mistake.
   const dica = $("gateHint");
-  dica.textContent = ok ? `${[...nome].length}/24` : `mínimo ${MIN_NAME} letras`;
+  dica.textContent = ok ? `${[...nome].length}/24` : `${MIN_NAME} letters minimum`;
   dica.className = !ok && nome ? "bad" : "";
 
   const go = $("gateGo");
   go.disabled = !ok;
-  go.textContent = sala === ROOM ? "Entrar" : `Entrar em #${sala}`;
+  go.textContent = sala === ROOM ? "Enter" : `Enter #${sala}`;
   $("gateUrl").textContent = `${location.host}/#${encodeURIComponent(sala)}`;
 
   const box = $("gateRecents");
   box.textContent = "";
   const list = loadRooms();
-  // Uma sala só, e é a que já está no campo: a linha não informaria nada.
+  // one room, and it is the one already in the field: the row says nothing.
   if (!list.length || (list.length === 1 && list[0] === sala)) return;
   const k = document.createElement("span");
   k.className = "k";
-  k.textContent = "suas salas";
+  k.textContent = "your rooms";
   box.append(k);
   for (const r of list) {
     const b = document.createElement("button");
@@ -1722,8 +1684,8 @@ function confirmGate() {
   setName($("gateName").value);
   gateTrava = false;
   closeGate();
-  // Mesma sala: o join estava só esperando o nome. Sala nova: reconecta, e o
-  // join sai no onopen, já com nome.
+  // same room: the join was only waiting for a name. new room: reconnect, and
+  // the join goes out on onopen, name included.
   if (sala === ROOM) entrar();
   else switchRoom(sala);
 }
@@ -1740,30 +1702,29 @@ $("gate").onkeydown = (e) => {
 
 function render() {
   const n = peers.size;
-  // Antes de qualquer coisa que conte tiles: o palco vazio e o encaixe dependem
-  // de o roster já estar montado.
+  // before anything that counts tiles: the empty stage and the fit both depend
+  // on the roster being built already.
   syncRoster();
 
-  // Pílula de cima: sala, ocupação de sharers, tamanho da sala. A ocupação é a
-  // resposta pra "por que o botão está apagado?" sem passar o mouse em cima.
+  // the occupancy answers "why is the button dimmed?" without hovering it.
   const air = $("topAir");
   air.textContent = myId
-    ? `${sharers.size}/${maxSharers} no ar`
-    : dead ? "recusado" : "conectando";
+    ? `${sharers.size}/${maxSharers} on air`
+    : dead ? "refused" : "connecting";
   air.className = myId && sharers.size >= maxSharers ? "cheio" : "";
   const quantos = $("topPeers");
   quantos.hidden = !myId;
-  quantos.textContent = n ? `${n + 1} na sala` : "só você";
+  quantos.textContent = n ? `${n + 1} in the room` : "just you";
 
   const idle = tiles.size === 0;
   $("empty").hidden = !idle;
   if (idle) {
-    // Mesmo teto que startShare() usa como dica no picker, assumindo 16:9.
+    // the same budget startShare() hints to the picker, assuming 16:9.
     const { w, h } = boxFor(maxCapturePixels);
     $("fRoom").textContent = ROOM;
     $("fPeers").textContent = n;
     $("fSharers").textContent = `${sharers.size}/${maxSharers}`;
-    $("fCap").textContent = `até ${w}×${h}`;
+    $("fCap").textContent = `up to ${w}×${h}`;
   }
   $("live").classList.toggle("live", !!localStream);
 
@@ -1771,41 +1732,40 @@ function render() {
   $("gridBtn").disabled = !focusId;
 
   for (const [id, tile] of tiles) {
-    // O nome pode mudar depois do tile existir, então a pílula é reescrita a
-    // cada render, não só na criação.
+    // a name can change after the tile exists, so the pill is rewritten on
+    // every render, not only at creation.
     pill(tile, id);
     if (tile.classList.contains("peer")) {
       const named = names.has(id);
       const waiting = sharers.has(id);
       tile.classList.toggle("anon", !named);
       tile.classList.toggle("wait", waiting);
-      // Primeiro grafema, não primeiro char — ver initial().
       tile.querySelector(".glyph").textContent =
         named ? initial(nameOf(id)) : "_";
-      if (waiting) tile.querySelector(".who b").textContent = "conectando…";
-      // Dois homônimos na sala só se distinguem pelo id.
+      if (waiting) tile.querySelector(".who b").textContent = "connecting…";
+      // two people with the same name are only told apart by id.
       tile.title = named ? `${nameOf(id)} · ${id}` : id;
       continue;
     }
     const on = id === focusId;
     tile.classList.toggle("focused", on);
-    const alvo = id === myId ? "sua tela" : nameOf(id);
+    const alvo = id === myId ? "your screen" : nameOf(id);
     const btn = tile.querySelector(".focus");
-    btn.textContent = on ? "sair do foco" : "focar";
-    btn.setAttribute("aria-label", on ? "Sair do foco" : `Focar em ${alvo}`);
-    tile.querySelector(".full").setAttribute("aria-label", `Tela cheia: ${alvo}`);
+    btn.textContent = on ? "leave focus" : "focus";
+    btn.setAttribute("aria-label", on ? "Leave focus" : `Focus on ${alvo}`);
+    tile.querySelector(".full").setAttribute("aria-label", `Fullscreen: ${alvo}`);
   }
 
   const btn = $("shareBtn");
   const mine = !!localStream;
-  // Conjunto cheio e eu não estou nele: não há vaga pra pedir.
+  // the set is full and I am not in it: there is no slot to ask for.
   const full = !mine && sharers.size >= maxSharers;
   btn.className = mine ? "stop" : "on";
   btn.disabled = dead || full || !canShare();
   btn.title = mine
-    ? "Parar de compartilhar"
+    ? "Stop sharing"
     : !canShare() ? whyCantShare()
-    : full ? `Já tem ${maxSharers} no ar` : "Compartilhar tela";
+    : full ? `${maxSharers} already on air` : "Share screen";
   btn.setAttribute("aria-label", btn.title);
 
   relayout();
@@ -1816,17 +1776,17 @@ function render() {
 $("shareBtn").onclick = () => (localStream ? stopShare() : startShare());
 $("copyBtn").onclick = async () => {
   const b = $("copyBtn");
-  // Tirar e repor a classe com um reflow no meio: sem isso o segundo clique
-  // seguido não anima nada, porque a classe já estava lá.
+  // remove and re-add the class with a reflow in between, or a second click in
+  // a row animates nothing because the class was already there.
   b.classList.remove("tap");
   void b.offsetWidth;
   b.classList.add("tap");
-  // `navigator.clipboard` nem existe fora de contexto seguro, então isso é
-  // TypeError e não rejeição — e o `await` solto virava erro não tratado.
+  // navigator.clipboard does not exist outside a secure context, so this is a
+  // TypeError rather than a rejection, and a bare await became an unhandled one.
   let copiou = true;
   try { await navigator.clipboard.writeText(location.href); } catch { copiou = false; }
-  b.title = copiou ? "Link copiado" : "Copie da barra de endereço";
-  setTimeout(() => { b.title = "Copiar link"; }, 1400);
+  b.title = copiou ? "Link copied" : "Copy it from the address bar";
+  setTimeout(() => { b.title = "Copy link"; }, 1400);
 };
 $("roomBtn").onclick = () => openGate(false);
 $("meBtn").onclick = () => {
@@ -1839,10 +1799,10 @@ $("gridBtn").onclick = () => {
   render();
 };
 
-/* ---------- telemetria ---------- */
+/* ---------- telemetry ---------- */
 
 const prev = new Map();
-const hist = new Map();           // id -> últimas WAVE_LEN medidas de bitrate
+const hist = new Map();           // id -> the last WAVE_LEN bitrate samples
 let accent = "";
 
 function rate(key, bytes) {
@@ -1881,10 +1841,10 @@ function sizeWave(tile) {
   drawWave(tile);
 }
 
-// Escala pelo pico da própria janela: a fita conta a forma da variação, não o
-// valor absoluto — esse já está escrito ao lado, em kb/s. A fatia é fixa em 3px
-// pra que o ritmo das barras seja o mesmo em qualquer tamanho de tile, e elas
-// se encostam, que é o que faz isso ler como fita.
+// scaled to the peak of its own window: the tape tells the shape of the
+// variation, not the absolute value, which is written beside it in kb/s. the
+// slot is a fixed 3px so the bar rhythm is identical at every tile size, and
+// the bars touch, which is what makes it read as a tape.
 function drawWave(tile) {
   const c = tile.querySelector(".wave");
   if (!c) return;
@@ -1903,17 +1863,18 @@ function drawWave(tile) {
   g.fillStyle = accent;
   for (let i = 0; i < show.length; i++) {
     const h = Math.max(1, (show[i] / peak) * (WAVE_H - 2));
-    g.globalAlpha = i === show.length - 1 ? 1 : 0.4;   // a última é o agora
+    g.globalAlpha = i === show.length - 1 ? 1 : 0.4;   // the last one is now
     g.fillRect(w - (show.length - i) * WAVE_SLOT, WAVE_H - h, WAVE_SLOT - 1, h);
   }
   g.globalAlpha = 1;
 }
 
 setInterval(async () => {
-  // Tiles recebidos
+  // received tiles
   for (const [id, pc] of receiving) {
     const tile = tiles.get(id);
-    // Placa: a PC existe mas o vídeo ainda não chegou, e placa não tem faixa.
+    // a monogram: the PC exists but the video has not arrived, and it has no
+    // telemetry line.
     if (!tile || tile.classList.contains("peer")) continue;
     const stats = await pc.getStats();
     let bps = null, size = "", fps = 0;
@@ -1929,12 +1890,12 @@ setInterval(async () => {
     tile.querySelector(".rate").textContent = "↓ " + (fmt(bps) || "--");
     tile.querySelector(".size").textContent = size ? `${size} · ${fps}fps` : "";
     const el = tile.querySelector(".path");
-    el.textContent = path ? `${path.type} · ${path.rtt ?? "--"}ms` : "negociando";
+    el.textContent = path ? `${path.type} · ${path.rtt ?? "--"}ms` : "negotiating";
     el.className = "path " + (path?.type === "relay" ? "warn" : path ? "hi" : "");
     push(id, bps);
   }
 
-  // Tile próprio: agrega upload de todos os peers
+  // our own tile: aggregates the upload to every peer
   const self = tiles.get(myId);
   if (self && !self.classList.contains("peer") && sending.size) {
     let total = 0, saiW = 0, saiH = 0, limite = "", politica = "";
@@ -1944,11 +1905,11 @@ setInterval(async () => {
         if (r.type === "outbound-rtp" && r.kind === "video") {
           const b = rate("tx:" + id, r.bytesSent || 0);
           if (b) total += b;
-          // O pior destino é o que interessa: um encoder que desceu de degrau é
-          // o que quem compartilha precisa ver, mesmo que os outros estejam bem.
-          // O motivo vem do MESMO destino que a resolução, não do último que
-          // aparecer no laço — senão a tira mistura o tamanho de um com a
-          // explicação de outro.
+          // the worst destination is the interesting one: an encoder that
+          // dropped a rung is what the sharer needs to see, even if the others
+          // are fine. the reason comes from the SAME destination as the
+          // resolution, not from whichever ends the loop, or the strip mixes
+          // one peer's size with another's explanation.
           if (r.frameWidth && (!saiW || r.frameWidth < saiW)) {
             saiW = r.frameWidth;
             saiH = r.frameHeight;
@@ -1961,15 +1922,13 @@ setInterval(async () => {
       });
       if (pc.policy) politica = pc.policy;
     }
-    // Resolução de captura efetiva ao lado do número de destinos: deixa o cap
-    // auditável a olho. Se o Chrome ignorar o applyConstraints numa tela real,
-    // aparece aqui na hora, em vez de virar CPU a 100% sem explicação.
-    //
-    // E ao lado dela o que está de fato *saindo* do encoder, mas só quando
-    // difere — captura certa com saída um degrau abaixo é o diagnóstico
-    // inteiro, e quem causava o colapso era justamente quem não o via: o
-    // recebedor enxergava 640×360, o sharer só enxergava a própria captura.
-    // `qualityLimitationReason` diz de quem é a culpa, banda ou CPU.
+    // the effective capture resolution next to the destination count makes the
+    // cap auditable by eye: if Chrome ignores applyConstraints on a real
+    // screen it shows up here, instead of becoming CPU at 100% with no
+    // explanation. beside it goes what is actually leaving the encoder, but
+    // only when it differs, because the right capture with an output one rung
+    // below is the whole diagnosis, and whoever caused the collapse was the one
+    // person who could not see it.
     const cap = localStream?.getVideoTracks()[0]?.getSettings();
     const capTxt = cap?.width && cap?.height ? `${cap.width}×${cap.height}` : "";
     const caiu = saiW && cap?.width && saiW < cap.width;
@@ -1981,8 +1940,8 @@ setInterval(async () => {
       (capTxt ? capTxt + detalhe + " · " : "") +
       `${sending.size} destino${sending.size > 1 ? "s" : ""}`;
     size.className = "size" + (caiu || limite ? " warn" : "");
-    // O campo de caminho não serve para o tile próprio (não há par ICE do qual
-    // falar), então é onde a política de encoding cabe sem custar layout.
+    // the path field is useless on our own tile (there is no ICE pair to talk
+    // about), so it is where the encoding policy fits at no layout cost.
     const via = self.querySelector(".path");
     via.textContent = politica || "";
     via.className = "path" + (politica ? " warn" : "");
@@ -1990,10 +1949,10 @@ setInterval(async () => {
   }
 }, 1000);
 
-// Recebe o relatório em vez de pedir o seu: chamada uma vez por tile por
-// segundo, `getStats()` era feito duas vezes para o mesmo peer, uma aqui e uma
-// no laço. E `RTCStatsReport` já é maplike — o `new Map()` que existia aqui
-// copiava o relatório inteiro só para usar o `.get`.
+// takes the report rather than asking for its own: called once per tile per
+// second, getStats() ran twice for the same peer, once here and once in the
+// loop. and RTCStatsReport is already maplike, so the `new Map()` that used to
+// be here copied the whole report just to use `.get`.
 function pathOf(stats) {
   for (const r of stats.values()) {
     if (r.type === "candidate-pair" && r.state === "succeeded" && r.nominated) {

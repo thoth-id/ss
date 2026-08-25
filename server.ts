@@ -1,25 +1,25 @@
 import type { ServerWebSocket } from "bun";
+import { readFileSync } from "node:fs";
 import nodePath from "node:path";
 import { startStun } from "./stun";
 
-// Resolvido contra o módulo, nunca contra o cwd: instalado como pacote, o
-// processo roda do diretório de quem chamou, e "./public" apontaria para o
-// nada. Foi assim que a página sumiu no primeiro teste de instalação real.
+// resolved against the module, never against the cwd: installed as a package
+// the process runs from whatever directory invoked it, and "./public" would
+// point at nothing. that is how the page went missing in the first real install.
 const PUBLIC_DIR = nodePath.join(import.meta.dir, "public");
 
-/** Caminho absoluto dentro de public/, ou null se a rota tenta escapar dele. */
+/** absolute path inside public/, or null if the route tries to escape it. */
 function resolverEstatico(pathname: string): string | null {
   let rel: string;
   try {
     rel = decodeURIComponent(pathname);
   } catch {
-    return null; // %-encoding quebrado
+    return null; // broken %-encoding
   }
-  // Byte nulo antes de qualquer resolução: `normalize` e `resolve` preservam o
-  // \0, o startsWith aprova o caminho, e é o Bun.file() lá na frente que lança.
-  // Não chega a ser traversal — nenhum arquivo é lido — mas a exceção virava a
-  // página de erro do Bun, 67 KB com o caminho da instalação e as linhas do
-  // fonte, a partir de 20 bytes de requisição.
+  // null byte before any resolution: normalize and resolve both preserve the
+  // \0, startsWith approves the path, and Bun.file() is what throws later. no
+  // file is ever read, but the exception became Bun's error page: 67 KB with
+  // the install path and source lines, out of a 20-byte request.
   if (rel.includes("\0")) return null;
   if (rel === "/" || rel === "") rel = "/index.html";
   const alvo = nodePath.resolve(PUBLIC_DIR, "." + nodePath.posix.normalize(rel));
@@ -27,25 +27,36 @@ function resolverEstatico(pathname: string): string | null {
   return alvo;
 }
 
-/* Ambiente é entrada não confiável, e `Number()` aceita coisas que não são
-   número: `MAX_PEERS=` (vazio) virava 0 e trancava a sala para todo mundo,
-   `MAX_PEERS=cinco` virava NaN — e com NaN as comparações `set.size >= MAX_*`
-   são sempre falsas, então o teto de sala e a arbitragem de sharers sumiam em
-   silêncio enquanto a UI continuava anunciando "3/3". O servidor é o árbitro;
-   um árbitro que leu NaN não arbitra. Só inteiro positivo passa; o resto cai no
-   padrão medido e diz no stderr qual variável foi ignorada. */
-// Gêmeo de `num()` em bin/cli.ts — mesma regra, dois lados da mesma fronteira.
-// Se a regra mudar aqui, mude lá.
+// the banner names the version, so a bug report carries it. read lazily and
+// defensively: server.ts also runs straight from a clone.
+function versao(): string {
+  try {
+    const raw = readFileSync(nodePath.join(import.meta.dir, "package.json"), "utf8");
+    return JSON.parse(raw).version || "?";
+  } catch {
+    return "?";
+  }
+}
+
+/* the environment is untrusted input, and Number() accepts things that are not
+   numbers: MAX_PEERS= (empty) became 0 and locked everyone out, MAX_PEERS=five
+   became NaN, and with NaN every `set.size >= MAX_*` is false, so the room cap
+   and the sharer arbitration vanished in silence while the UI kept announcing
+   "3/3". the server is the arbiter, and an arbiter that read NaN arbitrates
+   nothing. only a positive integer passes; anything else falls back to the
+   measured default and names itself on stderr. */
+// twin of `num()` in bin/cli.ts: same rule, two sides of the same boundary.
+// if the rule changes here, change it there.
 function int(nome: string, padrao: number, max = Number.MAX_SAFE_INTEGER): number {
   const bruto = process.env[nome];
   if (bruto === undefined) return padrao;
   const limpo = bruto.trim();
   const n = Number(limpo);
-  // A regex é o que recusa " 0x10 ", "1e3", "2.5" e "" — todos aceitos pelo
-  // Number() e nenhum deles um inteiro escrito como inteiro.
+  // the regex is what rejects " 0x10 ", "1e3", "2.5" and "", all accepted by
+  // Number() and none of them an integer written as an integer.
   if (!/^\d+$/.test(limpo) || !Number.isSafeInteger(n) || n < 1 || n > max) {
-    const faixa = max === Number.MAX_SAFE_INTEGER ? "inteiro positivo" : `inteiro entre 1 e ${max}`;
-    process.stderr.write(`${nome}=${JSON.stringify(bruto)} não é ${faixa}; usando ${padrao}\n`);
+    const faixa = max === Number.MAX_SAFE_INTEGER ? "a positive integer" : `an integer between 1 and ${max}`;
+    process.stderr.write(`${nome}=${JSON.stringify(bruto)} is not ${faixa}; using ${padrao}\n`);
     return padrao;
   }
   return n;
@@ -54,31 +65,28 @@ function int(nome: string, padrao: number, max = Number.MAX_SAFE_INTEGER): numbe
 const PORT = int("PORT", 3000, 65535);
 const STUN_PORT = int("STUN_PORT", 3478, 65535);
 
-// Teto de peers por sala (flag --peers). O 6º recebe `denied` e não entra.
+// peers per room (--peers). the 6th gets `denied` and stays out.
 const MAX_PEERS = int("MAX_PEERS", 5);
 
-// Quantas pessoas podem transmitir ao mesmo tempo (flag --sharers).
-// O servidor é o único ponto que vê a sala inteira, então a decisão mora aqui:
-// dois cliques simultâneos em máquinas diferentes só são serializáveis num lugar.
+// how many can transmit at once (--sharers). the server is the only place that
+// sees a whole room, so the decision lives here: two simultaneous clicks on
+// different machines are only serializable in one place.
 //
-// Era 2 por medo de CPU, e o medo estava no eixo errado: o número de encoders
-// de quem transmite é MAX_PEERS-1, não MAX_SHARERS. Um sharer a mais não cria
-// encoder nenhum na máquina de ninguém — cria um decode, que custa 0,18 core.
-// Medido: 4 destinos custam ~2 cores de 12, e receber um segundo stream soma
-// 0,18. Ver a tabela no CLAUDE.md. 3 é onde a medição limpa termina; 4 e 5 não
-// foram medidos porque 5 Chromes não cabem numa caixa de 12 cores.
+// it was 2 out of a CPU fear aimed at the wrong axis: a sharer runs
+// MAX_PEERS-1 encoders, not MAX_SHARERS. one more sharer creates no encoder
+// anywhere, it creates a decode, measured at 0.18 core. 3 is where the clean
+// measurement stops; see the table in CLAUDE.md.
 const MAX_SHARERS = int("MAX_SHARERS", 3);
 
-// Teto de pixels da captura (equivalente a 1600×900). Acima de 1920×1080 o
-// WebRTC passa a usar ~8 threads de encode por PeerConnection em vez de ~3, e
-// com vários destinos isso satura a CPU: medido em bancada com 4 destinos,
-// 1920×1080 custou 10,12 cores de 12 e entregou 6–9 fps, enquanto 1600×900
-// custou 1,95 cores com 30 fps cheios. O padrão é o número medido; a flag
-// --pixels existe para quem quiser testar outro, não para uso rotineiro.
+// capture pixel budget (1600×900). above 1920×1080 WebRTC gives each
+// PeerConnection ~8 encode threads instead of ~3, and with several
+// destinations that saturates the CPU: measured with 4 destinations,
+// 1920×1080 cost 10.12 of 12 cores at 6-9 fps while 1600×900 cost 1.95 cores
+// at a full 30. the default is the measured number.
 const MAX_CAPTURE_PIXELS = int("MAX_CAPTURE_PIXELS", 1_440_000);
 
-// Teto do nome escolhido por cada peer. Só cosmético: quem não escolher aparece
-// pelo id, que é o que o servidor garante ser único.
+// cosmetic to the server: whoever picks no name shows up by id, which is the
+// only identifier the server guarantees.
 const MAX_NAME = 24;
 
 type Client = { id: string; room: string; name: string };
@@ -100,26 +108,23 @@ function sharersOf(room: string) {
   return set;
 }
 
-// Broadcast baseado em estado, não em evento: manda o conjunto inteiro toda vez
-// que ele muda. Idempotente, sobrevive a reconnect, e o cliente nunca precisa
-// reconstruir estado a partir de deltas.
+// state-based broadcast, not event-based: the whole set ships on every change.
+// idempotent, survives reconnect, and the client never rebuilds state from
+// deltas.
 function publishSharers(room: string) {
   if (!rooms.has(room)) return;
   broadcast(room, { t: "sharers", ids: [...sharersOf(room)] });
 }
 
-// Saneamento num lugar só, no servidor: colapsa espaços, apara e corta em
-// MAX_NAME. Nome vazio depois disso não vira entrada no mapa — o cliente cai no
-// id. É também o caminho de apagar o próprio nome.
+// sanitizing happens server-side, in one place. empty after this means no entry
+// in the map, which is also how you erase your own name.
 function cleanName(raw: unknown) {
   return String(raw ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_NAME);
 }
 
-// O mapa é derivado dos sockets da sala na hora de publicar, não guardado num
-// Map à parte. Assim sair da sala já apaga o nome, sem um segundo caminho de
-// limpeza que possa divergir do close. Mesmo motivo do broadcast por estado dos
-// sharers: o mapa inteiro vai junto toda vez, e nunca precisa ser reconstruído
-// de deltas do outro lado.
+// the map is derived from the room's sockets at publish time, not kept in a
+// second Map. leaving the room therefore erases the name by itself, with no
+// cleanup path that can drift from close.
 function namesOf(room: string) {
   const map: Record<string, string> = {};
   for (const peer of rooms.get(room) ?? []) {
@@ -136,12 +141,11 @@ function publishNames(room: string) {
 Bun.serve<Client>({
   port: PORT,
 
-  /* Rede de segurança para o handler inteiro, não só para o byte nulo. Sem
-     `error()` o Bun responde a página de debug dele — e o padrão é modo
-     development, porque `NODE_ENV !== "production"` em qualquer `bunx
-     screen-share`. São 67 KB com o caminho absoluto da instalação e trechos do
-     fonte, disparáveis por qualquer um que alcance a porta. O stack fica no
-     servidor, onde serve para depurar; o cliente recebe cinco palavras. */
+  /* safety net for the whole handler, not just the null byte. without error()
+     Bun answers with its debug page, and the default is development mode
+     because NODE_ENV !== "production" in any `bunx`. that is 67 KB carrying the
+     absolute install path and source excerpts, reachable by anyone who reaches
+     the port. the stack stays on the server, where it is useful. */
   error(err) {
     console.error(err);
     return new Response("internal error", { status: 500 });
@@ -179,15 +183,15 @@ Bun.serve<Client>({
       }
 
       if (msg.t === "join") {
-        if (ws.data.room) return; // já entrou; join repetido é no-op
+        if (ws.data.room) return; // already in; a repeated join is a no-op
 
-        const room = String(msg.room || "sala").slice(0, 64);
+        const room = String(msg.room || "room").slice(0, 64);
         let set = rooms.get(room);
         if (!set) rooms.set(room, (set = new Set()));
 
         if (set.size >= MAX_PEERS) {
-          // Não entra no Set, não emite peer-joined e ws.data.room fica vazio,
-          // então o close() depois não vai anunciar um peer que ninguém viu.
+          // never enters the Set, emits no peer-joined and leaves ws.data.room
+          // empty, so the close() later announces nobody.
           ws.send(JSON.stringify({ t: "denied", reason: "room-full" }));
           if (!set.size) rooms.delete(room);
           return;
@@ -199,22 +203,22 @@ Bun.serve<Client>({
         set.add(ws);
 
         ws.send(JSON.stringify({ t: "joined", id: ws.data.id, peers }));
-        // Estado atual de quem transmite, pra quem acabou de chegar. É o que
-        // faz o broadcast por estado sobreviver a reconnect.
+        // snapshot of who is transmitting, for whoever just arrived. this is
+        // what makes the state-based broadcast survive a reconnect.
         ws.send(JSON.stringify({ t: "sharers", ids: [...sharersOf(room)] }));
         broadcast(room, { t: "peer-joined", id: ws.data.id }, ws);
-        // Nomes: snapshot pra quem chegou. Se ele trouxe nome, o mapa mudou pra
-        // sala inteira e um broadcast só atende os dois lados.
+        // if they brought a name the map changed for the whole room, so one
+        // broadcast serves both sides.
         if (ws.data.name) publishNames(room);
         else ws.send(JSON.stringify({ t: "names", map: namesOf(room) }));
         return;
       }
 
-      if (!ws.data.room) return; // nada abaixo faz sentido fora de uma sala
+      if (!ws.data.room) return; // nothing below makes sense outside a room
 
       if (msg.t === "rename") {
         const name = cleanName(msg.name);
-        if (name === ws.data.name) return; // idempotente, não re-broadcasta
+        if (name === ws.data.name) return; // idempotent, no re-broadcast
         ws.data.name = name;
         publishNames(ws.data.room);
         return;
@@ -226,7 +230,7 @@ Bun.serve<Client>({
           ws.send(JSON.stringify({ t: "share-denied", reason: "limit" }));
           return;
         }
-        if (set.has(ws.data.id)) return; // idempotente, não re-broadcasta
+        if (set.has(ws.data.id)) return; // idempotent, no re-broadcast
         set.add(ws.data.id);
         publishSharers(ws.data.room);
         return;
@@ -239,7 +243,7 @@ Bun.serve<Client>({
         return;
       }
 
-      // Relay opaco: o servidor nunca olha dentro de data, só entrega.
+      // opaque relay: the server never looks inside data, it only delivers.
       if (msg.t === "signal" && msg.to) {
         const set = rooms.get(ws.data.room);
         if (!set) return;
@@ -254,16 +258,16 @@ Bun.serve<Client>({
 
     close(ws) {
       const room = ws.data.room;
-      if (!room) return; // nunca entrou (ex: denied por sala cheia)
+      if (!room) return; // never got in (denied by a full room, say)
 
       const set = rooms.get(room);
       if (!set) return;
       set.delete(ws);
 
-      // Caminho do fechamento de aba: libera a vaga de sharer.
+      // the tab-close path: free the sharer slot.
       const wasSharing = sharers.get(room)?.delete(ws.data.id);
-      // O nome mora no socket, então sair já o tirou do mapa; só falta contar
-      // pra sala. Quem saiu sem nome não muda nada e não gera broadcast à toa.
+      // the name lives on the socket, so leaving already took it out of the
+      // map. someone who left unnamed changes nothing and needs no broadcast.
       const hadName = !!ws.data.name;
 
       if (!set.size) {
@@ -281,6 +285,9 @@ Bun.serve<Client>({
 
 startStun(STUN_PORT);
 
-console.log(`http  :${PORT}`);
-console.log(`stun  udp :${STUN_PORT}`);
-console.log(`peers/sala ${MAX_PEERS}  ·  sharers ${MAX_SHARERS}`);
+console.log(
+  `ss ${versao()}\n` +
+  `  http        http://localhost:${PORT}\n` +
+  `  stun  udp   :${STUN_PORT}\n` +
+  `  room        ${MAX_PEERS} peers  ·  ${MAX_SHARERS} sharers`
+);
