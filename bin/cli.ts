@@ -465,7 +465,7 @@ if (bg) {
   }
 
   process.stdout.write(
-    `screen-share in the background\n` +
+    `ss ${versao()}  ·  background\n` +
     `  http        http://localhost:${opts.port}\n` +
     `  stun  udp   :${opts.stunPort}\n` +
     `  pid         ${pid}\n\n` +

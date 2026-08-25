@@ -1,4 +1,5 @@
 import type { ServerWebSocket } from "bun";
+import { readFileSync } from "node:fs";
 import nodePath from "node:path";
 import { startStun } from "./stun";
 
@@ -24,6 +25,17 @@ function resolverEstatico(pathname: string): string | null {
   const alvo = nodePath.resolve(PUBLIC_DIR, "." + nodePath.posix.normalize(rel));
   if (alvo !== PUBLIC_DIR && !alvo.startsWith(PUBLIC_DIR + nodePath.sep)) return null;
   return alvo;
+}
+
+// the banner names the version, so a bug report carries it. read lazily and
+// defensively: server.ts also runs straight from a clone.
+function versao(): string {
+  try {
+    const raw = readFileSync(nodePath.join(import.meta.dir, "package.json"), "utf8");
+    return JSON.parse(raw).version || "?";
+  } catch {
+    return "?";
+  }
 }
 
 /* the environment is untrusted input, and Number() accepts things that are not
@@ -273,6 +285,9 @@ Bun.serve<Client>({
 
 startStun(STUN_PORT);
 
-console.log(`http  :${PORT}`);
-console.log(`stun  udp :${STUN_PORT}`);
-console.log(`peers/room ${MAX_PEERS}  ·  sharers ${MAX_SHARERS}`);
+console.log(
+  `ss ${versao()}\n` +
+  `  http        http://localhost:${PORT}\n` +
+  `  stun  udp   :${STUN_PORT}\n` +
+  `  room        ${MAX_PEERS} peers  ·  ${MAX_SHARERS} sharers`
+);
