@@ -459,6 +459,7 @@ const receiving = new Map();      // peerId -> RTCPeerConnection (I receive)
 const tiles = new Map();          // peerId -> element
 const names = new Map();          // peerId -> name, according to the server
 let sharers = new Set();          // who is transmitting, according to the server
+let sharersSynced = false;        // first sharers after joined is snapshot, not transition
 let localStream = null;
 let iceServers = [];
 let maxSharers = 3;
@@ -514,20 +515,20 @@ function tone(f0, f1, dur, type, vol, delay) {
   } catch {}
 }
 function playJoin() {
-  if (!soundOn) return;
+  if (!soundOn || document.hidden || gateOpen) return;
   tone(620, 900, 0.12, "sine", 0.14);
 }
 function playLeave() {
-  if (!soundOn) return;
+  if (!soundOn || document.hidden || gateOpen) return;
   tone(880, 320, 0.14, "sine", 0.10);
 }
 function playShareStart() {
-  if (!soundOn) return;
+  if (!soundOn || document.hidden || gateOpen) return;
   tone(880, 880, 0.13, "triangle", 0.11);
   tone(1320, 1320, 0.13, "triangle", 0.09, 0.09);
 }
 function playShareStop() {
-  if (!soundOn) return;
+  if (!soundOn || document.hidden || gateOpen) return;
   tone(300, 150, 0.16, "sine", 0.11);
 }
 const SOUND_ICON_ON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H2.5v6H6l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M17.2 6.2a8 8 0 0 1 0 11.6"/></svg>';
@@ -540,10 +541,9 @@ function renderSoundBtn() {
   const label = soundOn ? "Mute sounds" : "Unmute sounds";
   b.title = label;
   b.setAttribute("aria-label", label);
-  b.setAttribute("aria-pressed", String(!soundOn));
 }
-addEventListener("click", () => { if (soundOn) ensureAudio(); });
-addEventListener("keydown", () => { if (soundOn) ensureAudio(); });
+window.addEventListener("click", () => { if (soundOn) ensureAudio(); });
+window.addEventListener("keydown", () => { if (soundOn) ensureAudio(); });
 
 /* ---------- setup ---------- */
 
@@ -651,6 +651,7 @@ function handle(msg) {
     // reconnect: the previous id died with the socket, and so did every PC
     // pointing at it. close before reopening or the connections leak.
     if (previous && previous !== myId) resetConnections();
+    sharersSynced = false;
 
     peers.clear();
     msg.peers.forEach((id) => peers.add(id));
@@ -683,16 +684,19 @@ function handle(msg) {
     sending.delete(msg.id);
     receiving.delete(msg.id);
     dropTile(msg.id);
-    if (myId && soundOn) playLeave();
+    if (myId && soundOn && msg.id !== myId) playLeave();
     render();
     return;
   }
 
   if (msg.t === "sharers") {
     const next = new Set(msg.ids);
-    if (myId && soundOn) {
-      for (const id of next) if (!sharers.has(id) && id !== myId) playShareStart();
-      for (const id of sharers) if (!next.has(id) && id !== myId) playShareStop();
+    if (myId && soundOn && sharersSynced) {
+      let added = 0, removed = 0;
+      for (const id of next) if (!sharers.has(id)) added++;
+      for (const id of sharers) if (!next.has(id)) removed++;
+      if (added) playShareStart();
+      if (removed) playShareStop();
     }
     // whoever left the set: drop the receiving PC and the tile right away,
     // rather than waiting for connectionstatechange to fall on its own.
@@ -703,6 +707,7 @@ function handle(msg) {
       dropTile(id);
     }
     sharers = next;
+    sharersSynced = true;
     // accepted as a sharer: now open the sends.
     if (localStream && sharers.has(myId)) peers.forEach(openSend);
     render();
@@ -1696,6 +1701,7 @@ function switchRoom(name) {
   peers.clear();
   names.clear();
   sharers = new Set();
+  sharersSynced = false;
   myId = null;
   render();
   connect();
