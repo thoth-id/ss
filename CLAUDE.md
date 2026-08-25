@@ -108,9 +108,10 @@ Peer names (`join`'s optional `name`, `rename`, and the `names` broadcast) are
 Leaving the room therefore erases the name by itself, with no cleanup path that
 can drift from `close`. Same reasoning as the state-based `sharers` broadcast —
 the whole map ships on every change, plus a snapshot on join. Names are
-cosmetic: whoever picks none shows up by id, `joined.peers` stays an array of
-raw ids, and the name never travels inside `data` (the server could not read it
-there anyway). Sanitizing happens server-side in one function, `cleanName`:
+cosmetic **to the server**: whoever picks none shows up by id, `joined.peers`
+stays an array of raw ids, and the name never travels inside `data` (the server
+could not read it there anyway). The client is stricter than the server here on
+purpose — see *The portaria*. Sanitizing happens server-side in one function, `cleanName`:
 collapse whitespace, trim, cut at 24. Empty after that means no entry in the
 map, which is also how you erase your own name.
 
@@ -176,6 +177,42 @@ set, rather than waiting for `connectionstatechange`.
 
 The socket `close` handler must free the sharer slot — that is the tab-close path.
 
+### The shell is a call, not a page
+
+The stage is the whole window (`main { position: absolute; inset: 0 }`) and every
+piece of chrome floats over it: the `tela` wordmark top-left, an info pill
+top-centre (`#sala · 2/3 no ar · 4 na sala`), and a round-button dock at the
+bottom. There is no header bar, no sidebar and no rail.
+
+Floating chrome does not get to cover content, so the stage reserves two bands
+for it in the fit: `PAD_TOP` (52) and `PAD_BOT` (84). That is the whole
+mechanism, and `bench/layout.ts` asserts it by measuring the dock and pill boxes
+against every tile box, not by trusting the constants.
+
+The dock is five buttons, and each one maps to something the product already
+does: share (teal to start, red to stop, disabled with the reason in its
+`title`), copy link, room, name, and leave-focus. Do not add a button for a
+capability that does not exist — there is no audio, no camera and no hang-up
+here, however much the reference call UIs have them.
+
+**A dock button that stays coloured means a mode is on** — that is what the
+share button says, and copying is not a mode. The copy button used to go green
+for 1.4s, which borrowed `.on`'s vocabulary for something that already
+happened. It now confirms with a pulse (`.tap`: a .34s squash plus a ring that
+expands out of the button and fades), removed and re-added around a forced
+reflow so a second click animates again. Clipboard failure is caught rather
+than left as an unhandled rejection: `navigator.clipboard` does not exist
+outside a secure context, so on plain `http://100.x` the call is a `TypeError`,
+and the title says to copy from the address bar instead.
+
+Two type roles, and the split is the point: **mono is machine truth** (ids,
+rates, resolutions, candidate types, room names, and the `tela` wordmark, which
+is a command), **sans is human words** (buttons, labels, sentences). Before this,
+everything was mono and "Compartilhar tela" carried the same visual weight as
+`srflx · 33ms`. The sans is the **system stack**, not a webfont: this project
+fetches nothing from the network, and a Google Fonts link would break that and
+the offline case at once.
+
 ### Client layout is computed in JS, on purpose
 
 `main` is a fixed-height stage (`flex: 1; min-height: 0; overflow: hidden`) and
@@ -187,16 +224,17 @@ scrolled and the telemetry strip fell below the fold. Do not put it back.
 
 Three things the math depends on:
 
-- **`STRIP_LINE` (24) and `STRIP_BAND` (40) must equal the CSS strip heights** —
-  `.fields` alone, and `.fields` plus the gauge band above it. Tile borders are
-  `box-shadow: inset` and not real borders precisely so they add no height; a 1px
-  border would make every tile overflow its slot by 2px. Which strip is in force
-  is decided by a **second fit pass**: `layout()` fits optimistically with
-  `STRIP_LINE`, and if the narrowest tile came out under `BAND_BELOW` (600px, the
-  width where the telemetry text and the gauge stop sharing one line) it sets
-  `strip = STRIP_BAND` and fits again. The strip is uniform across the layout on
-  purpose — a ragged ruler between side-by-side tiles looks worse than a band on
-  a tile that could have held the inline gauge.
+- **The tile is only the video box.** The name and the telemetry are pills
+  floating over the bottom of the frame, so there is no strip to subtract and no
+  second fit pass: `STRIP_LINE`, `STRIP_BAND` and `BAND_BELOW` are gone, along
+  with the band variant of the gauge. What replaced them is the pair of pills
+  sharing one line, which degrades in two measured steps: under `WAVE_BELOW`
+  (520) the tape drops and the numbers stay, under `TEL_BELOW` (340) the whole
+  telemetry pill goes and only the name remains. The thresholds were set by
+  measuring the actual boxes overlapping, and the bench asserts the same way
+  (`nome.right <= tel.left`), because a class name proves nothing about pixels.
+  Tile borders are still `box-shadow: inset` and not real borders, so they add no
+  height.
 - **Rows are justified**: every tile in a row shares one height, widths come from
   each tile's real aspect ratio (1600×900 and 1440×900 coexist in one room), and
   the row's height ceiling is `H/rows`, which is what guarantees the block always
@@ -231,41 +269,106 @@ tile size. Below it there is no room for both on one line, so the gauge takes a
 full-width band above the text and the slot stretches to fill it. Either way the
 bars touch, which is what makes it read as a tape.
 
-### Presence plates
+### Presence is a call tile
 
-Every peer in the room gets a tile. Whoever is not sharing gets a **monogram
-plate** (`.tile.peer`) instead of a video. This needed **no server or protocol
+Everybody in the room gets a tile. Whoever is not sharing gets a **circular
+monogram** (`.tile.peer`) where the video would be, which is the same shape a
+call gives someone with the camera off. This needs **no server or protocol
 change**: `peers`, `names` and `sharers` already arrive complete, so
 `syncRoster()` — called at the top of `render()` — derives the roster from them.
 No second map to drift. It cannot use `attachTile`/`dropTile`, which call
 `render()` back.
 
-Plates **never compete with video for grid area**. They are a bottom rail capped
-at `min(max(64, H*0.22), H*0.4, PRES_RAIL)` (132), and only inherit the stage
-when no video tile exists at all, capped at `PRES_SOLO` (220). The reason is the
-whole point of the feature: a monogram carries almost no information per pixel,
-while a shared screen shrunk to a third of the stage stops being readable text.
-Equal grid cells for everyone — at the room's ceiling that is 3 videos plus 2
-plates — would do exactly that. Do not give plates a full grid cell.
+**When nobody is sharing, the monograms are the call**: equal cells, `fitGrid`
+with a 16:9 aspect, exactly the grid a call app shows. That is the only state
+where presence owns the stage. The moment one video exists, the monograms drop
+to a bottom rail capped at `min(max(64, H*0.22), H*0.4, PRES_RAIL)` (132),
+because a monogram carries almost no information per pixel while a shared screen
+shrunk to a third of the stage stops being readable text. At the room's ceiling
+that would be 3 videos plus 2 monograms in equal cells. Do not give a monogram a
+full grid cell while a video is on the stage.
 
-Being alone with nobody sharing is the one state that keeps the old empty card:
-**a roster of one is not a roster**, so when `peers` is empty no plate is built,
-`tiles.size` stays 0 and `idle` means exactly what it always meant.
+Being alone with nobody sharing is the one state that keeps the empty card:
+**a roster of one is not a roster**, so when `peers` is empty no tile is built,
+`tiles.size` stays 0 and the card appears.
 
 ids are 8 hex chars (`3f9a1b2c`), so an unnamed peer has no initial worth
-showing — `3` is nobody. That plate shows `_`, the prompt cursor waiting to be
-typed, on a dashed frame; the label is the id. A named peer shows the first
+showing — `3` is nobody. That tile shows `_`, the prompt cursor waiting to be
+typed, on a dashed circle. Since the portaria makes a name mandatory, this only
+happens against a client that does not enforce it. A named peer shows the first
 **grapheme** (`[...name][0]`, not `slice(0,1)` — a name may start with an emoji)
-uppercased. A peer who is in `sharers` but whose video has not arrived yet gets
+uppercased. Somebody in `sharers` whose video has not arrived yet reads
 `conectando…` in accent; before this, that person was invisible.
 
-The plate is the same shell as a video tile, so the px fit, the label ruler and
-the focus rail all work unchanged — but it has no `.wave`, no `.ctl` and is not
-focusable. `sizeWave()`, `tick()` and the band toggle skip it, and `place()`
-leaves it out of `minTile` so a plate can never force the telemetry band. Its
-face is `--panel`, not `--void`: a video tile is a screen, a plate is interface,
-and the colour says which before the label is read. `attachTile` discards the
-plate for that id before building the video tile — same `tiles` map, same key.
+My own pill reads **`Name (você)`**, not just `você`: on a stage of five,
+whoever is looking for their own screen is looking for the name they typed. The
+marker is a sibling element of the name (`.who em`, `flex: none`, shown by
+`.who.eu`), so on a narrow tile the *name* is what ellipsizes — truncating the
+marker would cut the one thing that says whose frame it is. The name comes from
+`myName` and not `nameOf(myId)` because the `names` broadcast lands after
+`joined`, and in that gap I would show up by id. With no valid name (another
+client, or before the portaria) it falls back to a bare `você`, which does not
+qualify itself twice. `pill()` writes both, and `render()` calls it for every
+tile, so a rename lands without rebuilding anything.
+
+### Your rooms are your history, not a directory
+
+The chips in the portaria are the rooms **this browser** has visited, kept in
+`localStorage` under `tela:salas` (8 most recent, most recent first). This is a
+deliberate limit, and it is worth being precise about why, because "it is P2P so
+we cannot know" is the wrong reason:
+
+- **The media is P2P; the signaling is not.** Every socket lives in the same Bun
+  process, and `rooms: Map<string, Set<Socket>>` (`server.ts:87`) is a live map
+  there. The server knows, right now, which rooms have people in them.
+- **The client does not.** It only ever receives `peers`, `names` and `sharers`
+  for the room it is in. Showing occupancy for another room means a new message
+  in the protocol.
+- **An empty room does not exist.** `rooms.delete(room)` when the last socket
+  leaves. There is no created, stored or renamed room: it exists while somebody
+  is inside. A room you left yesterday is a word you remember.
+
+So occupancy is shown only for the room you are in. A real directory is about ten
+lines (a `t: "rooms"` message with name and count, published on join and close),
+and the price is not the code: there is no auth, so the room name is the only
+partition that exists, and listing them hands every room to everyone on the
+tailnet. Do not add it without deciding that trade on purpose.
+
+### Switching rooms without a reload
+
+`ROOM` is `let`, not `const`. The `#` button in the dock opens the portaria on
+the room field, and `switchRoom()` closes the socket (clearing
+`onclose`/`onmessage` first, so the old socket's reconnect does not race the new
+`connect()`), clears `peers`/`names`/`sharers`, calls `resetConnections()` and
+reconnects. The server hands out a fresh id per socket, so the `joined` handler
+takes the same path it already took on reconnect. Whoever was sharing keeps the
+local stream and re-requests the sharer slot in the new room. `hashchange` routes
+through the same function, so editing the `#` by hand still works.
+
+### The portaria, and why the name is mandatory
+
+The entry modal **is** the door: `entrar()` only sends `join` when
+`nameOk(myName)` holds (`MIN_NAME` = 3 graphemes after `cleanName`), so an
+unnamed person is connected but in no room at all — the server ignores every
+message that arrives before a `join`. That is why the blocking variant refuses to
+close on `esc` or on a click outside, and why its confirm button stays disabled
+until the field is valid.
+
+The rule is the client's, not the server's. The server still accepts an empty
+name, because that is how you *erase* one, and it stays the arbiter only of what
+it can actually arbitrate (room and sharer limits). So a different client could
+still join unnamed, and `nameOf` keeps falling back to the id for exactly that
+case. Do not "fix" that by validating names server-side without deciding what
+erasing a name should then mean.
+
+It opens by itself only when there is no valid stored name (first visit in this
+browser); after that a shared link opens straight into its room, which is the
+whole point of sending a link. The dock's `#` and person buttons reopen the same
+modal, unblocked, focused on the room or on the name. Confirming reuses
+`setName()` and `switchRoom()` rather than talking to the socket itself.
+
+There is no rename debounce any more. The name is not typed live into the header
+any more, it is confirmed in the portaria: one confirmation, one `rename`.
 
 ### Client reconnect
 
@@ -313,11 +416,24 @@ fit exists to keep the page from scrolling. Screenshots caught two things number
 did not — a ragged row of tiles centered per cell, and a header wrapping to three
 lines on a phone.
 
+The call redesign was verified this way: `bench/layout.ts` drives the real client
+through the blocking portaria (including that no `join` happens before a valid
+name, and that `esc` and the scrim do not dismiss it), a populated room with
+nobody sharing, one video with the presence rail, two videos of different aspect
+ratios, focus, 430px, a name change and a live room switch. Every step asserts
+`scrollHeight === innerHeight`, that no tile intersects the dock or the top pill,
+and that the name and telemetry pills do not overlap (40 assertions, all green). Run it when touching the shell; it is cheaper than reasoning about the
+fit:
+
+```bash
+(PORT=3200 STUN_PORT=3678 bun run server.ts > /tmp/s.log 2>&1 & echo $! > /tmp/p); \
+  sleep 2; PORT=3200 bun run bench/layout.ts; kill $(cat /tmp/p)
+```
+
 **Settle the transitions before measuring.** `.tile` transitions `left/top/width`
 over .16s and `.frame video` transitions `height`. Measuring two rAFs after
-`render()` reads the geometry in flight: plates land overlapping (65px apart
-instead of 120) and the video box is off its aspect ratio, so `object-fit:
-contain` letterboxes it. That produces both false failures and screenshots of a
+`render()` reads the geometry in flight: tiles land short of their slot and the
+video box is off its aspect ratio, so `object-fit: contain` letterboxes it. That produces both false failures and screenshots of a
 layout that never renders. Wait ~320ms — twice the transition — then measure.
 
 ICE over `100.x` **is verified cross-machine, and T0 is closed.** Run on
