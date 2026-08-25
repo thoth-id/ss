@@ -6,294 +6,395 @@
 <title>tela</title>
 <style>
   :root {
-    --void: #000;
-    --bg: #0a0e11;
-    --panel: #111a1e;
-    --line: #1c262b;
-    --line-hi: #2b383f;
-    --fg: #d3dbdf;
-    --dim: #6b7c86;
-    --accent: #58c8b4;
-    --warn: #d9a441;
+    /* Chão de call: quase preto, com o viés frio do acento. Os tiles sobem
+       dele, e o cromo flutua por cima dos dois. */
+    --void:   #040607;
+    --bg:     #090c0e;
+    --tile:   #11171a;
+    --panel:  #141c20;
+    --raise:  #1c262b;
+    --line:   #212c32;
+    --line-hi:#2f3d44;
+    --fg:     #dbe4e8;
+    --dim:    #7a8b95;
+    --accent: #5ad3bb;
+    --warn:   #e6b25c;
+    --stop:   #d9534a;
+    --ink:    #05221e;
+    --glass:  rgba(10,14,16,.72);
+    /* Mono é verdade de máquina (id, taxa, resolução, caminho, nome de sala, e
+       a marca `tela`, que é um comando). Sans é palavra de gente. A sans é a do
+       sistema: este projeto não busca nada na rede, e webfont quebraria isso e
+       o caso offline de uma vez. */
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   /* Nada de scroll: o palco tem a altura que sobra e encaixa os tiles dentro
-     dela. Se um tile pudesse crescer além disso, a página rolaria e a faixa de
-     telemetria sumiria embaixo da dobra. */
+     dela. Se um tile pudesse crescer além disso, a página rolaria. */
   body {
     margin: 0; overflow: hidden; background: var(--bg); color: var(--fg);
-    font: 13px/1.5 var(--mono);
+    font: 13px/1.5 var(--sans);
     -webkit-font-smoothing: antialiased;
-    display: flex; flex-direction: column;
   }
+  code, kbd { font-family: var(--mono); }
 
-  header {
-    display: flex; align-items: center; gap: 14px;
-    padding: 10px 14px; background: var(--panel);
-    box-shadow: inset 0 -1px 0 var(--line);
-    flex: none; flex-wrap: wrap;
+  /* O palco é a janela inteira. Todo o cromo flutua por cima dele, e as faixas
+     que ele ocupa em cima e embaixo estão no JS (PAD_TOP / PAD_BOT): tile
+     nenhum passa por baixo da pílula ou do dock. */
+  main { position: absolute; inset: 0; overflow: hidden; }
+
+  /* === marca e pílula de cima === */
+
+  .mark {
+    position: absolute; top: 18px; left: 18px; z-index: 6;
+    font-family: var(--mono); font-size: 12px; letter-spacing: .2em;
+    color: var(--dim); pointer-events: none;
   }
-  .brand { letter-spacing: .2em; text-transform: lowercase; }
-  .brand i {
-    display: inline-block; width: 6px; height: 6px; margin-left: 7px;
-    background: var(--dim); border-radius: 50%; vertical-align: 2px;
+  .mark i {
+    display: inline-block; width: 6px; height: 6px; margin-left: 6px;
+    border-radius: 50%; background: var(--line-hi); vertical-align: 1px;
     transition: background .3s;
   }
-  .brand i.live { background: var(--accent); }
-  .room { color: var(--dim); }
-  .room b { color: var(--fg); font-weight: 400; }
-  /* Campo de nome: mesma linguagem da faixa de telemetria — rótulo apagado,
-     valor aceso. Sem caixa enquanto ninguém mexe nele, pra não competir com os
-     botões; a caixa aparece no hover e no foco. Largura fixa em ch porque
-     field-sizing: content ainda não é confiável e um campo elástico empurraria
-     as ações do cabeçalho pra outra linha a cada tecla. */
-  .me { color: var(--dim); }
-  .me input {
-    font: inherit; color: var(--fg); width: 13ch; padding: 2px 6px 2px 3px;
-    /* Desconta o padding esquerdo pra que, sem caixa, o nome fique colado no
-       "eu/" como o valor fica colado no "sala/". */
-    margin-left: -3px;
-    border: 1px solid transparent; border-radius: 4px; background: transparent;
-    transition: border-color .15s, background .15s;
-  }
-  .me input::placeholder { color: var(--dim); opacity: 1; }
-  .me input:hover { border-color: var(--line-hi); }
-  .me input:focus { border-color: var(--accent); background: var(--void); }
-  .spacer { flex: 1; }
-  .count { color: var(--dim); font-variant-numeric: tabular-nums; }
+  .mark i.live { background: var(--accent); }
 
-  button {
-    font: inherit; padding: 6px 14px; border-radius: 4px; cursor: pointer;
-    border: 1px solid var(--line-hi); background: transparent; color: var(--fg);
-    transition: border-color .15s, color .15s, background .15s;
+  .top {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    z-index: 6; display: flex; gap: 2px; max-width: calc(100% - 220px);
   }
-  button:hover { border-color: var(--accent); color: var(--accent); }
-  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #08211d; }
-  button.primary:hover { background: #6bd8c4; border-color: #6bd8c4; color: #08211d; }
-  button.stop { border-color: var(--warn); color: var(--warn); background: transparent; }
-  button:disabled {
-    opacity: .4; cursor: not-allowed;
-    background: transparent; border-color: var(--line); color: var(--dim);
+  .top span {
+    padding: 5px 11px; background: var(--glass); backdrop-filter: blur(10px);
+    font-family: var(--mono); font-size: 11.5px; color: var(--dim);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
   }
-  button:disabled:hover { border-color: var(--line); color: var(--dim); }
+  .top span:first-child { border-radius: 8px 0 0 8px; color: var(--fg); }
+  .top span:last-child { border-radius: 0 8px 8px 0; }
+  .top span.cheio { color: var(--warn); }
 
-  .chip {
-    font-size: 11.5px; padding: 4px 10px; border-radius: 999px;
-    color: var(--accent); border-color: var(--line-hi);
-  }
-  /* Em telas estreitas o cabeçalho quebrava em três linhas. Rótulos curtos
-     (ver `tight` no render) mais isto o mantêm em duas. */
-  @media (max-width: 560px) {
-    header { gap: 6px 10px; padding: 8px 12px; }
-    header button { padding: 5px 10px; }
-    .me input { width: 11ch; }
-    /* O espaçador vira a quebra: sala em cima, estado e ações embaixo. Sem
-       isso o cabeçalho quebrava em três linhas e comia o palco. */
-    .spacer { flex: 1 0 100%; height: 0; }
-  }
-  .chip[hidden] { display: none; }
-
-  /* Aviso pode ser longo (o texto de HTTPS é). Rola por dentro em vez de
-     empurrar o palco fora da tela. */
+  /* Aviso pode ser longo (o texto de HTTPS é). Rola por dentro, e continua
+     flutuando: empurrar o palco mudaria o encaixe. */
   .notice {
-    flex: none; max-height: 30%; overflow-y: auto;
-    padding: 9px 14px; background: #241d10; color: var(--warn);
-    box-shadow: inset 0 -1px 0 #3d3016;
+    position: absolute; top: 52px; left: 50%; transform: translateX(-50%);
+    z-index: 7; width: min(680px, calc(100% - 36px)); max-height: 34%;
+    overflow-y: auto; padding: 10px 14px; border-radius: 10px;
+    background: #241d10; color: var(--warn); border: 1px solid #3d3016;
   }
   .notice[hidden] { display: none; }
 
-  /* ---------- palco ---------- */
-
-  main {
-    flex: 1; min-height: 0; position: relative; overflow: hidden;
-  }
-  main.idle { display: none; }
+  /* === tile === */
 
   /* Tile posicionado e dimensionado pelo layout() em px. A borda é box-shadow
-     inset de propósito: borda de verdade somaria altura e o encaixe erraria
-     por 2px. Ver STRIP_LINE / STRIP_BAND no JS. */
+     inset de propósito: borda de verdade somaria altura e o encaixe erraria. */
   .tile {
-    position: absolute; left: 0; top: 0;
-    display: flex; flex-direction: column;
-    border-radius: 5px; overflow: hidden; background: var(--void);
+    position: absolute; left: 0; top: 0; height: var(--vh, 180px);
+    border-radius: 12px; overflow: hidden; background: var(--tile);
     box-shadow: inset 0 0 0 1px var(--line);
-    transition: left .16s ease, top .16s ease, width .16s ease, box-shadow .15s;
+    transition: left .16s ease, top .16s ease, width .16s ease, height .16s ease, box-shadow .15s;
   }
   .tile:hover, .tile:focus-within { box-shadow: inset 0 0 0 1px var(--line-hi); }
+  .tile.focused { box-shadow: inset 0 0 0 1px var(--accent); }
 
-  .frame { position: relative; cursor: zoom-in; background: var(--void); }
+  .frame { position: relative; height: 100%; cursor: zoom-in; background: var(--void); }
   .tile.focused .frame { cursor: zoom-out; }
+  .tile.peer .frame { cursor: default; background: var(--tile); display: grid; place-items: center; }
   .frame video {
-    display: block; width: 100%; height: var(--vh, 180px);
+    display: block; width: 100%; height: 100%;
     object-fit: contain; background: var(--void);
-    transition: height .16s ease;
   }
   /* A própria tela em espelho confunde; escurece um pouco, menos no foco. */
   .tile.self .frame video { opacity: .72; }
   .tile.self.focused .frame video { opacity: 1; }
-  .frame:fullscreen video { width: 100%; height: 100%; opacity: 1; }
+  .frame:fullscreen video { opacity: 1; }
+
+  /* Monograma de quem está na sala e não transmite: o mesmo tile, com um
+     círculo no lugar do vídeo. Redondo, e não quadrado como era a placa, porque
+     numa call é o rosto que ocupa esse lugar. */
+  .glyph {
+    width: min(calc(var(--vh, 120px) * .40), 124px); aspect-ratio: 1;
+    border-radius: 50%; display: grid; place-items: center;
+    background: var(--raise); color: var(--fg);
+    font-family: var(--mono); font-size: min(calc(var(--vh, 120px) * .16), 46px);
+    line-height: 1; user-select: none;
+  }
+  /* Sem nome não há inicial que signifique nada: o id é hex, e "3" não é
+     ninguém. Só acontece com cliente de outra versão, porque aqui o nome é
+     obrigatório, mas o estado existe e precisa de desenho. */
+  .tile.anon .glyph { background: transparent; border: 1px dashed var(--line-hi); color: var(--dim); }
+  /* Pediu a vaga de sharer e o vídeo ainda não chegou. */
+  .tile.wait .glyph { box-shadow: 0 0 0 1px var(--accent); animation: pulse 1.8s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .55; } }
+
+  /* Rótulo e telemetria são pílulas sobre o vídeo, não faixa embaixo dele: o
+     tile passa a ser só a caixa do vídeo, e o encaixe não precisa mais
+     descontar altura de régua nenhuma. */
+  .who {
+    position: absolute; left: 10px; bottom: 10px; z-index: 2; max-width: calc(100% - 20px);
+    display: flex; align-items: center; gap: 7px;
+    padding: 4px 10px; border-radius: 8px;
+    background: var(--glass); backdrop-filter: blur(10px);
+    font-size: 12px; color: var(--fg);
+    white-space: nowrap; overflow: hidden;
+  }
+  .who b { font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
+  .who i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
+  .tile.peer .who i { display: none; }
+  .tile.wait .who b { color: var(--accent); }
+
+  /* Só aparece quando a primeira medida chega: pílula vazia no canto do vídeo
+     parece defeito, e antes do primeiro segundo não há o que dizer. */
+  .tel {
+    position: absolute; right: 10px; bottom: 10px; z-index: 2;
+    display: none; align-items: center; gap: 9px;
+    padding: 4px 9px; border-radius: 8px;
+    background: var(--glass); backdrop-filter: blur(10px);
+    font-family: var(--mono); font-size: 10.5px; color: var(--dim);
+    white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+  .tel.vivo { display: flex; }
+  .tel .hi { color: var(--accent); }
+  .tel .warn { color: var(--warn); }
+  /* O medidor: uma barra por segundo do último minuto, fatia fixa de 3px, pra
+     que o ritmo das barras seja o mesmo em qualquer tamanho de tile. */
+  .wave { display: block; width: 180px; height: 14px; flex: none; }
+  /* As duas pílulas dividem uma linha só, e ela encolhe com o tile. Primeiro
+     cai a fita (o número continua lá), depois a telemetria inteira. O nome é o
+     que nunca sai: sem ele não dá pra saber de quem é a tela. */
+  .tile.tight .wave { display: none; }
+  .tile.narrow .tel, .tile.mini .tel { display: none; }
 
   .ctl {
-    position: absolute; top: 8px; right: 8px; display: flex; gap: 6px;
+    position: absolute; top: 10px; right: 10px; z-index: 3; display: flex; gap: 6px;
     opacity: 0; transition: opacity .14s;
   }
   .tile:hover .ctl, .tile:focus-within .ctl { opacity: 1; }
   @media (hover: none) { .ctl { opacity: 1; } }
   .act {
-    font-size: 11px; padding: 4px 9px; letter-spacing: .02em;
-    background: rgba(6,10,12,.78); backdrop-filter: blur(3px);
+    font: inherit; font-size: 11px; padding: 4px 9px; border-radius: 7px;
+    color: var(--fg); border: 1px solid var(--line-hi); cursor: pointer;
+    background: var(--glass); backdrop-filter: blur(6px);
   }
-
-  .meta { position: relative; flex: none; background: var(--panel); box-shadow: inset 0 1px 0 var(--line); }
-  .fields {
-    display: flex; align-items: center; gap: 10px; height: 24px;
-    padding: 0 190px 0 9px;   /* reserva a direita pro medidor; ver STRIP_LINE */
-    font-size: 11.5px; color: var(--dim); white-space: nowrap; overflow: hidden;
-    font-variant-numeric: tabular-nums;
-  }
-  /* O medidor: uma barra por segundo do último minuto. No tile largo ele mora
-     na própria linha da telemetria, com fatia fixa de 3px — esticar 60 amostras
-     na largura de um tile de 1900px dava 32px de fatia pra uma barra de 6, e a
-     fita virava tique esparso no canto. */
-  .wave {
-    display: block; position: absolute; right: 9px; bottom: 5px;
-    width: 156px; height: 14px;
-  }
-  /* No tile estreito não há linha que caiba as duas coisas: o medidor sobe pra
-     uma faixa própria e aí sim estica, uma barra por fatia. */
-  .tile.band .wave { position: static; width: 100%; height: 16px; }
-  .tile.band .fields { padding-right: 9px; }
-  /* O nome tem até 24 caracteres e a faixa é flex com overflow escondido: sem
-     poder encolher, um nome longo empurraria bitrate, resolução e path pra fora
-     em vez de se cortar. */
-  .fields .who { color: var(--fg); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .fields .hi { color: var(--accent); }
-  .fields .warn { color: var(--warn); }
-
-  /* Miniatura na trilha de foco: só cabe quem é, e ainda assim cortado. */
-  .tile.mini .fields { height: 20px; font-size: 10.5px; padding: 0 7px; }
+  .act:hover { border-color: var(--accent); color: var(--accent); }
   /* Na miniatura o botão no canto tapava o vídeo: vira uma camada sobre o
      quadro todo, que é o alvo de clique de qualquer jeito. */
-  .tile.mini .ctl {
-    inset: 0; align-items: center; justify-content: center;
-    background: rgba(6,10,12,.5);
-  }
-  .tile.mini .wave,
-  .tile.mini .rate,
-  .tile.mini .size,
-  .tile.mini .path,
+  .tile.mini .ctl { inset: 0; align-items: center; justify-content: center; background: rgba(4,7,9,.5); }
   .tile.mini .full { display: none; }
+  .tile.mini .who { left: 6px; bottom: 6px; padding: 2px 7px; font-size: 10.5px; }
+  .tile.mini .glyph { width: min(calc(var(--vh, 60px) * .5), 56px); font-size: min(calc(var(--vh, 60px) * .2), 22px); }
 
-  /* Placa de presença: quem está na sala e não transmite. Mesma casca do tile
-     de vídeo — o encaixe em px, a faixa de rótulo e a trilha do foco valem
-     igual —, com um monograma no lugar do quadro. Quadrada e com hairline, não
-     redonda com gradiente: a linguagem daqui é terminal, não rede social.
-     A face é --panel, não --void: tile de vídeo é tela, placa é superfície de
-     interface, e a cor diz qual é qual antes de o rótulo ser lido. */
-  .tile.peer .frame {
-    height: var(--vh, 96px); cursor: default; background: var(--panel);
-    display: flex; align-items: center; justify-content: center;
-  }
-  /* Placa não é alvo de clique: não acende no hover como o tile de vídeo. */
-  .tile.peer:hover { box-shadow: inset 0 0 0 1px var(--line); }
-  /* A inicial acompanha a altura da placa, então a mesma regra serve pra
-     miniatura na trilha e pra placa no palco inteiro sem o JS medir letra. */
-  .tile.peer .glyph {
-    font-size: min(calc(var(--vh, 96px) * .44), 84px); line-height: 1;
-    color: var(--fg); letter-spacing: .02em; user-select: none;
-  }
-  .tile.peer .fields { padding: 0 8px; justify-content: center; }
-  /* Sem nome escolhido não há inicial que signifique nada: o id é hex, e "3"
-     não é ninguém. A placa mostra o cursor do prompt esperando ser digitado, e
-     o tracejado é o slot vazio. Borda de verdade não soma altura aqui — .frame
-     tem altura própria e box-sizing é border-box. */
-  .tile.peer.anon .frame { border: 1px dashed var(--line-hi); }
-  .tile.peer.anon .glyph { color: var(--dim); transform: translateY(-.32em); }
-  /* Pediu a vaga de sharer e o vídeo ainda não chegou. Antes essa pessoa era
-     invisível: nem tile, nem linha em lugar nenhum. */
-  .tile.peer.wait .frame {
-    border: 1px solid var(--accent); animation: pulse 1.8s ease-in-out infinite;
-  }
-  .tile.peer.wait .glyph, .tile.peer.wait .who { color: var(--accent); }
-  @keyframes pulse { 50% { opacity: .5; } }
+  /* === dock === */
 
-  /* Antes de qualquer coisa no ar, a tela mostra o que ela sabe da sala. É a
-     mesma linguagem da faixa de telemetria: rótulo apagado, valor aceso. */
+  .dock {
+    position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+    z-index: 8; display: flex; align-items: center; gap: 8px; padding: 8px;
+    background: var(--glass); backdrop-filter: blur(16px);
+    border: 1px solid var(--line); border-radius: 999px;
+    box-shadow: 0 22px 44px -20px #000;
+  }
+  .dock button {
+    width: 44px; height: 44px; flex: none; border-radius: 50%; cursor: pointer;
+    display: grid; place-items: center; color: var(--fg);
+    background: var(--raise); border: 1px solid transparent;
+    transition: background .15s, color .15s;
+  }
+  .dock button:hover { background: #24313a; }
+  .dock button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .dock button svg {
+    width: 20px; height: 20px; fill: none; stroke: currentColor;
+    stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+  }
+  .dock button.on { background: var(--accent); color: var(--ink); }
+  .dock button.on:hover { background: #6bd8c4; }
+  .dock button.stop { background: var(--stop); color: #fff; }
+  .dock button.stop:hover { background: #e35f55; }
+  .dock button.ok { background: #17403a; color: var(--accent); }
+  .dock button:disabled { opacity: .35; cursor: not-allowed; background: var(--raise); }
+  .dock .sep { width: 1px; height: 24px; background: var(--line); flex: none; }
+
+  /* === palco vazio === */
+
   .empty {
-    flex: 1; min-height: 0; overflow-y: auto;
-    display: flex; flex-direction: column; justify-content: flex-start;
-    padding: 30px 34px;
+    position: absolute; inset: 0; z-index: 3;
+    display: flex; align-items: center; justify-content: center;
+    padding: 60px 34px 96px; overflow-y: auto;
   }
   .empty[hidden] { display: none; }
-  .card { max-width: 620px; display: flex; flex-direction: column; gap: 16px; }
-  .card h1 { font: inherit; font-size: 19px; color: var(--fg); margin: 0; letter-spacing: -.01em; }
-  .card p { margin: 0; color: var(--dim); max-width: 58ch; }
+  .card { max-width: 560px; display: flex; flex-direction: column; gap: 16px; }
+  .card h1 { font-size: 21px; font-weight: 600; margin: 0; letter-spacing: -.02em; }
+  .card p { margin: 0; color: var(--dim); }
   .facts {
     display: grid; grid-template-columns: max-content 1fr;
     column-gap: 22px; row-gap: 6px; margin: 0;
     padding: 14px 0 14px 16px; box-shadow: inset 1px 0 0 var(--line-hi);
+    font-family: var(--mono); font-size: 12px;
   }
   .facts dt { color: var(--dim); letter-spacing: .04em; }
   .facts dd { margin: 0; color: var(--fg); font-variant-numeric: tabular-nums; }
   .facts dd.note { color: var(--dim); }
   .hint { color: var(--dim); }
-  kbd {
-    color: var(--fg); font: inherit; font-size: 11.5px; padding: 1px 6px;
-    border-radius: 3px; box-shadow: inset 0 0 0 1px var(--line-hi);
+  kbd { font-size: 11.5px; padding: 1px 6px; border-radius: 3px; box-shadow: inset 0 0 0 1px var(--line-hi); }
+
+  /* === portaria === */
+
+  /* Nome é obrigatório: sem ele a portaria não fecha, e o `join` não sai. Quem
+     entra numa sala aparece pra todo mundo, e "3f9a1b2c" não é uma pessoa. */
+  .gate { position: fixed; inset: 0; z-index: 50; display: flex; }
+  .gate[hidden] { display: none; }
+  .gate .scrim { position: absolute; inset: 0; background: rgba(3,6,8,.78); backdrop-filter: blur(4px); }
+  .gate .card {
+    position: relative; margin: auto; width: min(400px, calc(100% - 28px));
+    background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+    padding: 24px; gap: 14px; box-shadow: 0 40px 80px -30px #000;
   }
-  code { color: var(--fg); }
+  .gate h2 { margin: 0; font-size: 21px; letter-spacing: -.02em; font-weight: 600; }
+  .gate p { margin: 0; color: var(--dim); font-size: 12.5px; }
+  .fl { display: flex; flex-direction: column; gap: 6px; }
+  .fl > .k {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--dim);
+    display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  }
+  .fl > .k em { font-style: normal; text-transform: none; letter-spacing: .04em; }
+  .fl > .k em.bad { color: var(--warn); }
+  .field {
+    display: flex; align-items: center; gap: 9px; padding: 8px 10px;
+    background: var(--void); border: 1px solid var(--line); border-radius: 10px;
+  }
+  .field:focus-within { border-color: var(--accent); }
+  .field .av {
+    width: 26px; height: 26px; flex: none; border-radius: 50%; display: grid;
+    place-items: center; background: var(--raise); color: var(--fg);
+    font-family: var(--mono); font-size: 12px;
+  }
+  .field .av.anon { background: transparent; border: 1px dashed var(--line-hi); color: var(--dim); }
+  .field .hash { color: var(--dim); font-family: var(--mono); }
+  .field input {
+    font: inherit; flex: 1; min-width: 0; border: 0; background: transparent;
+    color: var(--fg); padding: 0; font-family: var(--mono); font-size: 14px;
+  }
+  .field input:focus { outline: 0; }
+  .field input::placeholder { color: var(--dim); opacity: 1; }
+  .recents { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .recents .k {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--dim); margin-right: 2px;
+  }
+  .rchip {
+    font: inherit; font-family: var(--mono); font-size: 11.5px; color: var(--dim);
+    border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
+    background: transparent; cursor: pointer;
+  }
+  .rchip:hover { border-color: var(--line-hi); color: var(--fg); }
+  .rchip.on { color: var(--accent); border-color: #2b5a53; background: #12302c; }
+  .go {
+    font: inherit; padding: 10px; border-radius: 10px; cursor: pointer;
+    background: var(--accent); border: 1px solid var(--accent); color: var(--ink); font-weight: 600;
+  }
+  .go:hover { background: #6bd8c4; }
+  .go:disabled { opacity: .4; cursor: not-allowed; background: var(--raise); border-color: var(--line); color: var(--dim); }
+  .gate .url { font-family: var(--mono); font-size: 10.5px; color: var(--dim); text-align: center; word-break: break-all; }
+
+  @media (max-width: 560px) {
+    .dock { gap: 6px; padding: 6px; bottom: 12px; }
+    .dock button { width: 40px; height: 40px; }
+    .top { max-width: calc(100% - 24px); }
+    .mark { display: none; }
+  }
 
   @media (prefers-reduced-motion: reduce) {
-    .tile, .frame video, .ctl { transition: none; }
-    .tile.peer.wait .frame { animation: none; }
+    .tile, .ctl, .dock button { transition: none; }
+    .tile.wait .glyph { animation: none; }
   }
 </style>
 </head>
 <body>
 
-<header>
-  <span class="brand">tela<i id="live"></i></span>
-  <span class="room">sala/<b id="roomName"></b></span>
-  <span class="me">eu/<input id="nameInput" maxlength="24" spellcheck="false"
-    autocomplete="off" aria-label="Seu nome nesta sala"></span>
-  <button class="chip" id="focusChip" hidden></button>
-  <span class="spacer"></span>
-  <span class="count" id="count">conectando</span>
-  <button id="copyBtn">Copiar link</button>
-  <button id="shareBtn" class="primary">Compartilhar tela</button>
-</header>
+<main id="stage"></main>
+
+<span class="mark">tela<i id="live"></i></span>
+
+<div class="top">
+  <span id="topRoom">#sala</span>
+  <span id="topAir">conectando</span>
+  <span id="topPeers">1</span>
+</div>
 
 <div class="notice" id="notice" hidden></div>
 
-<main id="stage" class="idle"></main>
-
-<section class="empty" id="empty">
+<section class="empty" id="empty" hidden>
   <div class="card">
     <h1>Nada no ar nesta sala.</h1>
     <p>Compartilhe a sua tela, ou mande o link desta página pra quem vai assistir.
       Só quem está no tailnet consegue abrir: não há login porque não há porta pra fora.</p>
     <dl class="facts">
-      <dt>sala</dt><dd id="fRoom">—</dd>
-      <dt>peers</dt><dd id="fPeers">—</dd>
-      <dt>transmitindo</dt><dd id="fSharers">—</dd>
-      <dt>captura</dt><dd id="fCap">—</dd>
-      <dt>vídeo</dt><dd class="note">direto entre os navegadores — o servidor só apresenta os dois</dd>
+      <dt>sala</dt><dd id="fRoom">...</dd>
+      <dt>peers</dt><dd id="fPeers">...</dd>
+      <dt>transmitindo</dt><dd id="fSharers">...</dd>
+      <dt>captura</dt><dd id="fCap">...</dd>
+      <dt>vídeo</dt><dd class="note">direto entre os navegadores: o servidor só apresenta os dois</dd>
     </dl>
-    <p class="hint">Com duas telas no ar, clique numa delas para focar. <kbd>esc</kbd> volta.
-      Troque de sala editando o <code>#</code> da URL.</p>
+    <p class="hint">Com duas telas no ar, clique numa delas para focar. <kbd>esc</kbd> volta.</p>
   </div>
 </section>
 
+<div class="dock">
+  <button id="shareBtn" title="Compartilhar tela" aria-label="Compartilhar tela">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8.5 20.5h7M12 17v3.5"/></svg>
+  </button>
+  <button id="copyBtn" title="Copiar link" aria-label="Copiar link">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 13.5a4.5 4.5 0 0 0 6.4 0l2.6-2.6a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M13.5 10.5a4.5 4.5 0 0 0-6.4 0l-2.6 2.6a4.5 4.5 0 0 0 6.4 6.4l1-1"/></svg>
+  </button>
+  <span class="sep"></span>
+  <button id="roomBtn" title="Trocar de sala" aria-label="Trocar de sala">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 9h15M4.5 15h15M10 3.5 8 20.5M16 3.5l-2 17"/></svg>
+  </button>
+  <button id="meBtn" title="Seu nome" aria-label="Seu nome">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>
+  </button>
+  <button id="gridBtn" title="Sair do foco" aria-label="Sair do foco" disabled>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>
+  </button>
+</div>
+
+<div class="gate" id="gate" hidden role="dialog" aria-modal="true" aria-labelledby="gateTitle">
+  <div class="scrim" id="gateScrim"></div>
+  <div class="card">
+    <h2 id="gateTitle">Quem entra na sala</h2>
+    <p id="gateSub">O nome é como a sala te chama, e é obrigatório: quem está do outro
+      lado precisa saber de quem é a tela. A sala é qualquer palavra, e quem abrir
+      o mesmo link cai no mesmo lugar.</p>
+    <div class="fl">
+      <span class="k">seu nome <em id="gateHint">mínimo 3 letras</em></span>
+      <div class="field">
+        <span class="av anon" id="gateAv">_</span>
+        <input id="gateName" maxlength="24" spellcheck="false" autocomplete="off"
+          placeholder="como te chamam" aria-label="Seu nome">
+      </div>
+    </div>
+    <div class="fl">
+      <span class="k">sala</span>
+      <div class="field">
+        <span class="hash">#</span>
+        <input id="gateRoom" maxlength="64" spellcheck="false" autocomplete="off"
+          aria-label="Nome da sala">
+      </div>
+    </div>
+    <div class="recents" id="gateRecents"></div>
+    <button class="go" id="gateGo">Entrar</button>
+    <span class="url" id="gateUrl"></span>
+  </div>
+</div>
+
 <script>
-const ROOM = decodeURIComponent(location.hash.slice(1)) || "sala";
+// A sala vem do fragmento, mas não é constante: o dock troca de sala em tempo
+// de execução, e o `#` editado na mão continua valendo.
+let ROOM = "";
 const CAP_BITRATE = 1_500_000;   // por peer
 const CAP_FRAMERATE = 30;
 
 const $ = (id) => document.getElementById(id);
-$("roomName").textContent = ROOM;
+ROOM = cleanRoom(decodeURIComponent(location.hash.slice(1)));
 
 const peers = new Set();          // ids na sala
 const sending = new Map();        // peerId -> RTCPeerConnection (eu envio)
@@ -309,6 +410,9 @@ let myId = null;
 let myName = "";                  // nome escolhido aqui, já saneado
 let ws = null;
 let dead = false;                 // recebeu `denied`: para de reconectar
+let retry = 0;                    // timer do reconnect, cancelável na troca de sala
+let gateOpen = false;
+let gateTrava = false;            // portaria sem saída: ainda não há nome
 
 /* ---------- setup ---------- */
 
@@ -320,7 +424,12 @@ async function boot() {
   maxCapturePixels = cfg.maxCapturePixels ?? 1_440_000;
   // Avisa de cara, em vez de deixar a pessoa clicar num botão que não faz nada.
   if (!canShare()) notice(whyCantShare());
+  paintRoom();
+  remember(ROOM);
   render();
+  // Nome é obrigatório: sem um guardado a portaria trava até ser respondida.
+  // Com um guardado, o link abre direto na sala dele, que é o ponto do link.
+  if (!nameOk(myName)) openGate(true);
   // O hostname aqui é o MagicDNS do tailnet, que resolve pro 100.x.
   // O STUN devolve esse mesmo 100.x como srflx candidate.
   iceServers = [{ urls: `stun:${location.hostname}:${cfg.stunPort}` }];
@@ -329,16 +438,18 @@ async function boot() {
 
 function connect() {
   if (dead) return;
+  clearTimeout(retry);
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws`);
 
   // O nome vai no join, então o reconnect o restabelece sozinho: o servidor
-  // perdeu o socket antigo e com ele o nome, que morava lá.
-  ws.onopen = () => ws.send(JSON.stringify({ t: "join", room: ROOM, name: myName }));
+  // perdeu o socket antigo e com ele o nome, que morava lá. Sem nome válido não
+  // há join: quem ainda está na portaria não está em sala nenhuma.
+  ws.onopen = entrar;
   ws.onclose = () => {
     if (dead) return;
-    $("count").textContent = "reconectando";
-    setTimeout(connect, 1500);
+    $("topAir").textContent = "reconectando";
+    retry = setTimeout(connect, 1500);
   };
   ws.onmessage = (e) => handle(JSON.parse(e.data));
 }
@@ -394,11 +505,10 @@ function handle(msg) {
     ws?.close();
     notice(
       msg.reason === "room-full"
-        ? "Sala cheia. Espere alguém sair e recarregue a página."
+        ? "Sala cheia. Espere alguém sair, ou entre em outra sala pelo dock."
         : `Entrada recusada (${msg.reason}).`
     );
-    $("count").textContent = "recusado";
-    $("shareBtn").disabled = true;
+    render();
     return;
   }
 
@@ -809,6 +919,8 @@ function attachTile(id, stream, isSelf = false) {
     tile = document.createElement("div");
     tile.className = "tile" + (isSelf ? " self" : "");
     tile.dataset.id = id;
+    // Rótulo e telemetria são pílulas sobre o vídeo, como numa call: o tile
+    // passa a ser só a caixa do vídeo, e o encaixe não desconta régua nenhuma.
     tile.innerHTML =
       '<div class="frame">' +
         '<video autoplay playsinline muted></video>' +
@@ -816,14 +928,12 @@ function attachTile(id, stream, isSelf = false) {
           '<button class="act focus"></button>' +
           '<button class="act full">tela cheia</button>' +
         '</div>' +
-      '</div>' +
-      '<div class="meta">' +
-        '<canvas class="wave" aria-hidden="true"></canvas>' +
-        '<div class="fields"><span class="who"></span><span class="rate"></span>' +
-        '<span class="size"></span><span class="path"></span></div>' +
+        '<span class="who"><i></i><b></b></span>' +
+        '<div class="tel"><span class="rate"></span><span class="size"></span>' +
+        '<span class="path"></span><canvas class="wave" aria-hidden="true"></canvas></div>' +
       '</div>';
 
-    tile.querySelector(".who").textContent = isSelf ? "você" : nameOf(id);
+    tile.querySelector(".who b").textContent = isSelf ? "você" : nameOf(id);
     tile.querySelector(".frame").onclick = () => toggleFocus(id);
     tile.querySelector(".focus").onclick = (e) => {
       e.stopPropagation();
@@ -861,9 +971,11 @@ function toggleFocus(id) {
   render();
 }
 
-// Presença: quem está na sala aparece mesmo sem transmitir. Sai de `peers` e
-// `sharers`, como todo o resto — não existe um segundo mapa pra dessincronizar.
-// Placa não tem controles: focar num monograma não leva a nada.
+// Presença: quem está na sala aparece no palco mesmo sem transmitir, com um
+// monograma no lugar do vídeo — é o tile de quem está com a câmera fechada numa
+// call. Sai de `peers` e `sharers`, como todo o resto: não existe um segundo
+// mapa pra dessincronizar. Não tem controles: focar num monograma não leva a
+// nada.
 function plate(id) {
   let tile = tiles.get(id);
   if (tile) return tile;
@@ -872,7 +984,7 @@ function plate(id) {
   tile.dataset.id = id;
   tile.innerHTML =
     '<div class="frame"><span class="glyph" aria-hidden="true"></span></div>' +
-    '<div class="meta"><div class="fields"><span class="who"></span></div></div>';
+    '<span class="who"><i></i><b></b></span>';
   tiles.set(id, tile);
   $("stage").append(tile);
   return tile;
@@ -902,29 +1014,28 @@ function syncRoster() {
 // deixava o tile mais alto que a viewport e a página passava a rolar — a faixa
 // de telemetria ficava embaixo da dobra.
 const GAP = 12;                   // entre tiles
-const PAD = 14;                   // borda do palco
-// Alturas da faixa de telemetria. Têm que bater com o CSS: STRIP_LINE é a
-// altura de .fields, STRIP_BAND é .fields mais a faixa do medidor em cima.
-const STRIP_LINE = 24;
-const STRIP_BAND = 40;
-const BAND_BELOW = 600;           // abaixo desta largura de tile, medidor em faixa
-const MINI_STRIP = 20;            // faixa da miniatura na trilha
-const WAVE_LINE_H = 14;
-const WAVE_BAND_H = 16;
-const WAVE_SLOT = 3;              // px por amostra na linha: barra de 2 + 1 de ar
+const PAD_X = 14;                 // borda lateral do palco
+// O cromo flutua sobre o palco, mas não pode cobrir tile: estas duas faixas são
+// a pílula de cima e o dock de baixo, e saem da altura disponível.
+const PAD_TOP = 52;
+const PAD_BOT = 84;
 const WAVE_LEN = 60;              // amostras guardadas, uma por segundo
-// Placa de presença: quadrada, e com teto de altura. O teto é o ponto todo —
-// monograma não carrega informação por pixel e o palco é área de vídeo, onde
-// encolher custa legibilidade do texto que está sendo compartilhado.
-const PRES_AR = 1;
-const PRES_RAIL = 132;            // teto na trilha, com vídeo no palco
-const PRES_SOLO = 220;            // teto quando o palco é só de placas
+const WAVE_SLOT = 3;              // px por amostra: barra de 2 mais 1 de ar
+const WAVE_H = 14;
+// Os dois limiares da linha de pílulas, medidos contra a sobreposição real do
+// rótulo com a telemetria: abaixo do primeiro a fita não cabe junto com os
+// números, abaixo do segundo nem os números cabem junto com o nome.
+const WAVE_BELOW = 520;
+const TEL_BELOW = 340;
+// Presença tem a forma de um tile de call, não de um quadrado: quando ninguém
+// transmite, a grade de monogramas é a chamada inteira.
+const PRES_AR = 16 / 9;
+// Com vídeo no palco a presença desce pra uma trilha com teto. O teto é o ponto
+// todo: monograma não carrega informação por pixel, e tela compartilhada
+// encolhida deixa de ser texto legível.
+const PRES_RAIL = 132;
 
-// Vale para todos os tiles do layout atual: régua desalinhada entre tiles lado
-// a lado é pior que medidor em faixa num tile que teria largura pra linha.
-let strip = STRIP_LINE;
 let minTile = Infinity;           // menor tile não-miniatura do passe atual
-
 let pending = 0;
 
 function relayout() {
@@ -941,15 +1052,17 @@ function arOf(tile) {
   return v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 16 / 9;
 }
 
-// Maior vídeo com proporção ar que cabe em W×H descontando a faixa.
-function fitBox(ar, W, H, strip) {
-  const h = Math.max(24, Math.min(H - strip, W / ar));
+// Maior vídeo com proporção ar que cabe em W×H.
+function fitBox(ar, W, H) {
+  const h = Math.max(24, Math.min(H, W / ar));
   return { w: Math.min(W, h * ar), h };
 }
 
 function place(tile, x, y, w, h, mini) {
   if (!mini && !tile.classList.contains("peer")) minTile = Math.min(minTile, w);
   tile.classList.toggle("mini", mini);
+  tile.classList.toggle("tight", w < WAVE_BELOW);
+  tile.classList.toggle("narrow", w < TEL_BELOW);
   tile.style.left = Math.round(x) + "px";
   tile.style.top = Math.round(y) + "px";
   tile.style.width = Math.round(w) + "px";
@@ -959,8 +1072,8 @@ function place(tile, x, y, w, h, mini) {
 function layout() {
   const stage = $("stage");
   if (!tiles.size) return;
-  const W = stage.clientWidth - PAD * 2;
-  const H = stage.clientHeight - PAD * 2;
+  const W = stage.clientWidth - PAD_X * 2;
+  const H = stage.clientHeight - PAD_TOP - PAD_BOT;
   if (W <= 0 || H <= 0) return;
 
   const list = [...tiles.values()];
@@ -968,34 +1081,23 @@ function layout() {
   const isPlate = (t) => t.classList.contains("peer");
   const vids = list.filter((t) => !isPlate(t));
   const plates = list.filter(isPlate);
-  const fit = () => {
-    minTile = Infinity;
-    // No foco as placas entram na trilha como qualquer miniatura: o roster não
-    // desaparece justo quando alguém está olhando uma tela de perto.
-    if (focused && list.length > 1) fitFocus(list, focused, PAD, PAD, W, H);
-    else if (!vids.length) fitRoster(plates, PAD, PAD, W, H, PRES_SOLO);
-    else if (!plates.length) fitGrid(vids, PAD, PAD, W, H);
-    else {
-      // O piso de 64 não pode comer o palco numa janela baixa, daí o 0.4.
-      const rail = Math.min(Math.max(64, H * 0.22), H * 0.4, PRES_RAIL);
-      fitGrid(vids, PAD, PAD, W, H - rail - GAP);
-      fitRoster(plates, PAD, PAD + H - rail, W, rail, PRES_RAIL);
-    }
-  };
 
-  // Primeiro passe otimista, com o medidor na linha. Se algum tile ficou
-  // estreito demais pra isso, o medidor vira faixa e o encaixe é refeito —
-  // a faixa é 16px mais alta, então as alturas mudam.
-  strip = STRIP_LINE;
-  fit();
-  if (minTile < BAND_BELOW) {
-    strip = STRIP_BAND;
-    fit();
+  minTile = Infinity;
+  // No foco a presença entra na trilha como qualquer miniatura: o roster não
+  // desaparece justo quando alguém está olhando uma tela de perto.
+  if (focused && list.length > 1) fitFocus(list, focused, PAD_X, PAD_TOP, W, H);
+  // Ninguém transmitindo: a grade de monogramas é a call inteira, célula igual
+  // pra todo mundo. É o único estado em que presença pode ocupar o palco.
+  else if (!vids.length) fitGrid(plates, PAD_X, PAD_TOP, W, H);
+  else if (!plates.length) fitGrid(vids, PAD_X, PAD_TOP, W, H);
+  else {
+    // O piso de 64 não pode comer o palco numa janela baixa, daí o 0.4.
+    const rail = Math.min(Math.max(64, H * 0.22), H * 0.4, PRES_RAIL);
+    fitGrid(vids, PAD_X, PAD_TOP, W, H - rail - GAP);
+    fitRoster(plates, PAD_X, PAD_TOP + H - rail, W, rail);
   }
-  for (const tile of vids) {
-    tile.classList.toggle("band", strip === STRIP_BAND);
-    sizeWave(tile, tile.offsetWidth);
-  }
+
+  for (const tile of vids) sizeWave(tile);
 }
 
 // Escolhe o número de colunas que maximiza a área total de vídeo. Não é
@@ -1003,16 +1105,15 @@ function layout() {
 // depende delas, e o palco raramente é quadrado.
 //
 // Dentro de cada linha todos os tiles têm a MESMA altura e as larguras saem da
-// proporção de cada um, como numa galeria justificada. Alinha topo e rodapé da
-// linha, e as faixas de telemetria viram uma régua só. As linhas são empilhadas
+// proporção de cada um, como numa galeria justificada. As linhas são empilhadas
 // coladas e o bloco todo é centralizado — centralizar cada tile na sua célula
 // abria buracos irregulares entre eles.
 function rowsFor(list, ars, cols, W, H) {
   const n = list.length;
   const nRows = Math.ceil(n / cols);
-  // Teto de altura por linha. Uniforme de propósito: é o que garante que a
-  // soma das linhas nunca passe de H, ou seja, que nada precise de scroll.
-  const budget = (H - GAP * (nRows - 1)) / nRows - strip;
+  // Teto de altura por linha. Uniforme de propósito: é o que garante que a soma
+  // das linhas nunca passe de H, ou seja, que nada precise de scroll.
+  const budget = (H - GAP * (nRows - 1)) / nRows;
   const rows = [];
   for (let r = 0; r < nRows; r++) {
     const idx = [];
@@ -1036,7 +1137,7 @@ function fitGrid(list, X, Y, W, H) {
   }
 
   const rows = rowsFor(list, ars, cols, W, H);
-  const total = rows.reduce((sum, r) => sum + r.h + strip, 0) + GAP * (rows.length - 1);
+  const total = rows.reduce((sum, r) => sum + r.h, 0) + GAP * (rows.length - 1);
   let y = Y + Math.max(0, (H - total) / 2);
 
   for (const row of rows) {
@@ -1047,22 +1148,21 @@ function fitGrid(list, X, Y, W, H) {
       place(list[i], x, y, ws[k], row.h, false);
       x += ws[k] + GAP;
     });
-    y += row.h + strip + GAP;
+    y += row.h + GAP;
   }
 }
 
-// Uma linha de placas, altura com teto: quando há vídeo no palco a trilha é o
-// resto do espaço até o teto, quando não há as placas herdam o palco e crescem.
-// A faixa de rótulo é sempre STRIP_LINE — placa não tem medidor, então nunca
-// vira faixa junto com os tiles de vídeo.
-function fitRoster(list, X, Y, W, H, cap) {
+// Trilha de presença: uma linha de monogramas embaixo do vídeo, com teto de
+// altura. Existe pra que quem está na sala não suma do palco quando alguém
+// compartilha, sem tomar área de quem compartilhou.
+function fitRoster(list, X, Y, W, H) {
   const k = list.length;
   const slot = (W - GAP * (k - 1)) / k;
-  const h = Math.max(24, Math.min(H - STRIP_LINE, cap - STRIP_LINE, slot / PRES_AR));
+  const h = Math.max(24, Math.min(H, slot / PRES_AR));
   const w = h * PRES_AR;
   const total = k * w + GAP * (k - 1);
   let x = X + Math.max(0, (W - total) / 2);
-  const y = Y + Math.max(0, (H - h - STRIP_LINE) / 2);
+  const y = Y + Math.max(0, (H - h) / 2);
   for (const tile of list) {
     place(tile, x, y, w, h, false);
     x += w + GAP;
@@ -1070,7 +1170,7 @@ function fitRoster(list, X, Y, W, H, cap) {
 }
 
 // Foco: um tile no palco, os outros numa trilha. À direita quando há largura,
-// embaixo quando não há. Ninguém troca de pai no DOM — mover um <video> com
+// embaixo quando não há. Ninguém troca de pai no DOM — mover um `<video>` com
 // srcObject pisca — só muda de tamanho e de lugar.
 function fitFocus(list, focused, X, Y, W, H) {
   const others = list.filter((t) => t !== focused);
@@ -1080,48 +1180,48 @@ function fitFocus(list, focused, X, Y, W, H) {
   const railH = side ? 0 : Math.max(72, Math.min(132, H * 0.22));
   const mainW = W - (side ? railW + GAP : 0);
   const mainH = H - (side ? 0 : railH + GAP);
-  const box = fitBox(arOf(focused), mainW, mainH, strip);
+  const box = fitBox(arOf(focused), mainW, mainH);
 
   if (side) {
-    const top = Y + (mainH - box.h - strip) / 2;
+    const top = Y + (mainH - box.h) / 2;
     place(focused, X + (mainW - box.w) / 2, top, box.w, box.h, false);
-    // Trilha pendurada na borda de cima do tile em foco: os dois viram um
-    // bloco só. Centralizar a trilha na altura do palco a deixava solta.
+    // Trilha pendurada na borda de cima do tile em foco: os dois viram um bloco
+    // só. Centralizar a trilha na altura do palco a deixava solta.
     const slot = (H - GAP * (k - 1)) / k;
-    const boxes = others.map((t) => fitBox(arOf(t), railW, slot, MINI_STRIP));
-    const total = boxes.reduce((sum, b) => sum + b.h + MINI_STRIP, 0) + GAP * (k - 1);
+    const boxes = others.map((t) => fitBox(arOf(t), railW, slot));
+    const total = boxes.reduce((sum, b) => sum + b.h, 0) + GAP * (k - 1);
     let y = Math.min(Math.max(Y, top), Y + Math.max(0, H - total));
     others.forEach((tile, i) => {
       place(tile, X + W - railW + (railW - boxes[i].w) / 2, y, boxes[i].w, boxes[i].h, true);
-      y += boxes[i].h + MINI_STRIP + GAP;
+      y += boxes[i].h + GAP;
     });
     return;
   }
 
   // Retrato: foco e trilha colados, bloco centralizado.
   const slot = (W - GAP * (k - 1)) / k;
-  const boxes = others.map((t) => fitBox(arOf(t), slot, railH, MINI_STRIP));
-  const miniH = Math.max(...boxes.map((b) => b.h)) + MINI_STRIP;
-  const total = box.h + strip + GAP + miniH;
+  const boxes = others.map((t) => fitBox(arOf(t), slot, railH));
+  const miniH = Math.max(...boxes.map((b) => b.h));
+  const total = box.h + GAP + miniH;
   const y0 = Y + Math.max(0, (H - total) / 2);
   place(focused, X + (mainW - box.w) / 2, y0, box.w, box.h, false);
 
   const rowW = boxes.reduce((sum, b) => sum + b.w, 0) + GAP * (k - 1);
   let x = X + Math.max(0, (W - rowW) / 2);
   others.forEach((tile, i) => {
-    place(tile, x, y0 + box.h + strip + GAP, boxes[i].w, boxes[i].h, true);
+    place(tile, x, y0 + box.h + GAP, boxes[i].w, boxes[i].h, true);
     x += boxes[i].w + GAP;
   });
 }
 
 new ResizeObserver(relayout).observe($("stage"));
-// Rótulos curtos/longos mudam com a largura, não só o encaixe.
-matchMedia("(max-width: 560px)").addEventListener("change", render);
 document.addEventListener("fullscreenchange", relayout);
 
 addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (gateOpen) return closeGate();
   // Em tela cheia o esc é do navegador; aqui só sai do foco.
-  if (e.key === "Escape" && focusId && !document.fullscreenElement) {
+  if (focusId && !document.fullscreenElement) {
     focusId = null;
     render();
   }
@@ -1130,8 +1230,11 @@ addEventListener("keydown", (e) => {
 /* ---------- nome ---------- */
 
 const NAME_KEY = "tela:nome";
-const nameField = $("nameInput");
-let renameTimer = 0;
+// Obrigatório, e com piso: uma letra não distingue duas pessoas, e quem entra
+// numa sala precisa ser reconhecível por quem já está lá. O servidor continua
+// aceitando vazio (é como se apaga um nome), então esta regra é do cliente:
+// outro cliente ainda poderia entrar sem nome, e aí `nameOf` cai no id.
+const MIN_NAME = 3;
 
 // Mesmo saneamento do servidor. Ele já corta em 24, mas o mapa chega de outra
 // máquina e o campo é digitado aqui: os dois lados cortam, ninguém confia.
@@ -1139,8 +1242,12 @@ function cleanName(raw) {
   return String(raw ?? "").replace(/\s+/g, " ").trim().slice(0, 24);
 }
 
-// Nome é opcional. Quem não escolheu aparece pelo id, que é o único
-// identificador que o servidor garante.
+function nameOk(raw) {
+  return [...cleanName(raw)].length >= MIN_NAME;
+}
+
+// Quem não tem nome aparece pelo id, que é o único identificador que o servidor
+// garante.
 function nameOf(id) {
   return names.get(id) || id;
 }
@@ -1155,51 +1262,213 @@ function storeName(v) {
   try { localStorage.setItem(NAME_KEY, v); } catch {}
 }
 
-// Uma mensagem por tecla seria desperdício: o broadcast atinge a sala inteira.
-// O debounce agrupa a digitação; blur e Enter mandam na hora.
-function pushName(now) {
-  const v = cleanName(nameField.value);
-  clearTimeout(renameTimer);
-  const go = () => {
-    if (v === myName) return;
-    myName = v;
-    storeName(v);
-    send({ t: "rename", name: v });
-  };
-  if (now) go();
-  else renameTimer = setTimeout(go, 400);
+// Sem debounce: o nome não é mais digitado ao vivo no cabeçalho, é confirmado
+// na portaria. Uma confirmação, um `rename`.
+function setName(raw) {
+  const v = cleanName(raw);
+  if (!nameOk(v) || v === myName) return;
+  myName = v;
+  storeName(v);
+  send({ t: "rename", name: v });
+  render();
+}
+
+// Entrar é mandar `join`, e isso só acontece com nome válido. Enquanto a
+// portaria não for respondida o socket existe mas a pessoa não está em sala
+// nenhuma: o servidor ignora tudo que chega antes do join.
+function entrar() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (myId || !nameOk(myName)) return;
+  send({ t: "join", room: ROOM, name: myName });
 }
 
 myName = loadName();
-nameField.value = myName;
-nameField.oninput = () => pushName(false);
-nameField.onblur = () => {
-  pushName(true);
-  nameField.value = myName;   // mostra o que a sala vê, já aparado
-};
-nameField.onkeydown = (e) => {
-  if (e.key !== "Enter") return;
-  pushName(true);
-  nameField.blur();
+
+/* ---------- salas ---------- */
+
+const ROOMS_KEY = "tela:salas";
+const ROOMS_MAX = 8;
+
+// Mesmo corte do servidor (String, 64), mais o colapso de espaços que o
+// fragmento deixa passar. Vazio cai em "sala", o padrão dos dois lados.
+function cleanRoom(raw) {
+  return String(raw ?? "").replace(/\s+/g, " ").trim().slice(0, 64) || "sala";
+}
+
+// As salas que a portaria oferece são o histórico DESTE navegador, não um
+// diretório da rede. O servidor sabe quais salas têm gente agora (o mapa
+// `rooms`, em server.ts), mas não conta isso pro cliente: cada um só recebe
+// peers, names e sharers da sala em que está. E sala vazia deixa de existir lá
+// no close. Ocupação, portanto, só na sala atual.
+function loadRooms() {
+  try {
+    const v = JSON.parse(localStorage.getItem(ROOMS_KEY) || "[]");
+    return Array.isArray(v) ? [...new Set(v.map(cleanRoom))] : [];
+  } catch { return []; }
+}
+
+function remember(room) {
+  const list = [room, ...loadRooms().filter((r) => r !== room)].slice(0, ROOMS_MAX);
+  try { localStorage.setItem(ROOMS_KEY, JSON.stringify(list)); } catch {}
+  return list;
+}
+
+function paintRoom() {
+  $("topRoom").textContent = "#" + ROOM;
+  document.title = `#${ROOM} · tela`;
+}
+
+// Troca de sala sem recarregar. O socket novo ganha um id novo do servidor, e o
+// `joined` já sabe derrubar o que era do id velho: é o mesmo caminho do
+// reconnect. Quem estava transmitindo continua, e a vaga de sharer é pedida de
+// novo na sala nova.
+function switchRoom(nome) {
+  const alvo = cleanRoom(nome);
+  if (alvo === ROOM) return;
+
+  ROOM = alvo;
+  remember(ROOM);
+  paintRoom();
+  history.replaceState(null, "", "#" + encodeURIComponent(ROOM));
+
+  // Recusa da sala anterior não vale na próxima.
+  dead = false;
+  notice("");
+
+  clearTimeout(retry);
+  if (ws) {
+    // Solta os handlers antes de fechar: senão o onclose do socket velho agenda
+    // um reconnect que corre junto com o connect() de baixo.
+    ws.onclose = null;
+    ws.onmessage = null;
+    ws.close();
+    ws = null;
+  }
+  resetConnections();
+  peers.clear();
+  names.clear();
+  sharers = new Set();
+  myId = null;
+  render();
+  connect();
+}
+
+// O `#` continua sendo o endereço da sala: editar na barra troca de sala como o
+// dock troca. replaceState não dispara hashchange, então isto só pega a edição
+// de gente.
+addEventListener("hashchange", () => {
+  switchRoom(cleanRoom(decodeURIComponent(location.hash.slice(1))));
+});
+
+/* ---------- portaria ---------- */
+
+// Ela é a porta: o `join` só sai com nome válido, então enquanto a portaria não
+// for respondida a pessoa não está na sala. É por isso que ela não fecha no esc
+// nem no clique fora quando ainda não há nome. Depois, o mesmo modal serve pra
+// trocar de sala ou de nome, e aí fechar sem responder é legítimo.
+function openGate(trava) {
+  gateOpen = true;
+  gateTrava = !!trava;
+  $("gateName").value = myName;
+  $("gateRoom").value = ROOM;
+  $("gateTitle").textContent = trava ? "Quem entra na sala" : "Sala e nome";
+  $("gateSub").hidden = !trava;
+  paintGate();
+  $("gate").hidden = false;
+  const alvo = trava || !nameOk(myName) ? $("gateName") : $("gateRoom");
+  alvo.focus();
+  alvo.select();
+}
+
+function closeGate() {
+  // Sem nome não há saída: a portaria é a única coisa entre a pessoa e uma sala
+  // onde ela apareceria como "3f9a1b2c" pra todo mundo.
+  if (gateTrava) return;
+  gateOpen = false;
+  $("gate").hidden = true;
+}
+
+function paintGate() {
+  const nome = cleanName($("gateName").value);
+  const ok = nameOk(nome);
+  const sala = cleanRoom($("gateRoom").value);
+
+  const av = $("gateAv");
+  av.textContent = nome ? [...nome][0].toUpperCase() : "_";
+  av.className = "av" + (ok ? "" : " anon");
+
+  // Só reclama depois que a pessoa digitou alguma coisa: campo intocado com
+  // aviso aceso é bronca antes do erro.
+  const dica = $("gateHint");
+  dica.textContent = ok ? `${[...nome].length}/24` : `mínimo ${MIN_NAME} letras`;
+  dica.className = !ok && nome ? "bad" : "";
+
+  const go = $("gateGo");
+  go.disabled = !ok;
+  go.textContent = sala === ROOM ? "Entrar" : `Entrar em #${sala}`;
+  $("gateUrl").textContent = `${location.host}/#${encodeURIComponent(sala)}`;
+
+  const box = $("gateRecents");
+  box.textContent = "";
+  const list = loadRooms();
+  // Uma sala só, e é a que já está no campo: a linha não informaria nada.
+  if (!list.length || (list.length === 1 && list[0] === sala)) return;
+  const k = document.createElement("span");
+  k.className = "k";
+  k.textContent = "suas salas";
+  box.append(k);
+  for (const r of list) {
+    const b = document.createElement("button");
+    b.className = "rchip" + (r === sala ? " on" : "");
+    b.textContent = r;
+    b.onclick = () => {
+      $("gateRoom").value = r;
+      paintGate();
+    };
+    box.append(b);
+  }
+}
+
+function confirmGate() {
+  if (!nameOk($("gateName").value)) return;
+  const sala = cleanRoom($("gateRoom").value);
+  setName($("gateName").value);
+  gateTrava = false;
+  closeGate();
+  // Mesma sala: o join estava só esperando o nome. Sala nova: reconecta, e o
+  // join sai no onopen, já com nome.
+  if (sala === ROOM) entrar();
+  else switchRoom(sala);
+}
+
+$("gateName").oninput = paintGate;
+$("gateRoom").oninput = paintGate;
+$("gateGo").onclick = confirmGate;
+$("gateScrim").onclick = closeGate;
+$("gate").onkeydown = (e) => {
+  if (e.key === "Enter") confirmGate();
 };
 
-/* ---------- ui ---------- */
+/* ---------- ui ---------- *//* ---------- ui ---------- */
 
 function render() {
   const n = peers.size;
-  const tight = innerWidth < 560;   // rótulos curtos, cabeçalho em duas linhas
-  // Antes de qualquer coisa que conte tiles: `idle` e o encaixe dependem de o
-  // roster já estar montado.
+  // Antes de qualquer coisa que conte tiles: o palco vazio e o encaixe dependem
+  // de o roster já estar montado.
   syncRoster();
-  // Mostra a ocupação de sharers junto: é a resposta pra "por que o botão
-  // está bloqueado?" sem precisar passar o mouse em cima.
-  const ocupacao = sharers.size
-    ? ` · ${sharers.size}/${maxSharers}` + (tight ? "" : " compartilhando")
-    : "";
-  $("count").textContent = (n === 1 ? "1 peer" : `${n} peers`) + ocupacao;
+
+  // Pílula de cima: sala, ocupação de sharers, tamanho da sala. A ocupação é a
+  // resposta pra "por que o botão está apagado?" sem passar o mouse em cima.
+  const air = $("topAir");
+  air.textContent = myId
+    ? `${sharers.size}/${maxSharers} no ar`
+    : dead ? "recusado" : "conectando";
+  air.className = myId && sharers.size >= maxSharers ? "cheio" : "";
+  const quantos = $("topPeers");
+  quantos.hidden = !myId;
+  quantos.textContent = n ? `${n + 1} na sala` : "só você";
 
   const idle = tiles.size === 0;
-  $("stage").classList.toggle("idle", idle);
   $("empty").hidden = !idle;
   if (idle) {
     // Mesmo teto que startShare() usa como dica no picker, assumindo 16:9.
@@ -1212,14 +1481,10 @@ function render() {
   $("live").classList.toggle("live", !!localStream);
 
   if (focusId && !tiles.has(focusId)) focusId = null;
-  const chip = $("focusChip");
-  chip.hidden = !focusId;
-  if (focusId) chip.textContent = tight ? "foco · esc" : `foco ${focusId === myId ? "você" : nameOf(focusId)} · esc`;
-
-  // O placeholder é o id: é o que a sala vê de quem não escolheu nome.
-  nameField.placeholder = myId || "seu nome";
+  $("gridBtn").disabled = !focusId;
 
   for (const [id, tile] of tiles) {
+    const quem = id === myId ? "você" : nameOf(id);
     if (tile.classList.contains("peer")) {
       const named = names.has(id);
       const waiting = sharers.has(id);
@@ -1229,48 +1494,60 @@ function render() {
       // slice(0,1) partiria o par surrogate no meio.
       tile.querySelector(".glyph").textContent =
         named ? [...nameOf(id)][0].toUpperCase() : "_";
-      tile.querySelector(".who").textContent =
-        waiting ? "conectando…" : id === myId ? "você" : nameOf(id);
+      tile.querySelector(".who b").textContent = waiting ? "conectando…" : quem;
       // Dois homônimos na sala só se distinguem pelo id.
       tile.title = named ? `${nameOf(id)} · ${id}` : id;
       continue;
     }
     const on = id === focusId;
     tile.classList.toggle("focused", on);
-    const who = id === myId ? "sua tela" : nameOf(id);
-    // O nome pode mudar depois do tile existir, então a faixa é reescrita a
+    // O nome pode mudar depois do tile existir, então a pílula é reescrita a
     // cada render, não só na criação. textContent: nome é texto de terceiro.
-    tile.querySelector(".who").textContent = id === myId ? "você" : nameOf(id);
+    tile.querySelector(".who b").textContent = quem;
+    const alvo = id === myId ? "sua tela" : nameOf(id);
     const btn = tile.querySelector(".focus");
     btn.textContent = on ? "sair do foco" : "focar";
-    btn.setAttribute("aria-label", on ? "Sair do foco" : `Focar em ${who}`);
-    tile.querySelector(".full").setAttribute("aria-label", `Tela cheia: ${who}`);
+    btn.setAttribute("aria-label", on ? "Sair do foco" : `Focar em ${alvo}`);
+    tile.querySelector(".full").setAttribute("aria-label", `Tela cheia: ${alvo}`);
   }
-
-  const copy = $("copyBtn");
-  if (copy.textContent !== "Copiado") copy.textContent = tight ? "Link" : "Copiar link";
 
   const btn = $("shareBtn");
   const mine = !!localStream;
-  const full = !mine && sharers.size >= maxSharers;
-  btn.textContent = mine ? "Parar" : tight ? "Compartilhar" : "Compartilhar tela";
-  btn.className = mine ? "stop" : "primary";
   // Conjunto cheio e eu não estou nele: não há vaga pra pedir.
+  const full = !mine && sharers.size >= maxSharers;
+  btn.className = mine ? "stop" : "on";
   btn.disabled = dead || full || !canShare();
-  btn.title = !canShare() ? whyCantShare() : full ? "Limite de sharers atingido" : "";
+  btn.title = mine
+    ? "Parar de compartilhar"
+    : !canShare() ? whyCantShare()
+    : full ? `Já tem ${maxSharers} no ar` : "Compartilhar tela";
+  btn.setAttribute("aria-label", btn.title);
 
   relayout();
 }
 
+/* ---------- dock ---------- */
+
 $("shareBtn").onclick = () => (localStream ? stopShare() : startShare());
-$("focusChip").onclick = () => {
-  focusId = null;
-  render();
-};
 $("copyBtn").onclick = async () => {
   await navigator.clipboard.writeText(location.href);
-  $("copyBtn").textContent = "Copiado";
-  setTimeout(render, 1400);
+  const b = $("copyBtn");
+  b.classList.add("ok");
+  b.title = "Link copiado";
+  setTimeout(() => {
+    b.classList.remove("ok");
+    b.title = "Copiar link";
+  }, 1400);
+};
+$("roomBtn").onclick = () => openGate(false);
+$("meBtn").onclick = () => {
+  openGate(false);
+  $("gateName").focus();
+  $("gateName").select();
+};
+$("gridBtn").onclick = () => {
+  focusId = null;
+  render();
 };
 
 /* ---------- telemetria ---------- */
@@ -1303,22 +1580,12 @@ function push(id, bps) {
   if (tile) drawWave(tile);
 }
 
-function waveH() {
-  return strip === STRIP_BAND ? WAVE_BAND_H : WAVE_LINE_H;
-}
-
-function sizeWave(tile, tileW) {
+function sizeWave(tile) {
   const c = tile.querySelector(".wave");
   if (!c) return;
-  const band = strip === STRIP_BAND;
-  // Na linha, largura própria com teto de um minuto; na faixa, a do tile.
-  const cssW = band
-    ? tileW
-    : Math.max(45, Math.min(WAVE_LEN * WAVE_SLOT, Math.round(tileW * 0.28)));
   const dpr = Math.min(2, devicePixelRatio || 1);
-  const pw = Math.max(1, Math.round(cssW * dpr));
-  const ph = Math.round(waveH() * dpr);
-  c.style.width = band ? "" : cssW + "px";
+  const pw = Math.round(WAVE_LEN * WAVE_SLOT * dpr);
+  const ph = Math.round(WAVE_H * dpr);
   if (c.width === pw && c.height === ph) return;
   c.width = pw;
   c.height = ph;
@@ -1326,30 +1593,29 @@ function sizeWave(tile, tileW) {
 }
 
 // Escala pelo pico da própria janela: a fita conta a forma da variação, não o
-// valor absoluto — esse já está escrito ao lado, em kb/s.
+// valor absoluto — esse já está escrito ao lado, em kb/s. A fatia é fixa em 3px
+// pra que o ritmo das barras seja o mesmo em qualquer tamanho de tile, e elas
+// se encostam, que é o que faz isso ler como fita.
 function drawWave(tile) {
   const c = tile.querySelector(".wave");
+  if (!c) return;
   const data = hist.get(tile.dataset.id);
-  const h0 = waveH();
-  const dpr = c.height / h0;
+  const dpr = c.height / WAVE_H;
   const g = c.getContext("2d");
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   const w = c.width / dpr;
-  g.clearRect(0, 0, w, h0);
+  g.clearRect(0, 0, w, WAVE_H);
   if (!data?.length) return;
 
   accent ||= getComputedStyle(document.documentElement)
-    .getPropertyValue("--accent").trim() || "#58c8b4";
-  // Na faixa a fatia estica pra ocupar a largura; na linha ela é fixa. Nos dois
-  // casos as barras se encostam, que é o que faz isso ler como fita.
-  const slot = strip === STRIP_BAND ? w / WAVE_LEN : WAVE_SLOT;
-  const show = data.slice(-Math.floor(w / slot));
+    .getPropertyValue("--accent").trim() || "#5ad3bb";
+  const show = data.slice(-Math.floor(w / WAVE_SLOT));
   const peak = Math.max(...show, 1);
+  g.fillStyle = accent;
   for (let i = 0; i < show.length; i++) {
-    const h = Math.max(1, (show[i] / peak) * (h0 - 2));
+    const h = Math.max(1, (show[i] / peak) * (WAVE_H - 2));
     g.globalAlpha = i === show.length - 1 ? 1 : 0.4;   // a última é o agora
-    g.fillStyle = accent;
-    g.fillRect(w - (show.length - i) * slot, h0 - h, Math.max(1, slot - 1), h);
+    g.fillRect(w - (show.length - i) * WAVE_SLOT, WAVE_H - h, WAVE_SLOT - 1, h);
   }
   g.globalAlpha = 1;
 }
@@ -1370,6 +1636,7 @@ setInterval(async () => {
       }
     });
     const path = pathOf(stats);
+    tile.querySelector(".tel").classList.add("vivo");
     tile.querySelector(".rate").textContent = "↓ " + (fmt(bps) || "--");
     tile.querySelector(".size").textContent = size ? `${size} · ${fps}fps` : "";
     const el = tile.querySelector(".path");
@@ -1418,6 +1685,7 @@ setInterval(async () => {
     const capTxt = cap?.width && cap?.height ? `${cap.width}×${cap.height}` : "";
     const caiu = saiW && cap?.width && saiW < cap.width;
     const detalhe = (caiu ? ` → ${saiW}×${saiH}` : "") + (limite ? ` ${limite}` : "");
+    self.querySelector(".tel").classList.add("vivo");
     self.querySelector(".rate").textContent = "↑ " + (fmt(total) || "--");
     const size = self.querySelector(".size");
     size.textContent =
