@@ -126,6 +126,10 @@ maior incógnita do projeto e ainda não foi exercitada uma única vez.**
 
 ### Lacunas reais
 
+*(Registro de 24/08/2026 — as quatro abaixo foram fechadas no mesmo dia: 1 e 2
+viraram T1/T2, 3 virou o broadcast `share-stop` por estado, 4 virou T3. Ficam
+aí como histórico do diagnóstico que originou o plano.)*
+
 1. Servidor não tem teto de peers por sala. Aceitou 7 numa sala de 5 sem reclamar.
 2. Não existe arbitragem de quem pode compartilhar. Qualquer número de pessoas
    pode transmitir ao mesmo tempo. Com 5 pessoas todas compartilhando são 20
@@ -278,7 +282,9 @@ aparecem candidates com nome terminando em `.local` e o pair nunca chega a
 
 ---
 
-### T1 — Teto de peers por sala
+### T1 — Teto de peers por sala — FEITO em 24/08/2026
+
+Implementado em `server.ts:188–194`; coberto por `testMaxPeers()` no test.ts.
 
 `server.ts`. Constante `MAX_PEERS = 5`.
 
@@ -294,7 +300,10 @@ aparece na lista de ninguém.
 
 ---
 
-### T2 — Arbitragem de sharers (a tarefa principal)
+### T2 — Arbitragem de sharers (a tarefa principal) — FEITO em 24/08/2026
+
+Implementado em `server.ts:223–240`; coberto por `testSharerArbitration()`,
+`testSharerLeave()` e `testSharerSnapshot()` no test.ts.
 
 O servidor é o único ponto que vê a sala inteira, então a decisão mora nele.
 Dois cliques simultâneos em máquinas diferentes só são serializáveis num lugar.
@@ -352,7 +361,10 @@ Regras:
 
 ---
 
-### T3 — Reconnect limpo
+### T3 — Reconnect limpo — FEITO em 24/08/2026
+
+Implementado no ramo `joined` do cliente (index.html, `resetConnections()`);
+coberto por `testReconnect()` no test.ts.
 
 Hoje `ws.onclose` reconecta, recebe `joined` com `myId` novo, mas as PCs antigas
 continuam abertas apontando pro id velho.
@@ -379,7 +391,7 @@ invocação separada não sobrevive):
 
 ```bash
 (bun run server.ts > /tmp/s.log 2>&1 & echo $! > /tmp/p); sleep 2; \
-  timeout 30 bun run test.ts; kill $(cat /tmp/p)
+  timeout 90 bun run test.ts; kill $(cat /tmp/p)
 ```
 
 **Layout: headless, por CDP.** O encaixe dá pra verificar sem duas máquinas.

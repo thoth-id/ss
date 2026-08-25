@@ -7,6 +7,15 @@ answer STUN. The video goes straight from one browser to another.
 
 Published on npm as **`@thoth-dev/screen-share`**.
 
+![A MacBook screen shared over the tailnet, in focus mode, seen from another machine](https://raw.githubusercontent.com/thoth-id/ss/main/docs/screenshot.png)
+
+A real session between two machines. The shared screen is focused and takes the
+whole stage, whoever is not transmitting sits in the presence rail on the right,
+and the pill at the top names the room and its occupancy. The line worth reading
+is the telemetry over the frame: `254 kb/s 1600×900 · 28fps srflx · 8ms`, an
+`srflx` path being the video going straight from one browser to the other, with
+nothing relaying it.
+
 ## Install and run
 
 Needs [Bun](https://bun.sh) on the machine that runs the server. The package
@@ -56,6 +65,7 @@ bunx @thoth-dev/screen-share [flags]
 | `--pixels <n>` | `MAX_CAPTURE_PIXELS` | 1440000 | capture pixel budget (1600×900) |
 | `--bg` | | | run in the background |
 | `--stop` | | | stop whatever runs in the background on the same port |
+| `--force` | | | with `--stop`, kill even when the process can't be confirmed as ours (no `/proc`) |
 | `-h, --help` | | | print the help |
 | `-v, --version` | | | print the version |
 
@@ -213,10 +223,12 @@ appear.
   bad shows up there before the instantaneous number explains why. On a wide
   tile it sits at the end of the telemetry line; on a narrow one it takes a
   full-width band just above it.
-- The `eu/` field in the header is your name in the room: optional, up to 24
-  characters, kept in the browser's `localStorage` and resent on reconnect.
-  Leave it blank and you show up by id. It is a label and nothing more, with no
-  login or identity behind it.
+- Your name is chosen once, in the entry dialog, and is **required** (minimum 3
+  characters): the `join` only leaves after it, so an unnamed person stays
+  connected but in no room. Up to 24 characters, kept in the browser's
+  `localStorage` and resent on reconnect. It is a label and nothing more, with
+  no login or identity behind it — the server still accepts erasing it with an
+  empty `rename`, and then you show up by id.
 - Anyone in the room who is not transmitting appears on a plate with the initial
   of their name, in a rail below the screens. Whoever picked no name shows `_`
   and the id, because ids are hex and the initial of `3f9a1b2c` is nobody.
