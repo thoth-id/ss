@@ -296,6 +296,79 @@ tile size. Below it there is no room for both on one line, so the gauge takes a
 full-width band above the text and the slot stretches to fill it. Either way the
 bars touch, which is what makes it read as a tape.
 
+### Receiver-side zoom
+
+Wheel magnifies any non-mini tile, drag pans, double-click (or the indicator)
+resets. It is entirely a `transform` on the `<video>`: **no box changes size**,
+so the px fit, focus mode, the floating pills and the never-scrolling page are
+untouched. `zooms` is a `Map<peerId, {k,x,y}>`; absent means identity. Keep it
+that way — a single global tied to `focusId` would have to be reset in the
+**five** places that clear it (`dropTile`, `toggleFocus`, the `keydown` handler,
+`render()`'s `!tiles.has(focusId)` guard, and `gridBtn.onclick`), and one missed
+path leaves a phantom zoom on the next tile.
+
+**Page zoom is not a substitute, and this was measured.** Device pixels across
+the displayed video ÷ source width, focused, 1518×948 source:
+
+| page zoom | video in CSS px | device px | dev px / source px |
+|---|---|---|---|
+| 100% | 1192 × 744 | 1192 | 0.785 |
+| 200% | 503 × 314 | 1006 | 0.663 |
+| 300% | 128 × 80 | 384 | 0.253 |
+
+Browser zoom makes it **worse** — 0.844× at 200%, 0.322× at 300% — because the
+chrome bands are fixed in CSS px (`PAD_TOP` 52, `PAD_BOT` 84, `PAD_X` 14), so
+shrinking the CSS viewport hands them a larger fraction of the stage while the
+physical window never changes. At 300% the two bands alone are 136 of a 300 CSS
+px height. Do not "simplify" this feature away by pointing at ctrl+wheel.
+
+The same table is why the indicator says more than a number. At 100% the fit
+already discards detail (0.785), so magnifying **recovers real pixels** up to
+`videoWidth / (frameWidth · devicePixelRatio)` and interpolates above it. The
+`.zoom` pill turns `.up` at that line.
+
+**The indicator is deliberately not in `.tel`.** That pill needs `.vivo`, which
+only the stats interval adds and only for a tile with a live PC — share alone in
+a room and it never appears. And `.tile.narrow .tel` hides it below 340px, which
+is exactly the small screen where magnifying matters most. It also would have
+widened the box whose measured overlap set `WAVE_BELOW`/`TEL_BELOW`.
+
+Three things that are load-bearing and easy to undo:
+
+- **The cursor anchor needs the `t·r` term.** With `transform-origin: 0 0` the
+  map is `s = k·p + t`, so the point under the cursor is `p = (c − t)/k` and
+  holding it still gives `t' = c·(1 − r) + t·r`, `r = k'/k`. Both `t' = t +
+  c(1 − r)` and `t' = t + (k − k')c` are wrong, and **both pass a
+  single-notch test**, because `t` is 0 on the first notch. The drift starts on
+  the second. That is why the bench zooms three times at one point and asserts
+  the same source point each time — one notch proves nothing here.
+- **`overflow: hidden` belongs on `.frame`, not only `.tile`.** `requestFullscreen`
+  is called on `.frame`, and a fullscreen element leaves the flow, so `.tile`'s
+  clip no longer reaches the scaled video.
+- **The pan clamp is re-applied at the end of `layout()`, after `place()`.** The
+  bounds are a function of the box, and the box is rewritten by six triggers
+  (`ResizeObserver`, `fullscreenchange`, `video.onresize`, `onloadedmetadata`,
+  `notice()`, every `render()`). Without that pass, someone joining the room
+  while you are at 4× detaches the content from the edge permanently. The same
+  loop drops zoom from any tile that became `.mini`, where there is no gesture
+  and focusing gives more pixels than any magnification.
+
+**Desktop only, and on purpose.** Trackpad pinch arrives as ctrl+wheel and lands
+in the same handler, but Chrome on Android does not, and there is no
+two-finger touch handler here. `touch-action: none` is set on `.frame.zoomed`
+so that panning an already-zoomed tile is not stolen by the browser; entering
+zoom by touch is simply not implemented. Do not read the 430px bench case as
+coverage of it.
+
+`pointerdown` bails on `e.target.closest(".ctl, .zoom")`: those buttons are
+children of `.frame` and only stop propagation on **click**, so without the bail
+pressing "tela cheia" and moving 10px panned the video underneath.
+
+**`scrollHeight === innerHeight` cannot fail for zoom.** `.tile` has `overflow:
+hidden`, so a transformed descendant's overflow is absorbed there and never
+reaches `documentElement`. Keep the assertion — it still guards the fit — but do
+not read it as covering zoom. The assertion with teeth is the clamp one.
+
 ### Presence is a call tile
 
 Everybody in the room gets a tile. Whoever is not sharing gets a **circular
@@ -449,13 +522,23 @@ name, and that `esc` and the scrim do not dismiss it), a populated room with
 nobody sharing, one video with the presence rail, two videos of different aspect
 ratios, focus, 430px, a name change and a live room switch. Every step asserts
 `scrollHeight === innerHeight`, that no tile intersects the dock or the top pill,
-and that the name and telemetry pills do not overlap (40 assertions, all green). Run it when touching the shell; it is cheaper than reasoning about the
+and that the name and telemetry pills do not overlap, plus the receiver-side
+zoom: anchor across three notches, the pan clamp, the detail threshold and the
+indicator (65 assertions, all green). Run it when touching the shell; it is cheaper than reasoning about the
 fit:
 
 ```bash
 (PORT=3200 STUN_PORT=3678 bun run server.ts > /tmp/s.log 2>&1 & echo $! > /tmp/p); \
   sleep 2; PORT=3200 bun run bench/layout.ts; kill $(cat /tmp/p)
 ```
+
+The bench dispatches **real** mouse input through `Input.dispatchMouseEvent`,
+not synthetic events from `Runtime.evaluate`: the pan calls `setPointerCapture`,
+which rejects an invented `pointerId`, and without capture a drag dies at the
+element edge and the clamp test passes vacuously. It also kills Chrome from an
+`exit`/`uncaughtException` handler — a run that threw used to leave a browser
+holding the CDP port, and the next run attached to *that* one, with the old page
+loaded, and failed for defects that did not exist.
 
 **Settle the transitions before measuring.** `.tile` transitions `left/top/width`
 over .16s and `.frame video` transitions `height`. Measuring two rAFs after

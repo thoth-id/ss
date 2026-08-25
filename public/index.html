@@ -96,7 +96,10 @@
   .tile:hover, .tile:focus-within { box-shadow: inset 0 0 0 1px var(--line-hi); }
   .tile.focused { box-shadow: inset 0 0 0 1px var(--accent); }
 
-  .frame { position: relative; height: 100%; cursor: zoom-in; background: var(--void); }
+  /* overflow no quadro, e não só no .tile: em tela cheia o .frame vira o
+     elemento de topo, fora do fluxo, e o recorte do .tile não alcança mais o
+     vídeo ampliado — vazaria por cima da tela inteira. */
+  .frame { position: relative; height: 100%; overflow: hidden; cursor: zoom-in; background: var(--void); }
   .tile.focused .frame { cursor: zoom-out; }
   .tile.peer .frame { cursor: default; background: var(--tile); display: grid; place-items: center; }
   .frame video {
@@ -107,6 +110,28 @@
   .tile.self .frame video { opacity: .72; }
   .tile.self.focused .frame video { opacity: 1; }
   .frame:fullscreen video { opacity: 1; }
+  /* Zoom de quem vê: transform no vídeo, nunca no tile. Nenhuma caixa muda de
+     tamanho, então o encaixe em px, o foco e a página-sem-scroll ficam exatos.
+     O cursor empresta o gesto do mapa: mão fechada enquanto arrasta. */
+  .frame.zoomed { cursor: grab; touch-action: none; }
+  .frame.zoomed.dragging { cursor: grabbing; }
+  /* Zoom é um modo, e modo ligado precisa ser visível. Fica FORA do .tel de
+     propósito: aquela pílula só existe com medida no ar (.vivo) e desaparece em
+     .narrow — que é justamente a tela pequena onde ampliar mais importa. Canto
+     livre: .ctl mora em cima à direita, .who embaixo à esquerda, .tel embaixo à
+     direita. Mono, porque um fator de escala é verdade de máquina. */
+  .zoom {
+    position: absolute; left: 10px; top: 10px; z-index: 3;
+    padding: 4px 8px; border: 0; border-radius: 8px; cursor: pointer;
+    background: var(--glass); backdrop-filter: blur(10px);
+    font-family: var(--mono); font-size: 10.5px; color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  /* Medido: num palco de 1440 o vídeo em foco já sai a 0.785 px de dispositivo
+     por px de fonte, então ampliar recupera detalhe de verdade até o nativo. Daí
+     pra cima é interpolação, e a cor é o que diz onde essa fronteira ficou. */
+  .zoom.up { color: var(--warn); }
+  .tile.mini .zoom { display: none; }
 
   /* Monograma de quem está na sala e não transmite: o mesmo tile, com um
      círculo no lugar do vídeo. Redondo, e não quadrado como era a placa, porque
@@ -359,7 +384,8 @@
       <dt>captura</dt><dd id="fCap">...</dd>
       <dt>vídeo</dt><dd class="note">direto entre os navegadores: o servidor só apresenta os dois</dd>
     </dl>
-    <p class="hint">Com duas telas no ar, clique numa delas para focar. <kbd>esc</kbd> volta.</p>
+    <p class="hint">Com duas telas no ar, clique numa delas para focar. <kbd>esc</kbd> volta.
+      Roda do mouse dá zoom em qualquer tela; duplo clique restaura.</p>
   </div>
 </section>
 
@@ -965,6 +991,7 @@ function attachTile(id, stream, isSelf = false) {
     tile.innerHTML =
       '<div class="frame">' +
         '<video autoplay playsinline muted></video>' +
+        '<button class="zoom" hidden></button>' +
         '<div class="ctl">' +
           '<button class="act focus"></button>' +
           '<button class="act full">tela cheia</button>' +
@@ -975,7 +1002,7 @@ function attachTile(id, stream, isSelf = false) {
       '</div>';
 
     pill(tile, id);
-    tile.querySelector(".frame").onclick = () => toggleFocus(id);
+    const frame = tile.querySelector(".frame");
     tile.querySelector(".focus").onclick = (e) => {
       e.stopPropagation();
       toggleFocus(id);
@@ -983,8 +1010,11 @@ function attachTile(id, stream, isSelf = false) {
     tile.querySelector(".full").onclick = (e) => {
       e.stopPropagation();
       if (document.fullscreenElement) document.exitFullscreen();
-      else tile.querySelector(".frame").requestFullscreen?.().catch(() => {});
+      else frame.requestFullscreen?.().catch(() => {});
     };
+    // Clique, roda, pan e duplo clique dividem o mesmo quadro; as regras de
+    // convivência moram todas no bindZoom.
+    bindZoom(tile, id);
 
     // A proporção real só aparece com o primeiro frame, e pode mudar no meio
     // (a pessoa troca a janela capturada). Refaz o layout nos dois casos.
@@ -1002,6 +1032,7 @@ function attachTile(id, stream, isSelf = false) {
 function dropTile(id) {
   if (focusId === id) focusId = null;
   hist.delete(id);
+  zooms.delete(id);
   tiles.get(id)?.remove();
   tiles.delete(id);
   render();
@@ -1010,6 +1041,152 @@ function dropTile(id) {
 function toggleFocus(id) {
   focusId = focusId === id ? null : id;
   render();
+}
+
+/* ---------- zoom ---------- */
+
+// Zoom é do lado de quem vê e mora num transform no <video> dentro do quadro.
+// Nenhuma caixa muda de tamanho: o encaixe em px, o modo foco, as pílulas por
+// cima do vídeo e a página-sem-scroll ficam exatos — o bench de layout não
+// sabe que o zoom existe, e é assim de propósito.
+//
+// O teto de qualidade não é daqui: a captura já entra no orçamento de pixels
+// (MAX_CAPTURE_PIXELS), então ampliar além do tamanho nativo é ver upscale
+// borrado. O ZOOM_MAX cobre inspeção de texto, não milagre.
+//
+// Gesto: roda aproxima ancorado no cursor (a pinça de trackpad chega como
+// ctrl+roda e cai no mesmo caminho), arrastar move quando há zoom, duplo
+// clique restaura. Clique simples continua sendo foco — mas não dispara depois
+// de um pan, nem enquanto o tile está ampliado: quem está lendo de perto não
+// quer ser arrancado pro grid. Miniatura não carrega zoom; nela o gesto é só
+// navegação, e focar dá mais pixels do que qualquer zoom numa trilha de 150px.
+const ZOOM_MAX = 4;
+const zooms = new Map();          // peerId -> { k, x, y }; ausente é identidade
+
+function applyZoom(id) {
+  const tile = tiles.get(id);
+  const frame = tile?.querySelector(".frame");
+  const video = tile?.querySelector("video");
+  const lupa = tile?.querySelector(".zoom");
+  if (!frame || !video) return;
+  const z = zooms.get(id);
+  if (!z || z.k <= 1) {
+    // Identidade: some da memória junto com o transform, sem estado fantasma.
+    zooms.delete(id);
+    video.style.transform = "";
+    frame.classList.remove("zoomed", "dragging");
+    frame.title = "clique foca · roda dá zoom · duplo clique restaura";
+    if (lupa) { lupa.hidden = true; lupa.classList.remove("up"); }
+    return;
+  }
+  // Pan confinado à própria caixa: o vídeo ampliado nunca deixa de cobrir o
+  // quadro, então não há como perder a imagem fora da vista.
+  const W = frame.clientWidth || 1, H = frame.clientHeight || 1;
+  z.x = Math.min(0, Math.max(W * (1 - z.k), z.x));
+  z.y = Math.min(0, Math.max(H * (1 - z.k), z.y));
+  video.style.transformOrigin = "0 0";
+  video.style.transform = `translate(${z.x}px, ${z.y}px) scale(${z.k})`;
+  frame.classList.add("zoomed");
+  frame.title = "arrasta pra mover · roda ajusta · duplo clique restaura";
+  if (lupa) {
+    // Até onde há detalhe pra recuperar: o quadro exibe o vídeo já reduzido, e
+    // essa razão diz quanto. Acima dela não entra pixel novo, só interpolação.
+    const nativo = video.videoWidth ? video.videoWidth / (W * devicePixelRatio) : 1;
+    const up = z.k > Math.max(1, nativo);
+    lupa.hidden = false;
+    lupa.textContent = z.k.toFixed(1) + "×";
+    lupa.classList.toggle("up", up);
+    lupa.title = up
+      ? `${z.k.toFixed(1)}× · além do nativo, é interpolação · clique restaura`
+      : `${z.k.toFixed(1)}× · ainda dentro do detalhe que chegou · clique restaura`;
+  }
+}
+
+function bindZoom(tile, id) {
+  const frame = tile.querySelector(".frame");
+  // A dica mora no title do quadro, não num botão novo: zoom não é modo do
+  // dock, é gesto sobre o vídeo.
+  frame.title = "clique foca · roda dá zoom · duplo clique restaura";
+  let drag = null;                // { px, py, zx, zy } — pan em curso
+  let panned = false;             // o clique que vem depois do pan não vira foco
+
+  frame.onclick = () => {
+    if (panned) { panned = false; return; }
+    if (zooms.has(id)) return;
+    toggleFocus(id);
+  };
+
+  frame.addEventListener("wheel", (e) => {
+    // deltaMode 1 conta linhas (Firefox): ~3 por entalhe ≈ 100px.
+    const dy = e.deltaY * (e.deltaMode === 1 ? 33 : 1);
+    if (!dy) return;
+    e.preventDefault();
+    const z = zooms.get(id) || { k: 1, x: 0, y: 0 };
+    const k = Math.min(ZOOM_MAX, Math.max(1, z.k * Math.exp(-dy * 0.002)));
+    if (k === z.k && !zooms.has(id)) return;
+    // Ancora no cursor: o ponto do vídeo sob ele não anda. Com origem (0,0) o
+    // mapa é s = k·p + t, então o ponto sob o cursor é p = (c − t)/k, e manter
+    // k'·p + t' = c dá t' = c·(1 − r) + t·r, com r = k'/k.
+    //
+    // O termo t·r é o que se perde fácil, e ele só aparece quando t ≠ 0: no
+    // PRIMEIRO entalhe t é zero e qualquer versão acerta. Foi assim que uma
+    // fórmula sem ele passou desapercebida — a deriva começa no segundo, e o
+    // bench dá três de propósito.
+    const r = frame.getBoundingClientRect();
+    const q = k / z.k;
+    z.x = (e.clientX - r.left) * (1 - q) + z.x * q;
+    z.y = (e.clientY - r.top) * (1 - q) + z.y * q;
+    z.k = k;
+    zooms.set(id, z);
+    applyZoom(id);
+  }, { passive: false });
+
+  const lupa = tile.querySelector(".zoom");
+  if (lupa) lupa.onclick = (e) => {
+    e.stopPropagation();
+    zooms.delete(id);
+    applyZoom(id);
+  };
+
+  frame.addEventListener("pointerdown", (e) => {
+    panned = false;
+    // Os botões flutuantes são filhos do quadro e só param a propagação do
+    // click, não a do pointerdown. Sem esta saída, apertar "tela cheia" e mexer
+    // 10px arrastava o vídeo por baixo junto com o clique.
+    if (e.target.closest(".ctl, .zoom")) return;
+    const z = zooms.get(id);
+    if (e.button !== 0 || !z) return;
+    drag = { px: e.clientX, py: e.clientY, zx: z.x, zy: z.y };
+    frame.setPointerCapture(e.pointerId);
+  });
+  frame.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const z = zooms.get(id);
+    if (!z) { drag = null; return; }
+    const dx = e.clientX - drag.px, dy = e.clientY - drag.py;
+    // Limiar de 4px separa pan de clique: tremido não move nada.
+    if (!panned && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+      panned = true;
+      frame.classList.add("dragging");
+    }
+    if (!panned) return;
+    z.x = drag.zx + dx;
+    z.y = drag.zy + dy;
+    applyZoom(id);
+  });
+  const solta = (e) => {
+    if (!drag) return;
+    drag = null;
+    frame.classList.remove("dragging");
+    try { frame.releasePointerCapture(e.pointerId); } catch {}
+  };
+  frame.addEventListener("pointerup", solta);
+  frame.addEventListener("pointercancel", solta);
+
+  frame.addEventListener("dblclick", () => {
+    zooms.delete(id);
+    applyZoom(id);
+  });
 }
 
 // Presença: quem está na sala aparece no palco mesmo sem transmitir, com um
@@ -1136,6 +1313,15 @@ function layout() {
   }
 
   for (const tile of vids) sizeWave(tile);
+
+  // O zoom guarda offsets em px, então a caixa nova do tile reconfina o pan —
+  // e quem caiu na trilha de miniaturas perde o zoom, que lá não tem gesto.
+  // Transform não participa do encaixe: isto roda DEPOIS de place(), só lê.
+  for (const [id] of [...zooms]) {
+    const t = tiles.get(id);
+    if (!t || t.classList.contains("mini")) zooms.delete(id);
+    applyZoom(id);
+  }
 }
 
 // Escolhe o número de colunas que maximiza a área total de vídeo. Não é
