@@ -1284,12 +1284,21 @@ function nameOk(raw) {
   return [...cleanName(raw)].length >= MIN_NAME;
 }
 
-// Primeiro GRAFEMA, não primeiro char: nome pode começar com emoji, e
-// slice(0,1) partiria o par surrogate no meio. Vazio devolve o cursor `_`,
-// que é o desenho de quem ainda não se apresentou — usado pelo monograma
-// do tile e pelo avatar da portaria.
+// Primeiro GRAFEMA, não primeiro char: `slice(0,1)` partiria o par surrogate
+// no meio, e `[...nome][0]` — que itera code points — ainda parte o que a
+// pessoa vê como uma letra só: 🇧🇷 são dois regional indicators, e um emoji
+// com tom de pele é base + modificador. Nos dois casos o monograma saía uma
+// caixinha. `Intl.Segmenter` é o único que segmenta pelo que se enxerga; onde
+// ele não existir, cai nos code points, que já é melhor que `slice`.
+// Vazio devolve o cursor `_`, que é o desenho de quem ainda não se apresentou
+// — usado pelo monograma do tile e pelo avatar da portaria.
+const SEG = typeof Intl.Segmenter === "function"
+  ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+  : null;
+
 function initial(nome) {
-  return [...nome][0]?.toUpperCase() ?? "_";
+  const primeiro = SEG ? [...SEG.segment(nome)][0]?.segment : [...nome][0];
+  return primeiro?.toUpperCase() ?? "_";
 }
 
 // Quem não tem nome aparece pelo id, que é o único identificador que o servidor
