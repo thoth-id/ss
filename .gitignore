@@ -4,6 +4,9 @@
 *.key
 *.pem
 
+# Agents
+.claude/
+
 # Logs e pids dos scripts de teste
 *.log
 *.pid
