@@ -337,21 +337,35 @@ Three things that are load-bearing and easy to undo:
 
 - **The cursor anchor needs the `t·r` term.** With `transform-origin: 0 0` the
   map is `s = k·p + t`, so the point under the cursor is `p = (c − t)/k` and
-  holding it still gives `t' = c·(1 − r) + t·r`, `r = k'/k`. Both `t' = t +
-  c(1 − r)` and `t' = t + (k − k')c` are wrong, and **both pass a
-  single-notch test**, because `t` is 0 on the first notch. The drift starts on
-  the second. That is why the bench zooms three times at one point and asserts
-  the same source point each time — one notch proves nothing here.
+  holding it still gives `t' = c·(1 − r) + t·r`, `r = k'/k`. Two variants look
+  right and are not, and **they need different gestures to expose**:
+  `t' = t + c(1 − r)` survives one notch (`t` is 0 there) and drifts on the
+  second; `t' = t + (k − k')c` survives **any number of notches at one point**,
+  because while `t = c(1 − k)` it is algebraically equal to the correct rule —
+  `t + c(k − k') = c(1 − k')`. It only diverges once `t ≠ c(1 − k)`, i.e. after
+  a pan or at a second anchor point. So the bench zooms three times at one
+  point *and* once more elsewhere after a drag. Both mutants were run against
+  the suite; each fails exactly one of those two cases.
 - **`overflow: hidden` belongs on `.frame`, not only `.tile`.** `requestFullscreen`
   is called on `.frame`, and a fullscreen element leaves the flow, so `.tile`'s
   clip no longer reaches the scaled video.
-- **The pan clamp is re-applied at the end of `layout()`, after `place()`.** The
+- **The pan clamp is re-applied at the end of `layout()`, after `place()`, and it
+  must measure the box `place()` just *targeted*, never `clientWidth`.** The
   bounds are a function of the box, and the box is rewritten by six triggers
   (`ResizeObserver`, `fullscreenchange`, `video.onresize`, `onloadedmetadata`,
-  `notice()`, every `render()`). Without that pass, someone joining the room
-  while you are at 4× detaches the content from the edge permanently. The same
-  loop drops zoom from any tile that became `.mini`, where there is no gesture
-  and focusing gives more pixels than any magnification.
+  `notice()`, every `render()`). Without the pass, someone joining the room while
+  you are at 4× detaches the content from the edge permanently.
+
+  But `.tile` transitions `width`/`height` over .16s, and the pass runs in the
+  same tick as `place()`, so `frame.clientWidth` there is the **interpolated**
+  width — the clamp confines the pan against a box that no longer exists and the
+  video ends up wholly outside its frame, which renders as a black tile with the
+  zoom pill on top of it. Measured: exiting focus at 4× on the edge left the
+  video's right edge at −614px while the frame started at x=14. That is the same
+  read-during-transition the bench section below warns about, committed in the
+  product instead. `caixaAlvo()` reads the inline `width`/`--vh` that `place()`
+  wrote, which is the target, and falls back to the measured box only in
+  fullscreen, where `.frame` has left the flow and `.tile` no longer governs it.
 
 **Desktop only, and on purpose.** Trackpad pinch arrives as ctrl+wheel and lands
 in the same handler, but Chrome on Android does not, and there is no
@@ -360,6 +374,12 @@ so that panning an already-zoomed tile is not stolen by the browser; entering
 zoom by touch is simply not implemented. Do not read the 430px bench case as
 coverage of it.
 
+**The `.mini` rule lives in the `wheel` handler, not only in `layout()`'s prune
+pass.** Pruning after the fact let a thumbnail be magnified to an unreadable
+centre crop with no indicator (`.tile.mini .zoom` hides it) and no pan (the
+mini's `.ctl` covers the whole frame), and — worse — the zoomed-tile click
+suppression then killed click-to-focus, which is the rail's only purpose.
+
 `pointerdown` bails on `e.target.closest(".ctl, .zoom")`: those buttons are
 children of `.frame` and only stop propagation on **click**, so without the bail
 pressing "tela cheia" and moving 10px panned the video underneath.
@@ -367,7 +387,18 @@ pressing "tela cheia" and moving 10px panned the video underneath.
 **`scrollHeight === innerHeight` cannot fail for zoom.** `.tile` has `overflow:
 hidden`, so a transformed descendant's overflow is absorbed there and never
 reaches `documentElement`. Keep the assertion — it still guards the fit — but do
-not read it as covering zoom. The assertion with teeth is the clamp one.
+not read it as covering zoom.
+
+**And a zoom assertion that reads `zooms` back is not a test of the render.** The
+first version of `pontoSob` recomputed the anchor from the same object
+`applyZoom` had just written: it checked the update rule's arithmetic and nothing
+about what reached the screen, so deleting `transformOrigin = "0 0"` or swapping
+`translate() scale()` for `scale() translate()` — each of which destroys the
+anchor outright — both passed green. It now inverts the **computed**
+`transform`/`transformOrigin` via `DOMMatrix`, and `cobre()` compares the video's
+rendered rect against the frame's. Every claim in this section has a mutant that
+turns the suite red; the control run stays green. Add a zoom assertion only with
+its mutant.
 
 ### Presence is a call tile
 
@@ -524,7 +555,7 @@ ratios, focus, 430px, a name change and a live room switch. Every step asserts
 `scrollHeight === innerHeight`, that no tile intersects the dock or the top pill,
 and that the name and telemetry pills do not overlap, plus the receiver-side
 zoom: anchor across three notches, the pan clamp, the detail threshold and the
-indicator (65 assertions, all green). Run it when touching the shell; it is cheaper than reasoning about the
+indicator (73 assertions, all green). Run it when touching the shell; it is cheaper than reasoning about the
 fit:
 
 ```bash

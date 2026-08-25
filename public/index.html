@@ -113,8 +113,11 @@
   /* Zoom de quem vê: transform no vídeo, nunca no tile. Nenhuma caixa muda de
      tamanho, então o encaixe em px, o foco e a página-sem-scroll ficam exatos.
      O cursor empresta o gesto do mapa: mão fechada enquanto arrasta. */
-  .frame.zoomed { cursor: grab; touch-action: none; }
-  .frame.zoomed.dragging { cursor: grabbing; }
+  /* Com zoom o clique não desfoca, então "zoom-out" mentiria. O seletor repete
+     .tile.focused porque .tile.focused .frame vence .frame.zoomed na cascata, e
+     em foco é justamente onde ampliar acontece. */
+  .frame.zoomed, .tile.focused .frame.zoomed { cursor: grab; touch-action: none; }
+  .frame.zoomed.dragging, .tile.focused .frame.zoomed.dragging { cursor: grabbing; }
   /* Zoom é um modo, e modo ligado precisa ser visível. Fica FORA do .tel de
      propósito: aquela pílula só existe com medida no ar (.vivo) e desaparece em
      .narrow — que é justamente a tela pequena onde ampliar mais importa. Canto
@@ -1063,6 +1066,23 @@ function toggleFocus(id) {
 const ZOOM_MAX = 4;
 const zooms = new Map();          // peerId -> { k, x, y }; ausente é identidade
 
+// A caixa que o confinamento tem que usar é a de DESTINO, não a que está na
+// tela agora: o .tile transiciona width/height em .16s, e o passe de clamp roda
+// dentro do layout(), no mesmo tique em que place() acabou de escrever o alvo.
+// Ler clientWidth ali devolve a largura interpolada, o pan é confinado contra
+// uma caixa que já não existe, e o vídeo fica fora do quadro de vez — o mesmo
+// erro que o bench evita esperando a transição assentar. O alvo está no style
+// inline que place() escreveu. Em tela cheia o quadro deixa o fluxo e o .tile
+// não manda mais nele, então ali a medida da tela é a verdadeira.
+function caixaAlvo(tile, frame) {
+  if (document.fullscreenElement === frame) {
+    return { W: frame.clientWidth || 1, H: frame.clientHeight || 1 };
+  }
+  const w = parseFloat(tile.style.width);
+  const h = parseFloat(tile.style.getPropertyValue("--vh"));
+  return { W: w > 0 ? w : frame.clientWidth || 1, H: h > 0 ? h : frame.clientHeight || 1 };
+}
+
 function applyZoom(id) {
   const tile = tiles.get(id);
   const frame = tile?.querySelector(".frame");
@@ -1081,7 +1101,7 @@ function applyZoom(id) {
   }
   // Pan confinado à própria caixa: o vídeo ampliado nunca deixa de cobrir o
   // quadro, então não há como perder a imagem fora da vista.
-  const W = frame.clientWidth || 1, H = frame.clientHeight || 1;
+  const { W, H } = caixaAlvo(tile, frame);
   z.x = Math.min(0, Math.max(W * (1 - z.k), z.x));
   z.y = Math.min(0, Math.max(H * (1 - z.k), z.y));
   video.style.transformOrigin = "0 0";
@@ -1091,7 +1111,10 @@ function applyZoom(id) {
   if (lupa) {
     // Até onde há detalhe pra recuperar: o quadro exibe o vídeo já reduzido, e
     // essa razão diz quanto. Acima dela não entra pixel novo, só interpolação.
-    const nativo = video.videoWidth ? video.videoWidth / (W * devicePixelRatio) : 1;
+    // Sem metadado ainda não se sabe nada: Infinity é "assume que há detalhe",
+    // porque dizer "é interpolação" antes do primeiro frame é dizer uma
+    // falsidade justamente onde nada é conhecido.
+    const nativo = video.videoWidth ? video.videoWidth / (W * devicePixelRatio) : Infinity;
     const up = z.k > Math.max(1, nativo);
     lupa.hidden = false;
     lupa.textContent = z.k.toFixed(1) + "×";
@@ -1117,6 +1140,11 @@ function bindZoom(tile, id) {
   };
 
   frame.addEventListener("wheel", (e) => {
+    // Miniatura não tem zoom, e a regra tem que morar AQUI e não só no layout():
+    // ampliar uma miniatura dava um recorte ilegível, sem indicador (que o
+    // .tile.mini esconde) e sem pan (o .ctl da mini cobre o quadro inteiro) — e
+    // pior, o clique passava a não focar mais, que é o único uso da trilha.
+    if (tile.classList.contains("mini")) return;
     // deltaMode 1 conta linhas (Firefox): ~3 por entalhe ≈ 100px.
     const dy = e.deltaY * (e.deltaMode === 1 ? 33 : 1);
     if (!dy) return;
@@ -1148,6 +1176,13 @@ function bindZoom(tile, id) {
     applyZoom(id);
   };
 
+  const solta = (e) => {
+    if (!drag) return;
+    drag = null;
+    frame.classList.remove("dragging");
+    try { frame.releasePointerCapture(e.pointerId); } catch {}
+  };
+
   frame.addEventListener("pointerdown", (e) => {
     panned = false;
     // Os botões flutuantes são filhos do quadro e só param a propagação do
@@ -1161,6 +1196,9 @@ function bindZoom(tile, id) {
   });
   frame.addEventListener("pointermove", (e) => {
     if (!drag) return;
+    // Botão já solto e ninguém avisou (release fora da janela em alguns
+    // gerenciadores): sem isto o tile continua panando no mouse solto.
+    if (!e.buttons) return solta(e);
     const z = zooms.get(id);
     if (!z) { drag = null; return; }
     const dx = e.clientX - drag.px, dy = e.clientY - drag.py;
@@ -1174,12 +1212,6 @@ function bindZoom(tile, id) {
     z.y = drag.zy + dy;
     applyZoom(id);
   });
-  const solta = (e) => {
-    if (!drag) return;
-    drag = null;
-    frame.classList.remove("dragging");
-    try { frame.releasePointerCapture(e.pointerId); } catch {}
-  };
   frame.addEventListener("pointerup", solta);
   frame.addEventListener("pointercancel", solta);
 
