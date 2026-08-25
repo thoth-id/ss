@@ -282,33 +282,68 @@ await evalJS(`toggleFocus("aaaa1111")`);
 await assenta();
 await evalJS(`window.pontoSob = (id, cx, cy) => {
   const f = tiles.get(id).querySelector(".frame");
-  const r = f.getBoundingClientRect();
-  const z = zooms.get(id) || { k: 1, x: 0, y: 0 };
-  return { px: (cx - r.left - z.x) / z.k, py: (cy - r.top - z.y) / z.k,
-           k: z.k, x: z.x, y: z.y, W: f.clientWidth, H: f.clientHeight,
-           left: r.left, top: r.top };
+  const v = f.querySelector("video");
+  const fr = f.getBoundingClientRect();
+  const cs = getComputedStyle(v);
+  // Lê o transform RENDERIZADO, e não o objeto zooms: reler o que applyZoom
+  // acabou de guardar valida a aritmética da regra e nada sobre o que chega na
+  // tela. Com a versão antiga, apagar o transform-origin ou inverter a ordem de
+  // translate/scale passava verde — duas mutações que destroem a ancoragem.
+  const m = new DOMMatrixReadOnly(cs.transform === "none" ? undefined : cs.transform);
+  const o = cs.transformOrigin.split(" ").map(parseFloat);
+  const ox = o[0] || 0, oy = o[1] || 0;
+  // O mapa efetivo do CSS é s = o + M·(p − o), então p = o + M⁻¹·(s − o).
+  const q = m.inverse().transformPoint(new DOMPoint(cx - fr.left - ox, cy - fr.top - oy));
+  return { px: q.x + ox, py: q.y + oy, k: m.a, tx: m.e, ty: m.f,
+           origem: cs.transformOrigin, W: f.clientWidth, H: f.clientHeight };
+}`);
+// Cobertura em pixel: o vídeo ampliado tem que tapar o quadro inteiro. É esta
+// que vê o pan descolar, porque compara caixas renderizadas.
+await evalJS(`window.cobre = (id) => {
+  const f = tiles.get(id).querySelector(".frame");
+  const fr = f.getBoundingClientRect(), vr = f.querySelector("video").getBoundingClientRect();
+  return { ok: vr.left <= fr.left + 1 && vr.top <= fr.top + 1 &&
+               vr.right >= fr.right - 1 && vr.bottom >= fr.bottom - 1,
+           quadro: [fr.left, fr.top, fr.right, fr.bottom].map(Math.round),
+           video: [vr.left, vr.top, vr.right, vr.bottom].map(Math.round) };
 }`);
 const cx = Math.round(await evalJS(`(() => { const r = tiles.get("aaaa1111").querySelector(".frame").getBoundingClientRect(); return r.left + r.width / 2; })()`));
 const cy = Math.round(await evalJS(`(() => { const r = tiles.get("aaaa1111").querySelector(".frame").getBoundingClientRect(); return r.top + r.height / 2; })()`));
 
 const p0 = await evalJS(`pontoSob("aaaa1111", ${cx}, ${cy})`);
-await roda(cx, cy, -240);
+await roda(cx, cy, -120);
 const p1 = await evalJS(`pontoSob("aaaa1111", ${cx}, ${cy})`);
 checa("a roda amplia", p1.k > 1.05, `k=${p1.k}`);
 checa("âncora no 1º entalhe", Math.abs(p1.px - p0.px) < 1 && Math.abs(p1.py - p0.py) < 1,
   `(${p0.px.toFixed(1)},${p0.py.toFixed(1)}) -> (${p1.px.toFixed(1)},${p1.py.toFixed(1)})`);
 
-await roda(cx, cy, -240);
+await roda(cx, cy, -120);
 const p2 = await evalJS(`pontoSob("aaaa1111", ${cx}, ${cy})`);
 checa("a roda acumula", p2.k > p1.k + 0.05, `${p1.k} -> ${p2.k}`);
 checa("âncora no 2º entalhe (t já não é zero)",
   Math.abs(p2.px - p0.px) < 1 && Math.abs(p2.py - p0.py) < 1,
   `esperado (${p0.px.toFixed(1)},${p0.py.toFixed(1)}), veio (${p2.px.toFixed(1)},${p2.py.toFixed(1)})`);
 
-await roda(cx, cy, -240);
+await roda(cx, cy, -120);
 const p3 = await evalJS(`pontoSob("aaaa1111", ${cx}, ${cy})`);
 checa("âncora no 3º entalhe", Math.abs(p3.px - p0.px) < 1 && Math.abs(p3.py - p0.py) < 1,
   `esperado (${p0.px.toFixed(1)},${p0.py.toFixed(1)}), veio (${p3.px.toFixed(1)},${p3.py.toFixed(1)})`);
+
+// Um quarto entalhe em OUTRO ponto, depois de um pan. Os três anteriores no
+// mesmo ponto não distinguem `t' = t + (k−k')c`, que é algebraicamente idêntica
+// à correta enquanto toda ampliação parte do mesmo c: se t = c(1−k), então
+// t + c(k−k') = c(1−k'). A divergência só aparece quando t deixa de valer
+// c(1−k) — isto é, depois de um pan ou ampliando num segundo ponto. Sem este
+// caso, aquela variante passa a suíte inteira.
+await arrasta(cx, cy, cx - 60, cy - 40);
+const cx3 = cx + 180, cy3 = cy + 90;
+const q0 = await evalJS(`pontoSob("aaaa1111", ${cx3}, ${cy3})`);
+await roda(cx3, cy3, -120);
+const q1 = await evalJS(`pontoSob("aaaa1111", ${cx3}, ${cy3})`);
+checa("âncora num segundo ponto, depois de pan",
+  Math.abs(q1.px - q0.px) < 1 && Math.abs(q1.py - q0.py) < 1,
+  `esperado (${q0.px.toFixed(1)},${q0.py.toFixed(1)}), veio (${q1.px.toFixed(1)},${q1.py.toFixed(1)})`);
+checa("a origem do transform é o canto", q1.origem === "0px 0px", q1.origem);
 
 // Teto: nem a roda infinita passa de ZOOM_MAX.
 for (let i = 0; i < 12; i++) await roda(cx, cy, -240);
@@ -331,6 +366,27 @@ z = await evalJS(`zooms.get("aaaa1111")`);
 const limY = await evalJS(`(() => { const f = tiles.get("aaaa1111").querySelector(".frame");
   return f.clientHeight * (1 - zooms.get("aaaa1111").k); })()`);
 checa("pan não descola por cima", Math.abs(z.y - limY) < 1, `y=${z.y} limite=${limY}`);
+
+// O passe de clamp dentro do layout() existe pra este caso, e ele falhava por
+// medir a caixa EM VOO: o .tile transiciona width/height em .16s, então ler
+// clientWidth no mesmo tique de place() devolve a largura interpolada. A
+// asserção lê pixel, não o objeto zooms — foi assim que passou verde enquanto o
+// tile renderizava preto.
+await evalJS(`(() => { zooms.set("aaaa1111", { k: 4, x: -1e6, y: -1e6 }); applyZoom("aaaa1111"); })()`);
+let cob = await evalJS(`cobre("aaaa1111")`);
+checa("a 4× encostado na borda o vídeo cobre o quadro", cob.ok, JSON.stringify(cob));
+await evalJS(`document.getElementById("gridBtn").click()`);
+await assenta();
+cob = await evalJS(`cobre("aaaa1111")`);
+checa("e continua cobrindo ao sair do foco (caixa encolhe)", cob.ok, JSON.stringify(cob));
+await tela(1100, 720);
+await assenta();
+cob = await evalJS(`cobre("aaaa1111")`);
+checa("e continua cobrindo com o palco menor", cob.ok, JSON.stringify(cob));
+await tela(1440, 900);
+await assenta();
+await evalJS(`toggleFocus("aaaa1111")`);
+await assenta();
 
 // O quadro tem que recortar por si: em tela cheia o .tile sai do fluxo e o
 // overflow dele não alcança mais o vídeo escalado.
@@ -360,7 +416,11 @@ const fronteira = await evalJS(`(() => {
   const nativo = v.videoWidth / (f.clientWidth * devicePixelRatio);
   const leia = (k) => { zooms.set("aaaa1111", { k, x: 0, y: 0 }); applyZoom("aaaa1111");
     return t.querySelector(".zoom").classList.contains("up"); };
-  return { nativo, abaixo: leia(nativo * 0.9), acima: leia(nativo * 1.1) };
+  // Sondar abaixo do nativo só faz sentido se o nativo estiver acima de 1: num
+  // dpr >= 2 ele cai abaixo, applyZoom trata como identidade e o teste passaria
+  // pelo motivo errado. O bench roda com deviceScaleFactor 1 de propósito.
+  if (nativo <= 1.1) return { nativo, abaixo: null, acima: null };
+  return { nativo, abaixo: leia(nativo * 0.95), acima: leia(nativo * 1.05) };
 })()`);
 checa("abaixo do nativo não é upscale", fronteira.abaixo === false, JSON.stringify(fronteira));
 checa("acima do nativo é upscale", fronteira.acima === true, JSON.stringify(fronteira));
@@ -395,6 +455,17 @@ checa("zoom vale em tile fora do foco", (await evalJS(`zooms.has("bbbb2222")`)) 
 await evalJS(`toggleFocus("aaaa1111")`);
 await assenta();
 checa("virar miniatura descarta o zoom", (await evalJS(`zooms.has("bbbb2222")`)) === false);
+// E a roda não pode reabrir por cima: numa miniatura o indicador está oculto, o
+// .ctl cobre o quadro todo (sem pan) e o clique deixaria de focar — que é o
+// único uso da trilha.
+const rc = Math.round(await evalJS(`(() => { const r = tiles.get("bbbb2222").querySelector(".frame").getBoundingClientRect(); return r.left + r.width / 2; })()`));
+const rl = Math.round(await evalJS(`(() => { const r = tiles.get("bbbb2222").querySelector(".frame").getBoundingClientRect(); return r.top + r.height / 2; })()`));
+await roda(rc, rl, -120);
+checa("a roda não amplia miniatura", (await evalJS(`zooms.has("bbbb2222")`)) === false);
+await clica(rc, rl);
+await assenta();
+checa("e a miniatura continua focável no clique", (await evalJS("focusId")) === "bbbb2222",
+  String(await evalJS("focusId")));
 
 // Layout intacto sob zoom: o transform não participa do encaixe.
 await roda(cx, cy, -240);
