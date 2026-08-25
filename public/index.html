@@ -4,6 +4,28 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ss</title>
+<meta name="description" content="Peer-to-peer browser screen sharing, inside your tailnet.">
+
+<!-- installable, so it opens in its own window instead of a tab. the same rule
+     as getDisplayMedia applies: none of this exists outside a secure context,
+     so installing needs https (tailscale serve) or localhost. -->
+<link rel="manifest" href="/manifest.webmanifest">
+<!-- the thoth favicon set, used as delivered: the files live at the site root. -->
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<meta name="msapplication-config" content="/browserconfig.xml">
+<meta name="theme-color" content="#090c0e">
+<meta name="application-name" content="screen share">
+<!-- ios ignores the manifest: the name, the standalone mode and the status bar
+     style come from these instead. -->
+<meta name="apple-mobile-web-app-title" content="screen share">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <style>
   :root {
     /* call floor: near black, with the accent's cold bias. tiles rise out of
@@ -406,6 +428,9 @@
   </button>
   <button id="gridBtn" title="Leave focus" aria-label="Leave focus" disabled>
     <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>
+  </button>
+  <button id="installBtn" title="Install as an app" aria-label="Install as an app" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11M8 11l4 4 4-4"/><path d="M4.5 16v2.5a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V16"/></svg>
   </button>
 </div>
 
@@ -1818,6 +1843,46 @@ $("gridBtn").onclick = () => {
   focusId = null;
   render();
 };
+
+/* ---------- install ---------- */
+
+// the worker does not keep the app for offline use: without signaling there is
+// no room. it is here because chrome only offers installation to a page that
+// has one with a fetch handler, and because a network drop mid-call now shows
+// the page that was already loaded instead of the browser's error screen.
+// outside a secure context navigator.serviceWorker does not exist at all and
+// the app runs exactly the same, which is the getDisplayMedia rule again.
+if ("serviceWorker" in navigator) {
+  addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+}
+
+// the button appears only when the browser actually offers the prompt.
+// promising an install that will not happen, on firefox or safari or plain
+// http, is worse than having no button. ios fires no such event: there the path
+// is safari's own "Add to Home Screen", which is what the apple-mobile-web-app
+// metas serve.
+let installPrompt = null;
+
+addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();             // without this chrome shows its own bar on top
+  installPrompt = e;
+  $("installBtn").hidden = false;
+});
+
+$("installBtn").onclick = async () => {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  await installPrompt.userChoice;
+  // the event fires once per load, so declining today brings the button back
+  // only on the next one.
+  installPrompt = null;
+  $("installBtn").hidden = true;
+};
+
+addEventListener("appinstalled", () => {
+  installPrompt = null;
+  $("installBtn").hidden = true;
+});
 
 /* ---------- telemetry ---------- */
 
