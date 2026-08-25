@@ -33,6 +33,14 @@ const proc = Bun.spawn([
   "--no-first-run", "--window-size=1440,900", "about:blank",
 ], { stdout: "ignore", stderr: "ignore" });
 
+// Exceção no meio da suíte não pode deixar um Chrome vivo: a rodada seguinte se
+// conecta NELE, com a página antiga carregada e a sala já entrada, e falha por
+// defeitos que não existem. Custou um ciclo inteiro descobrir isso.
+const encerra = () => { try { proc.kill(); } catch {} };
+process.on("exit", encerra);
+process.on("uncaughtException", (e) => { console.error(e); encerra(); process.exit(1); });
+process.on("unhandledRejection", (e) => { console.error(e); encerra(); process.exit(1); });
+
 async function alvo() {
   for (let i = 0; i < 60; i++) {
     try {
@@ -69,6 +77,34 @@ async function shot(nome: string) {
 }
 async function tela(w: number, h: number) {
   await cdp("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: false });
+}
+
+// Roda e arraste de verdade, pelo Input do CDP. Evento sintético do Runtime não
+// serve aqui: o pan chama setPointerCapture, que rejeita um pointerId inventado,
+// e sem captura o arraste morre na borda do elemento — o teste passaria vazio.
+async function roda(x: number, y: number, dy: number) {
+  await cdp("Input.dispatchMouseEvent",
+    { type: "mouseWheel", x, y, deltaX: 0, deltaY: dy, pointerType: "mouse" });
+  await Bun.sleep(60);
+}
+async function arrasta(x0: number, y0: number, x1: number, y1: number) {
+  await cdp("Input.dispatchMouseEvent",
+    { type: "mousePressed", x: x0, y: y0, button: "left", buttons: 1, clickCount: 1, pointerType: "mouse" });
+  const N = 8;
+  for (let i = 1; i <= N; i++) {
+    await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", button: "left", buttons: 1,
+      x: Math.round(x0 + ((x1 - x0) * i) / N), y: Math.round(y0 + ((y1 - y0) * i) / N), pointerType: "mouse" });
+  }
+  await cdp("Input.dispatchMouseEvent",
+    { type: "mouseReleased", x: x1, y: y1, button: "left", buttons: 0, clickCount: 1, pointerType: "mouse" });
+  await Bun.sleep(80);
+}
+async function clica(x: number, y: number) {
+  await cdp("Input.dispatchMouseEvent",
+    { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1, pointerType: "mouse" });
+  await cdp("Input.dispatchMouseEvent",
+    { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 1, pointerType: "mouse" });
+  await Bun.sleep(80);
 }
 
 await cdp("Page.enable");
@@ -236,6 +272,214 @@ await shot("5-foco");
 await evalJS(`document.getElementById("gridBtn").click()`);
 await assenta();
 checa("botão de grade sai do foco", (await evalJS("focusId")) === null);
+
+console.log("\n--- zoom de quem vê ---");
+// Ancoragem: o ponto do vídeo sob o cursor não pode andar. Em coordenadas do
+// elemento, com origem 0 0 e mapa s = k·p + t, esse ponto é p = (c − t)/k. É o
+// que a fórmula errada quebra a partir do SEGUNDO entalhe, quando t deixa de
+// ser zero — o primeiro passa em qualquer versão, por isso o teste dá dois.
+await evalJS(`toggleFocus("aaaa1111")`);
+await assenta();
+await evalJS(`window.pontoSob = (id, cx, cy) => {
+  const f = tiles.get(id).querySelector(".frame");
+  const v = f.querySelector("video");
+  const fr = f.getBoundingClientRect();
+  const cs = getComputedStyle(v);
+  // Lê o transform RENDERIZADO, e não o objeto zooms: reler o que applyZoom
+  // acabou de guardar valida a aritmética da regra e nada sobre o que chega na
+  // tela. Com a versão antiga, apagar o transform-origin ou inverter a ordem de
+  // translate/scale passava verde — duas mutações que destroem a ancoragem.
+  const m = new DOMMatrixReadOnly(cs.transform === "none" ? undefined : cs.transform);
+  const o = cs.transformOrigin.split(" ").map(parseFloat);
+  const ox = o[0] || 0, oy = o[1] || 0;
+  // O mapa efetivo do CSS é s = o + M·(p − o), então p = o + M⁻¹·(s − o).
+  const q = m.inverse().transformPoint(new DOMPoint(cx - fr.left - ox, cy - fr.top - oy));
+  return { px: q.x + ox, py: q.y + oy, k: m.a, tx: m.e, ty: m.f,
+           origem: cs.transformOrigin, W: f.clientWidth, H: f.clientHeight };
+}`);
+// Cobertura em pixel: o vídeo ampliado tem que tapar o quadro inteiro. É esta
+// que vê o pan descolar, porque compara caixas renderizadas.
+await evalJS(`window.cobre = (id) => {
+  const f = tiles.get(id).querySelector(".frame");
+  const fr = f.getBoundingClientRect(), vr = f.querySelector("video").getBoundingClientRect();
+  return { ok: vr.left <= fr.left + 1 && vr.top <= fr.top + 1 &&
+               vr.right >= fr.right - 1 && vr.bottom >= fr.bottom - 1,
+           quadro: [fr.left, fr.top, fr.right, fr.bottom].map(Math.round),
+           video: [vr.left, vr.top, vr.right, vr.bottom].map(Math.round) };
+}`);
+const cx = Math.round(await evalJS(`(() => { const r = tiles.get("aaaa1111").querySelector(".frame").getBoundingClientRect(); return r.left + r.width / 2; })()`));
+const cy = Math.round(await evalJS(`(() => { const r = tiles.get("aaaa1111").querySelector(".frame").getBoundingClientRect(); return r.top + r.height / 2; })()`));
+
+const p0 = await evalJS(`pontoSob("aaaa1111", ${cx}, ${cy})`);
+await roda(cx, cy, -120);
+const p1 = await evalJS(`pontoSob("aaaa1111", ${cx}, ${cy})`);
+checa("a roda amplia", p1.k > 1.05, `k=${p1.k}`);
+checa("âncora no 1º entalhe", Math.abs(p1.px - p0.px) < 1 && Math.abs(p1.py - p0.py) < 1,
+  `(${p0.px.toFixed(1)},${p0.py.toFixed(1)}) -> (${p1.px.toFixed(1)},${p1.py.toFixed(1)})`);
+
+await roda(cx, cy, -120);
+const p2 = await evalJS(`pontoSob("aaaa1111", ${cx}, ${cy})`);
+checa("a roda acumula", p2.k > p1.k + 0.05, `${p1.k} -> ${p2.k}`);
+checa("âncora no 2º entalhe (t já não é zero)",
+  Math.abs(p2.px - p0.px) < 1 && Math.abs(p2.py - p0.py) < 1,
+  `esperado (${p0.px.toFixed(1)},${p0.py.toFixed(1)}), veio (${p2.px.toFixed(1)},${p2.py.toFixed(1)})`);
+
+await roda(cx, cy, -120);
+const p3 = await evalJS(`pontoSob("aaaa1111", ${cx}, ${cy})`);
+checa("âncora no 3º entalhe", Math.abs(p3.px - p0.px) < 1 && Math.abs(p3.py - p0.py) < 1,
+  `esperado (${p0.px.toFixed(1)},${p0.py.toFixed(1)}), veio (${p3.px.toFixed(1)},${p3.py.toFixed(1)})`);
+
+// Um quarto entalhe em OUTRO ponto, depois de um pan. Os três anteriores no
+// mesmo ponto não distinguem `t' = t + (k−k')c`, que é algebraicamente idêntica
+// à correta enquanto toda ampliação parte do mesmo c: se t = c(1−k), então
+// t + c(k−k') = c(1−k'). A divergência só aparece quando t deixa de valer
+// c(1−k) — isto é, depois de um pan ou ampliando num segundo ponto. Sem este
+// caso, aquela variante passa a suíte inteira.
+await arrasta(cx, cy, cx - 60, cy - 40);
+const cx3 = cx + 180, cy3 = cy + 90;
+const q0 = await evalJS(`pontoSob("aaaa1111", ${cx3}, ${cy3})`);
+await roda(cx3, cy3, -120);
+const q1 = await evalJS(`pontoSob("aaaa1111", ${cx3}, ${cy3})`);
+checa("âncora num segundo ponto, depois de pan",
+  Math.abs(q1.px - q0.px) < 1 && Math.abs(q1.py - q0.py) < 1,
+  `esperado (${q0.px.toFixed(1)},${q0.py.toFixed(1)}), veio (${q1.px.toFixed(1)},${q1.py.toFixed(1)})`);
+checa("a origem do transform é o canto", q1.origem === "0px 0px", q1.origem);
+
+// Teto: nem a roda infinita passa de ZOOM_MAX.
+for (let i = 0; i < 12; i++) await roda(cx, cy, -240);
+checa("teto de zoom respeitado", (await evalJS(`zooms.get("aaaa1111").k`)) <= 4.0001,
+  String(await evalJS(`zooms.get("aaaa1111").k`)));
+
+// Confinamento: arrastar longe encosta na borda e para. Esta é a asserção com
+// dentes — scrollHeight não serve, porque .tile tem overflow: hidden e absorve
+// qualquer transbordo do descendente transformado.
+await arrasta(cx, cy, cx + 5000, cy);
+let z = await evalJS(`zooms.get("aaaa1111")`);
+checa("pan não descola pela direita", Math.abs(z.x) < 0.5, `x=${z.x}`);
+await arrasta(cx, cy, cx - 5000, cy);
+z = await evalJS(`zooms.get("aaaa1111")`);
+const lim = await evalJS(`(() => { const f = tiles.get("aaaa1111").querySelector(".frame");
+  return f.clientWidth * (1 - zooms.get("aaaa1111").k); })()`);
+checa("pan não descola pela esquerda", Math.abs(z.x - lim) < 1, `x=${z.x} limite=${lim}`);
+await arrasta(cx, cy, cx, cy - 5000);
+z = await evalJS(`zooms.get("aaaa1111")`);
+const limY = await evalJS(`(() => { const f = tiles.get("aaaa1111").querySelector(".frame");
+  return f.clientHeight * (1 - zooms.get("aaaa1111").k); })()`);
+checa("pan não descola por cima", Math.abs(z.y - limY) < 1, `y=${z.y} limite=${limY}`);
+
+// O passe de clamp dentro do layout() existe pra este caso, e ele falhava por
+// medir a caixa EM VOO: o .tile transiciona width/height em .16s, então ler
+// clientWidth no mesmo tique de place() devolve a largura interpolada. A
+// asserção lê pixel, não o objeto zooms — foi assim que passou verde enquanto o
+// tile renderizava preto.
+await evalJS(`(() => { zooms.set("aaaa1111", { k: 4, x: -1e6, y: -1e6 }); applyZoom("aaaa1111"); })()`);
+let cob = await evalJS(`cobre("aaaa1111")`);
+checa("a 4× encostado na borda o vídeo cobre o quadro", cob.ok, JSON.stringify(cob));
+await evalJS(`document.getElementById("gridBtn").click()`);
+await assenta();
+cob = await evalJS(`cobre("aaaa1111")`);
+checa("e continua cobrindo ao sair do foco (caixa encolhe)", cob.ok, JSON.stringify(cob));
+await tela(1100, 720);
+await assenta();
+cob = await evalJS(`cobre("aaaa1111")`);
+checa("e continua cobrindo com o palco menor", cob.ok, JSON.stringify(cob));
+await tela(1440, 900);
+await assenta();
+await evalJS(`toggleFocus("aaaa1111")`);
+await assenta();
+
+// O quadro tem que recortar por si: em tela cheia o .tile sai do fluxo e o
+// overflow dele não alcança mais o vídeo escalado.
+checa("o quadro recorta o vídeo ampliado",
+  (await evalJS(`getComputedStyle(tiles.get("aaaa1111").querySelector(".frame")).overflow`)) === "hidden",
+  await evalJS(`getComputedStyle(tiles.get("aaaa1111").querySelector(".frame")).overflow`));
+
+// Indicador: zoom é um modo, e um modo tem que ser visível. Fora do .tel, que
+// exige .vivo (PC no ar) e desaparece em .narrow.
+const ind = await evalJS(`(() => {
+  const t = tiles.get("aaaa1111"), e = t.querySelector(".zoom");
+  if (!e) return null;
+  const cs = getComputedStyle(e);
+  return { txt: e.textContent, vis: cs.display !== "none", dentroDoTel: !!e.closest(".tel"),
+           upscale: e.classList.contains("up") };
+})()`);
+checa("indicador existe e aparece", !!ind && ind.vis, JSON.stringify(ind));
+checa("indicador diz o fator", !!ind && /[\d.,]+\s*×/.test(ind.txt), JSON.stringify(ind?.txt));
+checa("indicador fora do .tel", !!ind && !ind.dentroDoTel, JSON.stringify(ind));
+checa("a 4× num tile de 1440 o indicador marca upscale", !!ind && ind.upscale === true, JSON.stringify(ind));
+
+// A fronteira, que é o que o indicador existe pra dizer: até o nativo ampliar
+// recupera detalhe que chegou e foi jogado fora pelo encaixe; acima, interpola.
+// Testar só o extremo de 4× não prova que o limiar está no lugar certo.
+const fronteira = await evalJS(`(() => {
+  const t = tiles.get("aaaa1111"), f = t.querySelector(".frame"), v = t.querySelector("video");
+  const nativo = v.videoWidth / (f.clientWidth * devicePixelRatio);
+  const leia = (k) => { zooms.set("aaaa1111", { k, x: 0, y: 0 }); applyZoom("aaaa1111");
+    return t.querySelector(".zoom").classList.contains("up"); };
+  // Sondar abaixo do nativo só faz sentido se o nativo estiver acima de 1: num
+  // dpr >= 2 ele cai abaixo, applyZoom trata como identidade e o teste passaria
+  // pelo motivo errado. O bench roda com deviceScaleFactor 1 de propósito.
+  if (nativo <= 1.1) return { nativo, abaixo: null, acima: null };
+  return { nativo, abaixo: leia(nativo * 0.95), acima: leia(nativo * 1.05) };
+})()`);
+checa("abaixo do nativo não é upscale", fronteira.abaixo === false, JSON.stringify(fronteira));
+checa("acima do nativo é upscale", fronteira.acima === true, JSON.stringify(fronteira));
+checa("o nativo é maior que 1 (o encaixe reduz o vídeo)", fronteira.nativo > 1,
+  `nativo=${fronteira.nativo}`);
+
+// Clique não arranca de perto quem está lendo, e o clique pós-pan não foca.
+checa("clique não sai do foco enquanto há zoom", (await evalJS("focusId")) === "aaaa1111");
+await clica(cx, cy);
+checa("clique com zoom não muda o foco", (await evalJS("focusId")) === "aaaa1111",
+  String(await evalJS("focusId")));
+
+// Zerar volta à identidade sem estado fantasma.
+await evalJS(`(() => { zooms.delete("aaaa1111"); applyZoom("aaaa1111"); })()`);
+const limpo = await evalJS(`(() => {
+  const t = tiles.get("aaaa1111");
+  const e = t.querySelector(".zoom");
+  return { tr: t.querySelector("video").style.transform, cls: t.querySelector(".frame").className,
+           ind: e ? getComputedStyle(e).display : "ausente" };
+})()`);
+checa("zerar apaga transform, classe e indicador",
+  limpo.tr === "" && !limpo.cls.includes("zoomed") && limpo.ind === "none", JSON.stringify(limpo));
+
+// Miniatura não carrega zoom: numa trilha de 150px focar dá mais pixel que
+// qualquer ampliação, e lá não há gesto.
+await evalJS(`(() => { focusId = null; render(); })()`);
+await assenta();
+const cx2 = Math.round(await evalJS(`(() => { const r = tiles.get("bbbb2222").querySelector(".frame").getBoundingClientRect(); return r.left + r.width / 2; })()`));
+const cy2 = Math.round(await evalJS(`(() => { const r = tiles.get("bbbb2222").querySelector(".frame").getBoundingClientRect(); return r.top + r.height / 2; })()`));
+await roda(cx2, cy2, -240);
+checa("zoom vale em tile fora do foco", (await evalJS(`zooms.has("bbbb2222")`)) === true);
+await evalJS(`toggleFocus("aaaa1111")`);
+await assenta();
+checa("virar miniatura descarta o zoom", (await evalJS(`zooms.has("bbbb2222")`)) === false);
+// E a roda não pode reabrir por cima: numa miniatura o indicador está oculto, o
+// .ctl cobre o quadro todo (sem pan) e o clique deixaria de focar — que é o
+// único uso da trilha.
+const rc = Math.round(await evalJS(`(() => { const r = tiles.get("bbbb2222").querySelector(".frame").getBoundingClientRect(); return r.left + r.width / 2; })()`));
+const rl = Math.round(await evalJS(`(() => { const r = tiles.get("bbbb2222").querySelector(".frame").getBoundingClientRect(); return r.top + r.height / 2; })()`));
+await roda(rc, rl, -120);
+checa("a roda não amplia miniatura", (await evalJS(`zooms.has("bbbb2222")`)) === false);
+await clica(rc, rl);
+await assenta();
+checa("e a miniatura continua focável no clique", (await evalJS("focusId")) === "bbbb2222",
+  String(await evalJS("focusId")));
+
+// Layout intacto sob zoom: o transform não participa do encaixe.
+await roda(cx, cy, -240);
+await assenta();
+m = await medir();
+checa("página não rola com zoom", !m.rola, `${m.scrollH} > ${m.innerH}`);
+checa("nada encavalado com zoom", dentro(m), JSON.stringify(m.tiles));
+await shot("5b-zoom");
+
+// Não contamina o resto do bench.
+await evalJS(`(() => { for (const id of [...zooms.keys()]) { zooms.delete(id); applyZoom(id); }
+  focusId = null; render(); })()`);
+await assenta();
+checa("bench sai do zoom limpo", (await evalJS("zooms.size")) === 0 && (await evalJS("focusId")) === null);
 
 console.log("\n--- 430px de largura ---");
 await tela(430, 780);
