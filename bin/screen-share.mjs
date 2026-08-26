@@ -35,34 +35,34 @@ const EXE = process.platform === "win32" ? ["bun.exe", "bun"] : ["bun"];
    that never read that rc. finding the binary there is the difference between
    working and telling the user to reinstall what they already have. */
 const getSearchDirs = () => {
-  const dirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
-  const bunInstall = process.env.BUN_INSTALL;
-  if (bunInstall) dirs.push(path.join(bunInstall, "bin"));
-  const home = homedir();
-  if (home) dirs.push(path.join(home, ".bun", "bin"));
-  return dirs;
+	const dirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
+	const bunInstall = process.env.BUN_INSTALL;
+	if (bunInstall) dirs.push(path.join(bunInstall, "bin"));
+	const home = homedir();
+	if (home) dirs.push(path.join(home, ".bun", "bin"));
+	return dirs;
 };
 
 // existing is not enough: a directory named `bun` on PATH would pass a test
 // that only looks for presence.
 const isExecutable = (p) => {
-  try {
-    if (!statSync(p).isFile()) return false;
-    accessSync(p, constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
+	try {
+		if (!statSync(p).isFile()) return false;
+		accessSync(p, constants.X_OK);
+		return true;
+	} catch {
+		return false;
+	}
 };
 
 const findBun = () => {
-  for (const dir of getSearchDirs()) {
-    for (const name of EXE) {
-      const target = path.join(dir, name);
-      if (isExecutable(target)) return target;
-    }
-  }
-  return null;
+	for (const dir of getSearchDirs()) {
+		for (const name of EXE) {
+			const target = path.join(dir, name);
+			if (isExecutable(target)) return target;
+		}
+	}
+	return null;
 };
 
 const MISSING_BUN = `ss needs Bun, and I could not find one on this machine.
@@ -88,49 +88,51 @@ const MISSING_BUN = `ss needs Bun, and I could not find one on this machine.
    process.argv it expects: whoever reads `argv.slice(2)` cannot be handed an
    extra level of indirection. */
 if (process.versions.bun) {
-  await import(pathToFileURL(CLI).href);
+	await import(pathToFileURL(CLI).href);
 } else {
-  const bun = findBun();
-  if (!bun) {
-    process.stderr.write(MISSING_BUN);
-    process.exit(1);
-  }
+	const bun = findBun();
+	if (!bun) {
+		process.stderr.write(MISSING_BUN);
+		process.exit(1);
+	}
 
-  const child = spawn(bun, [CLI, ...process.argv.slice(2)], { stdio: "inherit" });
+	const child = spawn(bun, [CLI, ...process.argv.slice(2)], {
+		stdio: "inherit",
+	});
 
-  // without this listener a failed spawn emits 'error' with nobody listening,
-  // and Node takes the process down with a stack trace instead of a sentence.
-  child.on("error", (err) => {
-    process.stderr.write(`could not execute ${bun}: ${err.message}\n`);
-    process.exit(1);
-  });
+	// without this listener a failed spawn emits 'error' with nobody listening,
+	// and Node takes the process down with a stack trace instead of a sentence.
+	child.on("error", (err) => {
+		process.stderr.write(`could not execute ${bun}: ${err.message}\n`);
+		process.exit(1);
+	});
 
-  /* relaying signals is the duty of whoever became the middle process. while
+	/* relaying signals is the duty of whoever became the middle process. while
      `bin` was cli.ts itself, the pid the user saw was bun's and `kill <pid>`
      stopped the server. with a layer in between the same kill hits only the
      launcher and leaves bun orphaned holding the port, measured, not assumed.
      Ctrl-C hides this because the terminal signals the whole process group; a
      targeted kill does not. */
-  const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
-  for (const signal of SIGNALS) {
-    process.on(signal, () => {
-      if (!child.killed) child.kill(signal);
-    });
-  }
+	const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
+	for (const signal of SIGNALS) {
+		process.on(signal, () => {
+			if (!child.killed) child.kill(signal);
+		});
+	}
 
-  /* the exit code is cli.ts's, not ours: a --stop that found no pidfile exits
+	/* the exit code is cli.ts's, not ours: a --stop that found no pidfile exits
      1, and the caller needs to see that 1. death by signal has no code, and
      relaying it as 0 would claim success, so we kill ourselves with the same
      signal and let the shell report what happened. removeAllListeners is not
      decoration: with the listener above still installed, Node hands the signal
      to it instead of dying, and the launcher would hang trying to kill a child
      that is already dead. */
-  child.on("exit", (code, signal) => {
-    if (signal) {
-      process.removeAllListeners(signal);
-      process.kill(process.pid, signal);
-      return;
-    }
-    process.exit(code ?? 1);
-  });
+	child.on("exit", (code, signal) => {
+		if (signal) {
+			process.removeAllListeners(signal);
+			process.kill(process.pid, signal);
+			return;
+		}
+		process.exit(code ?? 1);
+	});
 }
