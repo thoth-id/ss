@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ss</title>
+<title>tailcast</title>
 <meta name="description" content="Peer-to-peer browser screen sharing, inside your tailnet.">
 
 <!-- installable, so it opens in its own window instead of a tab. the same rule
@@ -42,10 +42,8 @@
     --accent: #5ad3bb;
     --warn:   #e6b25c;
     --stop:   #d9534a;
-    --ink:    #05221e;
-    --glass:  rgba(10,14,16,.72);
     /* mono is machine truth (ids, rates, resolutions, paths, room names, and
-       the `ss` wordmark, which is a command). sans is human words, and it is
+       the `tailcast` wordmark, which is a command). sans is human words, and it is
        the system stack: this project fetches nothing from the network, and a
        webfont would break that and the offline case at once. */
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -386,7 +384,7 @@
 
 <main id="stage"></main>
 
-<span class="mark">ss<i id="live"></i></span>
+<span class="mark">tailcast<i id="live"></i></span>
 
 <div class="top">
   <span id="topRoom">#room</span>
@@ -499,16 +497,20 @@ let gateOpen = false;
 let gateLocked = false;            // gate with no way out: still no name
 /* ---------- sound ---------- */
 
-const SOUND_KEY = "ss:sound";
+const SOUND_KEY = "tailcast:sound";
+const LEGACY_SOUND_KEY = "ss:sound";
 function loadSound() {
   try {
-    const v = localStorage.getItem(SOUND_KEY);
+    const v = localStorage.getItem(SOUND_KEY) ?? localStorage.getItem(LEGACY_SOUND_KEY);
     if (v === null) return true;
     return v === "1" || v === "true";
   } catch { return true; }
 }
 function storeSound(v) {
-  try { localStorage.setItem(SOUND_KEY, v ? "1" : "0"); } catch {}
+  try {
+    localStorage.setItem(SOUND_KEY, v ? "1" : "0");
+    localStorage.removeItem(LEGACY_SOUND_KEY);
+  } catch {}
 }
 let soundOn = loadSound();
 let audioCtx = null;
@@ -1563,8 +1565,9 @@ addEventListener("keydown", (e) => {
 
 /* ---------- name ---------- */
 
-const NAME_KEY = "ss:name";
-const LEGACY_NAME_KEY = "ss:nome";
+const NAME_KEY = "tailcast:name";
+const LEGACY_NAME_KEY = "ss:name";
+const LEGACY_NAME_KEY2 = "ss:nome";
 // mandatory, with a floor: one letter does not tell two people apart, and
 // whoever joins has to be recognizable to those already there. the server still
 // accepts empty, which is how a name is erased, so this rule is the client's:
@@ -1620,7 +1623,7 @@ function pill(tile, id) {
 // iframe). not remembering a name is no reason to take the page down.
 function loadName() {
   try {
-    const stored = localStorage.getItem(NAME_KEY) ?? localStorage.getItem(LEGACY_NAME_KEY);
+    const stored = localStorage.getItem(NAME_KEY) ?? localStorage.getItem(LEGACY_NAME_KEY) ?? localStorage.getItem(LEGACY_NAME_KEY2);
     return cleanName(stored);
   } catch { return ""; }
 }
@@ -1628,11 +1631,11 @@ function loadName() {
 function storeName(v) {
   try {
     localStorage.setItem(NAME_KEY, v);
-    // legacy key kept for downgrade compatibility, will be naturally phased out
+    // legacy keys kept for downgrade compatibility, will be naturally phased out
     localStorage.removeItem(LEGACY_NAME_KEY);
+    localStorage.removeItem(LEGACY_NAME_KEY2);
   } catch {}
 }
-
 // no debounce: the name is not typed live into the header any more, it is
 // confirmed at the gate. one confirmation, one `rename`.
 function setName(raw) {
@@ -1655,12 +1658,10 @@ function joinRoom() {
 
 myName = loadName();
 
-/* ---------- rooms ---------- */
-
-const ROOMS_KEY = "ss:rooms";
-const LEGACY_ROOMS_KEY = "ss:salas";
+const ROOMS_KEY = "tailcast:rooms";
+const LEGACY_ROOMS_KEY = "ss:rooms";
+const LEGACY_ROOMS_KEY2 = "ss:salas";
 const ROOMS_MAX = 8;
-
 
 // the same cut as the server (String, 64), plus the whitespace collapse the
 // fragment lets through. empty falls back to "room", the default on both sides.
@@ -1675,7 +1676,7 @@ function cleanRoom(raw) {
 // existing on close. occupancy, therefore, only for the current room.
 function loadRooms() {
   try {
-    const raw = localStorage.getItem(ROOMS_KEY) ?? localStorage.getItem(LEGACY_ROOMS_KEY);
+    const raw = localStorage.getItem(ROOMS_KEY) ?? localStorage.getItem(LEGACY_ROOMS_KEY) ?? localStorage.getItem(LEGACY_ROOMS_KEY2);
     const v = JSON.parse(raw || "[]");
     return Array.isArray(v) ? [...new Set(v.map(cleanRoom))] : [];
   } catch { return []; }
@@ -1686,13 +1687,14 @@ function remember(room) {
   try {
     localStorage.setItem(ROOMS_KEY, JSON.stringify(list));
     localStorage.removeItem(LEGACY_ROOMS_KEY);
+    localStorage.removeItem(LEGACY_ROOMS_KEY2);
   } catch {}
   return list;
 }
 
 function paintRoom() {
   $("topRoom").textContent = `#${ROOM}`;
-  document.title = `#${ROOM} · ss`;
+  document.title = `#${ROOM} · tailcast`;
 }
 
 // switching rooms without a reload. the new socket gets a new id from the

@@ -13,7 +13,7 @@
 // inside the tailnet: the network is a millisecond away, and a cache hit is the
 // only way this page could ever go stale. the cache is a safety net, not the
 // normal path, for the same reason there is no build step.
-const CACHE = "ss-v1";
+const CACHE = "tailcast-v1";
 
 const SHELL = [
 	"/",

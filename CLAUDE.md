@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`tela` — browser-to-browser screen sharing (no audio) for a small group inside a
+`tailcast` — browser-to-browser screen sharing (no audio) for a small group inside a
 Tailscale tailnet. Bun + TypeScript, **zero dependencies**, no build step, no
 `npm install`. Four source files total.
 
@@ -45,8 +45,8 @@ forever trying to kill a dead child.
 Keep the launcher free of CLI logic. Flags, `--bg` and `--stop` all stay in
 `cli.ts`.
 
-Three names, three jobs: the project's internal name stays `tela` — repo and UI
-strings keep saying `tela`. The **package name**,
+Three names, three jobs: the project's internal name stays `tailcast` — repo and UI
+strings keep saying `tailcast`. The **package name**,
 `@thoth-dev/screen-share`, is what `npm install`, `bun add` and `bunx` take, and
 what appears in the npmjs.com URL — the org scope exists because a plain
 `screen-share` collided with existing package names on the registry. The
@@ -65,7 +65,7 @@ reproduced, the alternative that looks right and is not. If the code says it,
 delete the comment.
 
 Identifiers are in English (`resolveStatic`, `targetBox`, `child`, `zoomBadge`),
-and the `localStorage` keys are `ss:name` / `ss:rooms` (legacy `ss:nome` / `ss:salas`
+and the `localStorage` keys are `tailcast:name` / `tailcast:rooms` (legacy `ss:name` / `ss:rooms` / `ss:nome` / `ss:salas`
 are still read for migration and then cleared, so existing users keep their name
 and room history without a hard cut).
 
