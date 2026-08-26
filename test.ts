@@ -504,7 +504,7 @@ async function testNames() {
 	await settle();
 	ok(
 		"a whitespace-only name leaves the map",
-		!(bId in (a.last("names")?.map ?? {})),
+		!(bId in ((a.last("names")?.map ?? {}) as Record<string, unknown>)),
 		a.last("names")?.map,
 	);
 	eqMap("erasing a name does not touch the others", a.last("names")?.map, {
