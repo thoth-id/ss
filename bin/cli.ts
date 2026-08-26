@@ -523,7 +523,8 @@ if (bg) {
 	}
 
 	process.stdout.write(
-		`tailcast ${getVersion()}  ·  background\n` +
+		`${CAT}\n\n` +
+			`tailcast ${getVersion()}  ·  background\n` +
 			`  http        http://localhost:${opts.port}\n` +
 			`  stun  udp   :${opts.stunPort}\n` +
 			`  pid         ${pid}\n\n` +
