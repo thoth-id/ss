@@ -502,7 +502,11 @@ async function testNames() {
 	// an empty name is how you erase your own
 	b.send({ t: "rename", name: "   " });
 	await settle();
-	ok("a whitespace-only name leaves the map", !(bId in a.last("names").map), a.last("names").map);
+	ok(
+		"a whitespace-only name leaves the map",
+		!(bId in (a.last("names")?.map ?? {})),
+		a.last("names")?.map,
+	);
 	eqMap("erasing a name does not touch the others", a.last("names")?.map, {
 		[aId]: "gabriel",
 		[cId]: "ana",
