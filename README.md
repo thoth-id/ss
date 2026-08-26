@@ -91,6 +91,30 @@ pidfile in the path. The command reports success only once the child's own
 `/config` answers, which means after it actually bound the port, not merely
 after it was spawned. `--stop --port <n>` kills whatever that pidfile registers.
 
+## Install as an app
+
+The page is a PWA. On Chrome and Edge an install button appears as the last one
+in the dock, and the app then opens in its own window, with no tab and no
+address bar. Once installed the button is gone for good.
+
+This rides on the same HTTPS as everything else: a service worker, like
+`getDisplayMedia`, only exists in a secure context. Over `http://100.x` there is
+no button and no worker, and the page works exactly the same.
+
+On iPhone and iPad there is no install event — the path is **Share → Add to Home
+Screen**, in Safari. It is for watching only: no mobile browser captures a
+screen.
+
+The worker is network-first for everything and the cache is only a safety net.
+There is no real offline mode: without signaling there is no room. What it fixes
+is a network drop mid-call, which now shows the page that was already loaded,
+reconnecting on its own, instead of the browser's error screen.
+
+Losing the address bar costs nothing: the room button in the dock switches rooms
+without one.
+
+The icons are the thoth favicon set as delivered, at the root of `public/`.
+
 ## Rooms
 
 The room comes from the URL hash: `/#retro`, `/#pair`. With no hash it falls
