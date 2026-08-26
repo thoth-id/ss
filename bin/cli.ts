@@ -83,27 +83,13 @@ const UNLIMITED = Number.MAX_SAFE_INTEGER;
 // and the error messages have to talk about different things. a fifth file for
 // 15 lines would cost the project more than the duplication. if the rule
 // changes in one, change the other.
-function parseNumber(
-	value: string,
-	flag: string,
-	min: number,
-	max = UNLIMITED,
-): number {
+function parseNumber(value: string, flag: string, min: number, max = UNLIMITED): number {
 	const trimmed = value.trim();
 	const n = Number(trimmed);
-	if (
-		!/^\d+$/.test(trimmed) ||
-		!Number.isSafeInteger(n) ||
-		n < min ||
-		n > max
-	) {
+	if (!/^\d+$/.test(trimmed) || !Number.isSafeInteger(n) || n < min || n > max) {
 		const range =
-			max === UNLIMITED
-				? `an integer >= ${min}`
-				: `an integer between ${min} and ${max}`;
-		process.stderr.write(
-			`invalid value for ${flag}: ${value}\nExpected ${range}.\n`,
-		);
+			max === UNLIMITED ? `an integer >= ${min}` : `an integer between ${min} and ${max}`;
+		process.stderr.write(`invalid value for ${flag}: ${value}\nExpected ${range}.\n`);
 		process.exit(1);
 	}
 	return n;
@@ -134,14 +120,11 @@ for (let i = 0; i < argv.length; i++) {
 	} else if (a === "-v" || a === "--version") {
 		process.stdout.write(`${getVersion()}\n`);
 		process.exit(0);
-	} else if (a === "-p" || a === "--port")
-		opts.port = parseNumber(nextValue(), a, 1, 65535);
-	else if (a === "--stun-port")
-		opts.stunPort = parseNumber(nextValue(), a, 1, 65535);
+	} else if (a === "-p" || a === "--port") opts.port = parseNumber(nextValue(), a, 1, 65535);
+	else if (a === "--stun-port") opts.stunPort = parseNumber(nextValue(), a, 1, 65535);
 	else if (a === "--peers") opts.maxPeers = parseNumber(nextValue(), a, 1);
 	else if (a === "--sharers") opts.maxSharers = parseNumber(nextValue(), a, 1);
-	else if (a === "--pixels")
-		opts.maxCapturePixels = parseNumber(nextValue(), a, 1);
+	else if (a === "--pixels") opts.maxCapturePixels = parseNumber(nextValue(), a, 1);
 	else if (a === "--bg") bg = true;
 	else if (a === "--stop") stop = true;
 	else if (a === "--force") force = true;
@@ -154,9 +137,7 @@ for (let i = 0; i < argv.length; i++) {
 // starting and stopping are opposite requests. --stop used to win silently,
 // which leaves whoever typed both thinking they did the other thing.
 if (bg && stop) {
-	process.stderr.write(
-		`--bg and --stop ask for opposite things; use one at a time.\n`,
-	);
+	process.stderr.write(`--bg and --stop ask for opposite things; use one at a time.\n`);
 	process.exit(1);
 }
 
@@ -169,11 +150,8 @@ if (bg && stop) {
    refuse or --stop hit an unrelated process that inherited the number. */
 function getStateDir(): string {
 	const base = process.env.XDG_RUNTIME_DIR;
-	const uid =
-		typeof process.getuid === "function" ? process.getuid() : "no-uid";
-	const dir = base
-		? path.join(base, "screen-share")
-		: path.join(tmpdir(), `screen-share-${uid}`);
+	const uid = typeof process.getuid === "function" ? process.getuid() : "no-uid";
+	const dir = base ? path.join(base, "screen-share") : path.join(tmpdir(), `screen-share-${uid}`);
 	try {
 		mkdirSync(dir, { recursive: true, mode: 0o700 });
 	} catch (e: unknown) {
@@ -188,8 +166,7 @@ function getStateDir(): string {
 	// guarantee true; without it, refusing beats pretending.
 	try {
 		const st = statSync(dir);
-		const ownedByOther =
-			typeof process.getuid === "function" && st.uid !== process.getuid();
+		const ownedByOther = typeof process.getuid === "function" && st.uid !== process.getuid();
 		const tooPermissive = (st.mode & 0o077) !== 0;
 		if (ownedByOther || tooPermissive) {
 			process.stderr.write(
@@ -286,9 +263,7 @@ if (stop) {
 	prepareState();
 	const pid = readPid();
 	if (pid === null) {
-		process.stderr.write(
-			`nothing running in the background on port ${opts.port}\n`,
-		);
+		process.stderr.write(`nothing running in the background on port ${opts.port}\n`);
 		process.exit(1);
 	}
 
@@ -333,8 +308,7 @@ const env: Record<string, string> = {
 };
 if (opts.maxPeers) env.MAX_PEERS = String(opts.maxPeers);
 if (opts.maxSharers) env.MAX_SHARERS = String(opts.maxSharers);
-if (opts.maxCapturePixels)
-	env.MAX_CAPTURE_PIXELS = String(opts.maxCapturePixels);
+if (opts.maxCapturePixels) env.MAX_CAPTURE_PIXELS = String(opts.maxCapturePixels);
 
 const serverTarget = path.join(ROOT, "server.ts");
 
@@ -349,9 +323,7 @@ const serverTarget = path.join(ROOT, "server.ts");
 function probePort(port: number): Promise<string | null> {
 	return new Promise((resolve) => {
 		const s = createServer();
-		s.once("error", (e: NodeJS.ErrnoException) =>
-			resolve(e.code ?? "EUNKNOWN"),
-		);
+		s.once("error", (e: NodeJS.ErrnoException) => resolve(e.code ?? "EUNKNOWN"));
 		s.listen(port, "127.0.0.1", () => s.close(() => resolve(null)));
 	});
 }
@@ -364,9 +336,7 @@ function probePort(port: number): Promise<string | null> {
 function probeUdp(port: number): Promise<string | null> {
 	return new Promise((resolve) => {
 		const s = createSocket("udp4");
-		s.once("error", (e: NodeJS.ErrnoException) =>
-			resolve(e.code ?? "EUNKNOWN"),
-		);
+		s.once("error", (e: NodeJS.ErrnoException) => resolve(e.code ?? "EUNKNOWN"));
 		s.bind(port, "0.0.0.0", () => s.close(() => resolve(null)));
 	});
 }

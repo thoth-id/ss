@@ -36,12 +36,7 @@ export function startStun(port = 3478) {
 		res.writeUInt8(0x01, 25); // IPv4 family
 		res.writeUInt16BE(rinfo.port ^ (MAGIC >>> 16), 26);
 
-		const addr =
-			((+octets[0] << 24) |
-				(+octets[1] << 16) |
-				(+octets[2] << 8) |
-				+octets[3]) >>>
-			0;
+		const addr = ((+octets[0] << 24) | (+octets[1] << 16) | (+octets[2] << 8) | +octets[3]) >>> 0;
 		res.writeUInt32BE((addr ^ MAGIC) >>> 0, 28);
 
 		// the callback turns a send failure into a handled 'error' instead of an
@@ -60,9 +55,7 @@ export function startStun(port = 3478) {
 	let bindado = false;
 	sock.on("error", (err: NodeJS.ErrnoException) => {
 		if (bindado) {
-			process.stderr.write(
-				`stun: socket error (${err.code}): ${err.message}\n`,
-			);
+			process.stderr.write(`stun: socket error (${err.code}): ${err.message}\n`);
 			return;
 		}
 		process.stderr.write(

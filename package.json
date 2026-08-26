@@ -40,6 +40,23 @@
 		"bun": ">=1.1.0"
 	},
 	"scripts": {
-		"start": "bun run server.ts"
+		"start": "bun run server.ts",
+		"format": "biome check --write ./",
+		"format:check": "biome check ./",
+		"lint": "biome lint ./",
+		"prepare": "husky"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.10",
+		"husky": "^9.1.7",
+		"lint-staged": "^16.1.0"
+	},
+	"lint-staged": {
+		"*.{ts,mts,cts,js,mjs,cjs,json,jsonc}": [
+			"biome check --write --no-errors-on-unmatched"
+		],
+		"*.{html,css,svg}": [
+			"biome check --write --no-errors-on-unmatched"
+		]
 	}
 }

@@ -22,12 +22,8 @@ function resolveStatic(pathname: string): string | null {
 	// the install path and source lines, out of a 20-byte request.
 	if (rel.includes("\0")) return null;
 	if (rel === "/" || rel === "") rel = "/index.html";
-	const target = nodePath.resolve(
-		PUBLIC_DIR,
-		`.${nodePath.posix.normalize(rel)}`,
-	);
-	if (target !== PUBLIC_DIR && !target.startsWith(PUBLIC_DIR + nodePath.sep))
-		return null;
+	const target = nodePath.resolve(PUBLIC_DIR, `.${nodePath.posix.normalize(rel)}`);
+	if (target !== PUBLIC_DIR && !target.startsWith(PUBLIC_DIR + nodePath.sep)) return null;
 	return target;
 }
 
@@ -35,10 +31,7 @@ function resolveStatic(pathname: string): string | null {
 // defensively: server.ts also runs straight from a clone.
 function getVersion(): string {
 	try {
-		const raw = readFileSync(
-			nodePath.join(import.meta.dir, "package.json"),
-			"utf8",
-		);
+		const raw = readFileSync(nodePath.join(import.meta.dir, "package.json"), "utf8");
 		return JSON.parse(raw).version || "?";
 	} catch {
 		return "?";
@@ -54,11 +47,7 @@ function getVersion(): string {
    measured default and names itself on stderr. */
 // twin of `num()` in bin/cli.ts: same rule, two sides of the same boundary.
 // if the rule changes here, change it there.
-function int(
-	name: string,
-	fallback: number,
-	max = Number.MAX_SAFE_INTEGER,
-): number {
+function int(name: string, fallback: number, max = Number.MAX_SAFE_INTEGER): number {
 	const raw = process.env[name];
 	if (raw === undefined) return fallback;
 	const trimmed = raw.trim();
@@ -67,12 +56,8 @@ function int(
 	// Number() and none of them an integer written as an integer.
 	if (!/^\d+$/.test(trimmed) || !Number.isSafeInteger(n) || n < 1 || n > max) {
 		const range =
-			max === Number.MAX_SAFE_INTEGER
-				? "a positive integer"
-				: `an integer between 1 and ${max}`;
-		process.stderr.write(
-			`${name}=${JSON.stringify(raw)} is not ${range}; using ${fallback}\n`,
-		);
+			max === Number.MAX_SAFE_INTEGER ? "a positive integer" : `an integer between 1 and ${max}`;
+		process.stderr.write(`${name}=${JSON.stringify(raw)} is not ${range}; using ${fallback}\n`);
 		return fallback;
 	}
 	return n;
@@ -206,8 +191,7 @@ Bun.serve<Client>({
 		const target = resolveStatic(url.pathname);
 		if (!target) return new Response("not found", { status: 404 });
 		const file = Bun.file(target);
-		if (!(await file.exists()))
-			return new Response("not found", { status: 404 });
+		if (!(await file.exists())) return new Response("not found", { status: 404 });
 
 		// without a cache-control the browser invents a freshness lifetime by
 		// heuristic, and an installed PWA is where that becomes an app frozen on an
@@ -311,9 +295,7 @@ Bun.serve<Client>({
 				if (!set) return;
 				for (const peer of set) {
 					if (peer.data.id === msg.to) {
-						peer.send(
-							JSON.stringify({ t: "signal", from: ws.data.id, data: msg.data }),
-						);
+						peer.send(JSON.stringify({ t: "signal", from: ws.data.id, data: msg.data }));
 						break;
 					}
 				}

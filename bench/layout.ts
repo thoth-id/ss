@@ -101,9 +101,7 @@ process.on("unhandledRejection", (e) => {
 async function getCdpTarget() {
 	for (let i = 0; i < 60; i++) {
 		try {
-			const list = await fetch(`http://127.0.0.1:${DBG}/json/list`).then((r) =>
-				r.json(),
-			);
+			const list = await fetch(`http://127.0.0.1:${DBG}/json/list`).then((r) => r.json());
 			const page = list.find((t: CdpTarget) => t.type === "page");
 			if (page) return page.webSocketDebuggerUrl;
 		} catch {}
@@ -120,10 +118,7 @@ ws.onmessage = (e) => {
 	const m = JSON.parse(String(e.data));
 	if (m.id && pending.has(m.id)) pending.get(m.id)?.(m);
 };
-function cdp(
-	method: string,
-	params: Record<string, unknown> = {},
-): Promise<CdpResponse> {
+function cdp(method: string, params: Record<string, unknown> = {}): Promise<CdpResponse> {
 	const id = ++seq;
 	ws.send(JSON.stringify({ id, method, params }));
 	return new Promise((r) => pending.set(id, r));
@@ -134,8 +129,7 @@ async function evalJS(expr: string) {
 		awaitPromise: true,
 		returnByValue: true,
 	});
-	if (r.result?.exceptionDetails)
-		throw new Error(JSON.stringify(r.result.exceptionDetails));
+	if (r.result?.exceptionDetails) throw new Error(JSON.stringify(r.result.exceptionDetails));
 	return r.result?.result?.value;
 }
 async function capture(name: string) {
@@ -227,14 +221,11 @@ await cdp("Runtime.enable");
 await setViewport(1440, 900);
 await cdp("Page.navigate", { url: `http://127.0.0.1:${PORT}/#room` });
 await Bun.sleep(1500);
-for (let i = 0; i < 60 && !(await evalJS('typeof ROOM !== "undefined"')); i++)
-	await Bun.sleep(250);
+for (let i = 0; i < 60 && !(await evalJS('typeof ROOM !== "undefined"')); i++) await Bun.sleep(250);
 
 const failures: string[] = [];
 function check(name: string, cond: boolean, detail = "") {
-	console.log(
-		`  ${cond ? "ok  " : "FAIL"}  ${name}${cond ? "" : `  ${detail}`}`,
-	);
+	console.log(`  ${cond ? "ok  " : "FAIL"}  ${name}${cond ? "" : `  ${detail}`}`);
 	if (!cond) failures.push(name);
 }
 
@@ -279,7 +270,7 @@ async function measure(): Promise<MeasureInfo> {
       myId: typeof myId !== "undefined" ? myId : null,
       topBar: [...document.querySelectorAll(".top span")].filter((s) => !s.hidden).map((s) => s.textContent),
     };
-  })()`) as MeasureInfo);
+  })()`)) as MeasureInfo;
 }
 
 const allInside = (m: MeasureInfo) =>
@@ -311,24 +302,14 @@ async function typeText(v: string) {
   })()`);
 }
 await typeText("GM");
-check(
-	"2 letters do not pass",
-	await evalJS(`document.getElementById("gateGo").disabled`),
-);
+check("2 letters do not pass", await evalJS(`document.getElementById("gateGo").disabled`));
 await typeText("GMG");
-check(
-	"3 letters pass",
-	!(await evalJS(`document.getElementById("gateGo").disabled`)),
-);
+check("3 letters pass", !(await evalJS(`document.getElementById("gateGo").disabled`)));
 
 await evalJS(`document.getElementById("gateGo").click()`);
 for (let i = 0; i < 40 && !(await evalJS("!!myId")); i++) await Bun.sleep(200);
 m = await measure();
-check(
-	"joined after answering",
-	!!m.myId && m.gate === false,
-	`${m.myId} gate=${m.gate}`,
-);
+check("joined after answering", !!m.myId && m.gate === false, `${m.myId} gate=${m.gate}`);
 
 // a populated room: the call grid of everybody not transmitting.
 await evalJS(`(() => {
@@ -358,11 +339,7 @@ check(
 	m.tiles.length === 4 && m.tiles.every((t: TileInfo) => t.peer),
 	String(m.tiles.length),
 );
-check(
-	"nothing overlaps: dock, pill, label",
-	allInside(m),
-	JSON.stringify(m.tiles),
-);
+check("nothing overlaps: dock, pill, label", allInside(m), JSON.stringify(m.tiles));
 check(
 	"equal cells for everybody",
 	new Set(m.tiles.map((t: TileInfo) => Math.round(t.h))).size === 1,
@@ -379,9 +356,7 @@ check(
 );
 await capture("2-call-no-video");
 
-console.log(
-	"\n--- 1 screen on air: video rules, presence drops to the rail ---",
-);
+console.log("\n--- 1 screen on air: video rules, presence drops to the rail ---");
 await evalJS(
 	`(() => { sharers = new Set(["aaaa1111"]); render(); attachTile("aaaa1111", fake(1600, 900)); })()`,
 );
@@ -390,11 +365,7 @@ m = await measure();
 const video = m.tiles.filter((t: TileInfo) => !t.peer);
 const placas = m.tiles.filter((t: TileInfo) => t.peer);
 check("the page does not scroll", !m.scrolls, `${m.scrollH} > ${m.innerH}`);
-check(
-	"nothing overlaps: dock, pill, label",
-	allInside(m),
-	JSON.stringify(m.tiles),
-);
+check("nothing overlaps: dock, pill, label", allInside(m), JSON.stringify(m.tiles));
 check("1 video and 3 monograms", video.length === 1 && placas.length === 3);
 check(
 	"the presence rail is capped",
@@ -421,11 +392,7 @@ await settle();
 m = await measure();
 const vids = m.tiles.filter((t: TileInfo) => !t.peer);
 check("the page does not scroll", !m.scrolls, `${m.scrollH} > ${m.innerH}`);
-check(
-	"nothing overlaps: dock, pill, label",
-	allInside(m),
-	JSON.stringify(m.tiles),
-);
+check("nothing overlaps: dock, pill, label", allInside(m), JSON.stringify(m.tiles));
 check("two videos on stage", vids.length === 2, String(vids.length));
 check(
 	"justified row: same height",
@@ -441,11 +408,7 @@ m = await measure();
 const foco = m.tiles.find((t: TileInfo) => t.id === "aaaa1111");
 const mini = m.tiles.find((t: TileInfo) => t.id === "bbbb2222");
 check("the page does not scroll", !m.scrolls, `${m.scrollH} > ${m.innerH}`);
-check(
-	"nothing overlaps: dock, pill, label",
-	allInside(m),
-	JSON.stringify(m.tiles),
-);
+check("nothing overlaps: dock, pill, label", allInside(m), JSON.stringify(m.tiles));
 check(
 	"the focused one is bigger than the thumbnail",
 	foco.w > mini.w * 2,
@@ -569,24 +532,14 @@ let z = await evalJS(`zooms.get("aaaa1111")`);
 check("the pan does not detach on the right", Math.abs(z.x) < 0.5, `x=${z.x}`);
 await drag(cx, cy, cx - 5000, cy);
 z = await evalJS(`zooms.get("aaaa1111")`);
-const lim =
-	await evalJS(`(() => { const f = tiles.get("aaaa1111").querySelector(".frame");
+const lim = await evalJS(`(() => { const f = tiles.get("aaaa1111").querySelector(".frame");
   return f.clientWidth * (1 - zooms.get("aaaa1111").k); })()`);
-check(
-	"the pan does not detach on the left",
-	Math.abs(z.x - lim) < 1,
-	`x=${z.x} limit=${lim}`,
-);
+check("the pan does not detach on the left", Math.abs(z.x - lim) < 1, `x=${z.x} limit=${lim}`);
 await drag(cx, cy, cx, cy - 5000);
 z = await evalJS(`zooms.get("aaaa1111")`);
-const limY =
-	await evalJS(`(() => { const f = tiles.get("aaaa1111").querySelector(".frame");
+const limY = await evalJS(`(() => { const f = tiles.get("aaaa1111").querySelector(".frame");
   return f.clientHeight * (1 - zooms.get("aaaa1111").k); })()`);
-check(
-	"the pan does not detach at the top",
-	Math.abs(z.y - limY) < 1,
-	`y=${z.y} limit=${limY}`,
-);
+check("the pan does not detach at the top", Math.abs(z.y - limY) < 1, `y=${z.y} limit=${limY}`);
 
 // the clamp pass inside layout() exists for this case, and it used to fail by
 // measuring the box IN FLIGHT: .tile transitions width/height over .16s, so
@@ -597,19 +550,11 @@ await evalJS(
 	`(() => { zooms.set("aaaa1111", { k: 4, x: -1e6, y: -1e6 }); applyZoom("aaaa1111"); })()`,
 );
 let cob = await evalJS(`coversFrame("aaaa1111")`);
-check(
-	"at 4× against the edge the video covers the frame",
-	cob.ok,
-	JSON.stringify(cob),
-);
+check("at 4× against the edge the video covers the frame", cob.ok, JSON.stringify(cob));
 await evalJS(`document.getElementById("gridBtn").click()`);
 await settle();
 cob = await evalJS(`coversFrame("aaaa1111")`);
-check(
-	"and still covers it on leaving focus (the box shrinks)",
-	cob.ok,
-	JSON.stringify(cob),
-);
+check("and still covers it on leaving focus (the box shrinks)", cob.ok, JSON.stringify(cob));
 await setViewport(1100, 720);
 await settle();
 cob = await evalJS(`coversFrame("aaaa1111")`);
@@ -623,12 +568,9 @@ await settle();
 // overflow no longer reaches the scaled video.
 check(
 	"the frame clips the magnified video",
-	(await evalJS(
-		`getComputedStyle(tiles.get("aaaa1111").querySelector(".frame")).overflow`,
-	)) === "hidden",
-	await evalJS(
-		`getComputedStyle(tiles.get("aaaa1111").querySelector(".frame")).overflow`,
-	),
+	(await evalJS(`getComputedStyle(tiles.get("aaaa1111").querySelector(".frame")).overflow`)) ===
+		"hidden",
+	await evalJS(`getComputedStyle(tiles.get("aaaa1111").querySelector(".frame")).overflow`),
 );
 
 // the indicator: zoom is a mode, and a mode has to be visible. outside .tel,
@@ -646,11 +588,7 @@ check(
 	!!ind && /[\d.,]+\s*×/.test(ind.txt),
 	JSON.stringify(ind?.txt),
 );
-check(
-	"the indicator sits outside .tel",
-	!!ind && !ind.insideTel,
-	JSON.stringify(ind),
-);
+check("the indicator sits outside .tel", !!ind && !ind.insideTel, JSON.stringify(ind));
 check(
 	"at 4× on a 1440 tile the indicator marks upscale",
 	!!ind && ind.upscale === true,
@@ -672,16 +610,8 @@ const boundary = await evalJS(`(() => {
   if (native <= 1.1) return { native, below: null, above: null };
   return { native, below: leia(native * 0.95), above: leia(native * 1.05) };
 })()`);
-check(
-	"below native is not upscale",
-	boundary.below === false,
-	JSON.stringify(boundary),
-);
-check(
-	"above native is upscale",
-	boundary.above === true,
-	JSON.stringify(boundary),
-);
+check("below native is not upscale", boundary.below === false, JSON.stringify(boundary));
+check("above native is upscale", boundary.above === true, JSON.stringify(boundary));
 check(
 	"native is greater than 1 (the fit shrinks the video)",
 	boundary.native > 1,
@@ -690,10 +620,7 @@ check(
 
 // a click does not yank away somebody reading up close, and the click after a
 // pan does not focus.
-check(
-	"a click does not leave focus while zoomed",
-	(await evalJS("focusId")) === "aaaa1111",
-);
+check("a click does not leave focus while zoomed", (await evalJS("focusId")) === "aaaa1111");
 await clickAt(cx, cy);
 check(
 	"a click while zoomed does not change focus",
@@ -711,9 +638,7 @@ const cleanState = await evalJS(`(() => {
 })()`);
 check(
 	"resetting clears transform, class and indicator",
-	cleanState.tr === "" &&
-		!cleanState.cls.includes("zoomed") &&
-		cleanState.ind === "none",
+	cleanState.tr === "" && !cleanState.cls.includes("zoomed") && cleanState.ind === "none",
 	JSON.stringify(cleanState),
 );
 
@@ -732,16 +657,10 @@ const cy2 = Math.round(
 	),
 );
 await wheel(cx2, cy2, -240);
-check(
-	"zoom works on an unfocused tile",
-	(await evalJS(`zooms.has("bbbb2222")`)) === true,
-);
+check("zoom works on an unfocused tile", (await evalJS(`zooms.has("bbbb2222")`)) === true);
 await evalJS(`toggleFocus("aaaa1111")`);
 await settle();
-check(
-	"becoming a thumbnail discards the zoom",
-	(await evalJS(`zooms.has("bbbb2222")`)) === false,
-);
+check("becoming a thumbnail discards the zoom", (await evalJS(`zooms.has("bbbb2222")`)) === false);
 // and the wheel must not reopen it: on a thumbnail the indicator is hidden,
 // .ctl covers the whole frame (no pan) and the click would stop focusing, which
 // is the rail's only use.
@@ -756,10 +675,7 @@ const rl = Math.round(
 	),
 );
 await wheel(rc, rl, -120);
-check(
-	"the wheel does not magnify a thumbnail",
-	(await evalJS(`zooms.has("bbbb2222")`)) === false,
-);
+check("the wheel does not magnify a thumbnail", (await evalJS(`zooms.has("bbbb2222")`)) === false);
 await clickAt(rc, rl);
 await settle();
 check(
@@ -772,11 +688,7 @@ check(
 await wheel(cx, cy, -240);
 await settle();
 m = await measure();
-check(
-	"the page does not scroll while zoomed",
-	!m.scrolls,
-	`${m.scrollH} > ${m.innerH}`,
-);
+check("the page does not scroll while zoomed", !m.scrolls, `${m.scrollH} > ${m.innerH}`);
 check("nothing overlaps while zoomed", allInside(m), JSON.stringify(m.tiles));
 await capture("5b-zoom");
 
@@ -795,16 +707,8 @@ await settle();
 await settle();
 m = await measure();
 check("the page does not scroll", !m.scrolls, `${m.scrollH} > ${m.innerH}`);
-check(
-	"nothing overlaps: dock, pill, label",
-	allInside(m),
-	JSON.stringify(m.tiles),
-);
-check(
-	"name and telemetry do not overlap",
-	m.pills.every(Boolean),
-	JSON.stringify(m.pills),
-);
+check("nothing overlaps: dock, pill, label", allInside(m), JSON.stringify(m.tiles));
+check("name and telemetry do not overlap", m.pills.every(Boolean), JSON.stringify(m.pills));
 check(
 	"the tape drops before the number",
 	await evalJS(
@@ -834,26 +738,15 @@ const myPill = await evalJS(`(() => {
   const em = w.querySelector("em");
   return { name: w.querySelector("b").textContent, marker: em.textContent, visible: getComputedStyle(em).display !== "none" };
 })()`);
-check(
-	"my tile's pill states the name",
-	myPill.name === "Gabriel",
-	JSON.stringify(myPill),
-);
-check(
-	"and the (you) marker beside it",
-	myPill.marker === "(you)" && myPill.visible,
-);
+check("my tile's pill states the name", myPill.name === "Gabriel", JSON.stringify(myPill));
+check("and the (you) marker beside it", myPill.marker === "(you)" && myPill.visible);
 
 console.log("\n--- switching rooms ---");
 const idAntes = await evalJS("myId");
 await evalJS(`switchRoom("trabalho")`);
 await Bun.sleep(900);
 m = await measure();
-check(
-	"a new id from the server",
-	!!m.myId && m.myId !== idAntes,
-	`${idAntes} -> ${m.myId}`,
-);
+check("a new id from the server", !!m.myId && m.myId !== idAntes, `${idAntes} -> ${m.myId}`);
 check("the stage is clear", m.tiles.length === 0, String(m.tiles.length));
 check(
 	"the hash follows",
@@ -862,16 +755,13 @@ check(
 );
 check(
 	"the pill follows",
-	(await evalJS(`document.getElementById("topRoom").textContent`)) ===
-		"#trabalho",
+	(await evalJS(`document.getElementById("topRoom").textContent`)) === "#trabalho",
 );
 check("the page does not scroll", !m.scrolls, `${m.scrollH} > ${m.innerH}`);
 await capture("7-room-switch");
 
 console.log(
-	failures.length
-		? `\n${failures.length} FAILURE(S): ${failures.join(", ")}`
-		: "\nall green",
+	failures.length ? `\n${failures.length} FAILURE(S): ${failures.join(", ")}` : "\nall green",
 );
 ws.close();
 proc.kill();

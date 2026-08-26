@@ -53,9 +53,7 @@ function ok(name: string, cond: unknown, detail?: unknown) {
 		console.log(`  ok   ${name}`);
 	} else {
 		fail++;
-		console.log(
-			`  FAIL ${name}${detail !== undefined ? `  → ${JSON.stringify(detail)}` : ""}`,
-		);
+		console.log(`  FAIL ${name}${detail !== undefined ? `  → ${JSON.stringify(detail)}` : ""}`);
 	}
 }
 
@@ -68,8 +66,7 @@ function eq(name: string, got: unknown, want: unknown) {
 async function peer(label: string) {
 	const ws = new WebSocket(WS);
 	const msgs: Record<string, unknown>[] = [];
-	ws.onmessage = (e) =>
-		msgs.push(JSON.parse(String(e.data)) as Record<string, unknown>);
+	ws.onmessage = (e) => msgs.push(JSON.parse(String(e.data)) as Record<string, unknown>);
 	await new Promise<void>((res, rej) => {
 		ws.onopen = () => res();
 		ws.onerror = () => rej(new Error(`${label}: failed to open`));
@@ -134,11 +131,7 @@ async function testStatic() {
 	// integers by the same rule, since server.ts's int() returns nothing else.
 	const positiveInt = (v: unknown) => Number.isInteger(v) && (v as number) > 0;
 	for (const field of ["maxPeers", "maxSharers", "maxCapturePixels"]) {
-		ok(
-			`/config returns ${field} as an integer > 0`,
-			positiveInt(json[field]),
-			json[field],
-		);
+		ok(`/config returns ${field} as an integer > 0`, positiveInt(json[field]), json[field]);
 	}
 
 	const miss = await fetch(`${HTTP}/does-not-exist`);
@@ -156,37 +149,20 @@ async function testJoin() {
 
 	const joined = a.first("joined");
 	ok("first peer receives joined", !!joined);
-	ok(
-		"joined carries an id",
-		typeof joined?.id === "string" && joined.id.length > 0,
-		joined?.id,
-	);
+	ok("joined carries an id", typeof joined?.id === "string" && joined.id.length > 0, joined?.id);
 	eq("first peer sees an empty room", joined?.peers, []);
-	eq(
-		"first peer receives an empty sharers snapshot",
-		a.first("sharers")?.ids,
-		[],
-	);
+	eq("first peer receives an empty sharers snapshot", a.first("sharers")?.ids, []);
 	eq("first peer receives an empty names snapshot", a.first("names")?.map, {});
 
 	const b = await peer("b");
 	b.join("r-join");
 	await settle();
 
-	eq("second peer sees the first in the list", b.first("joined")?.peers, [
-		joined.id,
-	]);
+	eq("second peer sees the first in the list", b.first("joined")?.peers, [joined.id]);
 	eq("first peer is told about the second", a.first("peer-joined")?.id, b.id());
-	ok(
-		"whoever joins gets no peer-joined for themselves",
-		b.of("peer-joined").length === 0,
-	);
+	ok("whoever joins gets no peer-joined for themselves", b.of("peer-joined").length === 0);
 
-	ok(
-		"joined carries the session clock",
-		typeof joined?.startedAt === "number",
-		joined?.startedAt,
-	);
+	ok("joined carries the session clock", typeof joined?.startedAt === "number", joined?.startedAt);
 	ok(
 		"a late peer inherits the same session clock",
 		b.first("joined")?.startedAt === joined.startedAt,
@@ -203,8 +179,7 @@ async function testJoin() {
 	const fresh = c.first("joined");
 	ok(
 		"new room after empty gets a fresh session clock",
-		typeof fresh?.startedAt === "number" &&
-			fresh.startedAt !== joined.startedAt,
+		typeof fresh?.startedAt === "number" && fresh.startedAt !== joined.startedAt,
 		`old=${joined.startedAt} fresh=${fresh?.startedAt}`,
 	);
 	ok(
@@ -224,11 +199,7 @@ async function testLeave() {
 	b.close();
 	await settle();
 
-	eq(
-		"close propagates peer-left with the right id",
-		a.first("peer-left")?.id,
-		bId,
-	);
+	eq("close propagates peer-left with the right id", a.first("peer-left")?.id, bId);
 
 	a.close();
 	await settle();
@@ -244,23 +215,12 @@ async function testRoomIsolation() {
 	b.join("room-2");
 	await settle();
 
-	eq(
-		"a peer from another room is not in the list",
-		b.first("joined")?.peers,
-		[],
-	);
-	ok(
-		"a peer from another room generates no peer-joined",
-		a.of("peer-joined").length === 0,
-	);
+	eq("a peer from another room is not in the list", b.first("joined")?.peers, []);
+	ok("a peer from another room generates no peer-joined", a.of("peer-joined").length === 0);
 
 	b.send({ t: "signal", to: a.id(), data: { kind: "offer", sdp: "x" } });
 	await settle();
-	ok(
-		"signal does not cross rooms",
-		a.of("signal").length === 0,
-		a.of("signal"),
-	);
+	ok("signal does not cross rooms", a.of("signal").length === 0, a.of("signal"));
 
 	a.send({ t: "share-start" });
 	await settle();
@@ -292,25 +252,15 @@ async function testSignalRelay() {
 	eq("signal preserves from", got?.from, aId);
 	eq("server relays data untouched (I2)", got?.data, payload);
 	ok("the sender gets no echo", a.of("signal").length === 0);
-	ok(
-		"a third peer does not receive the signal",
-		c.of("signal").length === 0,
-		c.of("signal"),
-	);
+	ok("a third peer does not receive the signal", c.of("signal").length === 0, c.of("signal"));
 
 	a.send({ t: "signal", to: "ffffffff", data: { kind: "ice" } });
 	await settle();
-	ok(
-		"signal to an unknown id is ignored without breaking",
-		a.ws.readyState === WebSocket.OPEN,
-	);
+	ok("signal to an unknown id is ignored without breaking", a.ws.readyState === WebSocket.OPEN);
 
 	a.ws.send("{this is not json");
 	await settle();
-	ok(
-		"invalid json does not drop the connection",
-		a.ws.readyState === WebSocket.OPEN,
-	);
+	ok("invalid json does not drop the connection", a.ws.readyState === WebSocket.OPEN);
 
 	a.close();
 	b.close();
@@ -334,21 +284,13 @@ async function testMaxPeers() {
 	extra.join("full");
 	await settle();
 
-	eq(
-		"the 6th peer receives denied",
-		extra.first("denied")?.reason,
-		"room-full",
-	);
+	eq("the 6th peer receives denied", extra.first("denied")?.reason, "room-full");
 	ok("the 6th peer receives no joined", !extra.first("joined"), extra.msgs);
 	ok("the 6th peer receives no sharers snapshot", !extra.first("sharers"));
 	ok("the 6th peer receives no names snapshot", !extra.first("names"));
 
 	// nobody saw the sixth arrive: the first peer only saw the other 4.
-	eq(
-		"the 6th appears in nobody's list",
-		ps[0].of("peer-joined").length,
-		MAX_PEERS - 1,
-	);
+	eq("the 6th appears in nobody's list", ps[0].of("peer-joined").length, MAX_PEERS - 1);
 	ok(
 		"the first 5 stay connected",
 		ps.every((p) => p.ws.readyState === WebSocket.OPEN),
@@ -386,17 +328,9 @@ async function testSharerArbitration() {
 	for (let i = 0; i < MAX_SHARERS; i++) {
 		ps[i].send({ t: "share-start" });
 		await settle();
-		eq(
-			`sharer ${i + 1} enters the set`,
-			ps[i].last("sharers")?.ids,
-			ids.slice(0, i + 1),
-		);
+		eq(`sharer ${i + 1} enters the set`, ps[i].last("sharers")?.ids, ids.slice(0, i + 1));
 	}
-	eq(
-		"the broadcast reaches the whole room",
-		extra.last("sharers")?.ids,
-		ids.slice(0, MAX_SHARERS),
-	);
+	eq("the broadcast reaches the whole room", extra.last("sharers")?.ids, ids.slice(0, MAX_SHARERS));
 
 	const before = extra.of("sharers").length;
 	extra.send({ t: "share-start" });
@@ -407,14 +341,8 @@ async function testSharerArbitration() {
 		"limit",
 	);
 	eq("share-denied generates no broadcast", extra.of("sharers").length, before);
-	ok(
-		"whoever was denied does not enter the set",
-		!extra.last("sharers")?.ids.includes(extraId),
-	);
-	ok(
-		"share-denied goes only to the sender",
-		ps[0].of("share-denied").length === 0,
-	);
+	ok("whoever was denied does not enter the set", !extra.last("sharers")?.ids.includes(extraId));
+	ok("share-denied goes only to the sender", ps[0].of("share-denied").length === 0);
 
 	const all = ps.flatMap((p) => p.of("sharers"));
 	ok(
@@ -426,28 +354,16 @@ async function testSharerArbitration() {
 	const beforeRepeat = extra.of("sharers").length;
 	ps[0].send({ t: "share-start" });
 	await settle();
-	eq(
-		"a repeated share-start does not re-broadcast",
-		extra.of("sharers").length,
-		beforeRepeat,
-	);
+	eq("a repeated share-start does not re-broadcast", extra.of("sharers").length, beforeRepeat);
 
 	ps[0].send({ t: "share-stop" });
 	await settle();
-	eq(
-		"share-stop removes from the set",
-		extra.last("sharers")?.ids,
-		ids.slice(1, MAX_SHARERS),
-	);
+	eq("share-stop removes from the set", extra.last("sharers")?.ids, ids.slice(1, MAX_SHARERS));
 
 	const beforeStop = extra.of("sharers").length;
 	ps[0].send({ t: "share-stop" });
 	await settle();
-	eq(
-		"a redundant share-stop is a no-op",
-		extra.of("sharers").length,
-		beforeStop,
-	);
+	eq("a redundant share-stop is a no-op", extra.of("sharers").length, beforeStop);
 
 	extra.send({ t: "share-start" });
 	await settle();
@@ -481,11 +397,7 @@ async function testSharerLeave() {
 	const before = b.of("sharers").length;
 	c.close();
 	await settle();
-	eq(
-		"a non-sharer leaving does not re-broadcast sharers",
-		b.of("sharers").length,
-		before,
-	);
+	eq("a non-sharer leaving does not re-broadcast sharers", b.of("sharers").length, before);
 
 	b.close();
 	await settle();
@@ -502,11 +414,7 @@ async function testSharerSnapshot() {
 	late.join("snap");
 	await settle();
 
-	eq(
-		"whoever arrives later receives the current set",
-		late.first("sharers")?.ids,
-		[a.id()],
-	);
+	eq("whoever arrives later receives the current set", late.first("sharers")?.ids, [a.id()]);
 
 	a.close();
 	late.close();
@@ -522,11 +430,7 @@ async function testShareBeforeJoin() {
 	orphan.send({ t: "signal", to: "abc", data: {} });
 	await settle();
 
-	ok(
-		"share-start without a join is ignored",
-		orphan.of("sharers").length === 0,
-		orphan.msgs,
-	);
+	ok("share-start without a join is ignored", orphan.of("sharers").length === 0, orphan.msgs);
 	ok("the connection survives", orphan.ws.readyState === WebSocket.OPEN);
 
 	orphan.close();
@@ -538,8 +442,8 @@ async function testShareBeforeJoin() {
 /** compares name maps without depending on key order. */
 function eqMap(name: string, got: unknown, want: Record<string, string>) {
 	const norm = (o: unknown) =>
-		Object.entries((o as Record<string, string> | null | undefined) ?? {}).sort(
-			([x], [y]) => (x < y ? -1 : 1),
+		Object.entries((o as Record<string, string> | null | undefined) ?? {}).sort(([x], [y]) =>
+			x < y ? -1 : 1,
 		);
 	eq(name, norm(got), norm(want));
 }
@@ -561,15 +465,10 @@ async function testNames() {
 	await settle();
 	const bId = b.id() as string;
 
-	eqMap(
-		"the snapshot carries the name of whoever was there",
-		b.last("names")?.map,
-		{ [aId]: "gabriel" },
-	);
-	ok(
-		"joining without a name stays out of the map",
-		!(bId in (b.last("names")?.map ?? {})),
-	);
+	eqMap("the snapshot carries the name of whoever was there", b.last("names")?.map, {
+		[aId]: "gabriel",
+	});
+	ok("joining without a name stays out of the map", !(bId in (b.last("names")?.map ?? {})));
 
 	const c = await peer("c");
 	c.join("names", "ana");
@@ -583,51 +482,27 @@ async function testNames() {
 	b.send({ t: "rename", name: "beatriz" });
 	await settle();
 	const expected = { [aId]: "gabriel", [bId]: "beatriz", [cId]: "ana" };
-	eqMap(
-		"rename reaches whoever was already there",
-		a.last("names")?.map,
-		expected,
-	);
+	eqMap("rename reaches whoever was already there", a.last("names")?.map, expected);
 	eqMap("rename reaches whoever joined later", c.last("names")?.map, expected);
-	eqMap(
-		"whoever renamed also receives the map",
-		b.last("names")?.map,
-		expected,
-	);
+	eqMap("whoever renamed also receives the map", b.last("names")?.map, expected);
 
 	const beforeSame = a.of("names").length;
 	b.send({ t: "rename", name: "beatriz" });
 	await settle();
-	eq(
-		"renaming to the same name does not re-broadcast",
-		a.of("names").length,
-		beforeSame,
-	);
+	eq("renaming to the same name does not re-broadcast", a.of("names").length, beforeSame);
 
 	b.send({ t: "rename", name: "z".repeat(40) });
 	await settle();
-	eq(
-		"a 40-char name arrives cut at 24",
-		a.last("names")?.map[bId],
-		"z".repeat(24),
-	);
+	eq("a 40-char name arrives cut at 24", a.last("names")?.map[bId], "z".repeat(24));
 
 	b.send({ t: "rename", name: "  ana   maria \n silva  " });
 	await settle();
-	eq(
-		"whitespace collapsed and trimmed",
-		a.last("names")?.map[bId],
-		"ana maria silva",
-	);
+	eq("whitespace collapsed and trimmed", a.last("names")?.map[bId], "ana maria silva");
 
 	// an empty name is how you erase your own
 	b.send({ t: "rename", name: "   " });
 	await settle();
-	ok(
-		"a whitespace-only name leaves the map",
-		!(bId in a.last("names").map),
-		a.last("names").map,
-	);
+	ok("a whitespace-only name leaves the map", !(bId in a.last("names").map), a.last("names").map);
 	eqMap("erasing a name does not touch the others", a.last("names")?.map, {
 		[aId]: "gabriel",
 		[cId]: "ana",
@@ -636,11 +511,7 @@ async function testNames() {
 	const d = await peer("d");
 	d.join("names", `   ${"w".repeat(30)}`);
 	await settle();
-	eq(
-		"a name in the join is sanitized too",
-		a.last("names")?.map[d.id() as string],
-		"w".repeat(24),
-	);
+	eq("a name in the join is sanitized too", a.last("names")?.map[d.id() as string], "w".repeat(24));
 
 	const e = await peer("e");
 	e.join("other-room", "carla");
@@ -665,24 +536,13 @@ async function testNames() {
 	const beforeLeave = c.of("names").length;
 	b.close();
 	await settle();
-	eq(
-		"somebody unnamed leaving does not re-broadcast",
-		c.of("names").length,
-		beforeLeave,
-	);
+	eq("somebody unnamed leaving does not re-broadcast", c.of("names").length, beforeLeave);
 
 	const orphan = await peer("orphan-name");
 	orphan.send({ t: "rename", name: "nobody" });
 	await settle();
-	ok(
-		"rename without a join is ignored",
-		orphan.of("names").length === 0,
-		orphan.msgs,
-	);
-	ok(
-		"the connection survives a rename outside a room",
-		orphan.ws.readyState === WebSocket.OPEN,
-	);
+	ok("rename without a join is ignored", orphan.of("names").length === 0, orphan.msgs);
+	ok("the connection survives a rename outside a room", orphan.ws.readyState === WebSocket.OPEN);
 
 	orphan.close();
 	c.close();
@@ -719,18 +579,12 @@ async function testReconnect() {
 		aId,
 		newId,
 	});
-	eq("the reconnect sees the peer that stayed", a2.first("joined")?.peers, [
-		bId,
-	]);
+	eq("the reconnect sees the peer that stayed", a2.first("joined")?.peers, [bId]);
 	eq("the snapshot shows nobody sharing", a2.first("sharers")?.ids, []);
 
 	a2.send({ t: "share-start" });
 	await settle();
-	eq(
-		"the reconnect recovers the slot under the new id",
-		b.last("sharers")?.ids,
-		[newId],
-	);
+	eq("the reconnect recovers the slot under the new id", b.last("sharers")?.ids, [newId]);
 	ok("the old id is not in the set", !b.last("sharers")?.ids.includes(aId));
 
 	a2.close();
@@ -755,10 +609,7 @@ async function testStun() {
 	Buffer.from(tid).copy(req, 8);
 
 	const answer = new Promise<{ buf: Buffer; localPort: number }>((res, rej) => {
-		const timer = setTimeout(
-			() => rej(new Error("STUN did not answer within 3s")),
-			3000,
-		);
+		const timer = setTimeout(() => rej(new Error("STUN did not answer within 3s")), 3000);
 		sock.on("message", (buf) => {
 			clearTimeout(timer);
 			res({ buf, localPort: sock.address().port });
@@ -788,12 +639,7 @@ async function testStun() {
 
 	const port = buf.readUInt16BE(26) ^ (MAGIC >>> 16);
 	const addr = (buf.readUInt32BE(28) ^ MAGIC) >>> 0;
-	const ip = [
-		addr >>> 24,
-		(addr >>> 16) & 255,
-		(addr >>> 8) & 255,
-		addr & 255,
-	].join(".");
+	const ip = [addr >>> 24, (addr >>> 16) & 255, (addr >>> 8) & 255, addr & 255].join(".");
 
 	eq("the decoded port matches the source", port, localPort);
 	eq("the decoded IP matches the source", ip, "127.0.0.1");
