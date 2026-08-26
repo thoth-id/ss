@@ -4,8 +4,8 @@
    the shebang is bun, not node: the server uses Bun.serve for the signaling
    WebSocket and there is no equivalent in Node. that is also why this file is
    no longer the package `bin`: with it there, anyone running
-   `npx @thoth-dev/screen-share` without Bun died inside `env`, before a single
-   line of ours ran. screen-share.mjs is the entry point now, and running
+   `npx @thoth-dev/tailcast` (or the `screen-share` alias) without Bun died inside `env`, before a single
+   line of ours ran. tailcast.mjs is the entry point now, and running
    `bun bin/cli.ts` by hand is unchanged.
 
    no server logic here: this reads flags, decides foreground or background,
@@ -38,7 +38,7 @@ type Opts = {
 
 const ROOT = path.join(import.meta.dir, "..");
 
-// read on demand: every `screen-share --bg` used to pay a readFileSync plus a
+// read on demand: every `tailcast --bg` used to pay a readFileSync plus a
 // JSON.parse for a version only --help and --version ask for.
 const getVersion = (): string =>
 	JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
@@ -60,7 +60,7 @@ const CAT = [
 const helpText =
 	() => `${CAT}\n\ntailcast ${getVersion()} - peer-to-peer screen sharing, no account and no media server
 
-  bunx @thoth-dev/screen-share [flags]
+  bunx @thoth-dev/tailcast [flags]
 
   -p, --port <n>       HTTP port (default 3000)
       --stun-port <n>  STUN UDP port (default 3478). a second instance needs
@@ -158,14 +158,14 @@ if (bg && stop) {
 /* ---------- where the state lives ---------- */
 
 /* the pidfile used to sit loose in $TMPDIR, which is 1777: any user on the
-   machine could plant a screen-share-<port>.pid and --stop would obey, killing
+   machine could plant a tailcast-<port>.pid and --stop would obey, killing
    whatever that number pointed at and reporting success. with no attacker at
    all, pid recycling does the same: an orphan pidfile after a reboot makes --bg
    refuse or --stop hit an unrelated process that inherited the number. */
 function getStateDir(): string {
 	const base = process.env.XDG_RUNTIME_DIR;
 	const uid = typeof process.getuid === "function" ? process.getuid() : "no-uid";
-	const dir = base ? path.join(base, "screen-share") : path.join(tmpdir(), `screen-share-${uid}`);
+	const dir = base ? path.join(base, "tailcast") : path.join(tmpdir(), `tailcast-${uid}`);
 	try {
 		mkdirSync(dir, { recursive: true, mode: 0o700 });
 	} catch (e: unknown) {
@@ -202,13 +202,13 @@ function getStateDir(): string {
    directory belongs to somebody else or has a loose mode, which is the right
    call for --bg and --stop, which write there, and the wrong one for a
    foreground run, which never touches it. reproduced: a loose XDG_RUNTIME_DIR
-   killed a plain `screen-share` over a path that run would never use. */
+   killed a plain `tailcast` over a path that run would never use. */
 let pidfile = "";
 let logPath = "";
 function prepareState() {
 	const dir = getStateDir();
-	pidfile = path.join(dir, `screen-share-${opts.port}.pid`);
-	logPath = path.join(dir, `screen-share-${opts.port}.log`);
+	pidfile = path.join(dir, `tailcast-${opts.port}.pid`);
+	logPath = path.join(dir, `tailcast-${opts.port}.log`);
 }
 
 /** pid registered for this port, or null if there is no usable record. */
@@ -217,9 +217,17 @@ function readPid(): number | null {
 	try {
 		raw = readFileSync(pidfile, "utf8");
 	} catch {
-		// absent, a directory where the file should be (EISDIR became a stack
-		// trace), no permission: to the caller all three are "no record".
-		return null;
+		// fallback to legacy screen-share pidfile for migration from 0.4.0
+		try {
+			const legacy = pidfile
+				.replace("/tailcast/", "/screen-share/")
+				.replace("tailcast-", "screen-share-");
+			raw = readFileSync(legacy, "utf8");
+		} catch {
+			// absent, a directory where the file should be (EISDIR became a stack
+			// trace), no permission: to the caller all three are "no record".
+			return null;
+		}
 	}
 	const trimmed = raw.trim();
 	if (!/^\d+$/.test(trimmed)) return null; // garbage is the same as absent
@@ -519,7 +527,7 @@ if (bg) {
 			`  http        http://localhost:${opts.port}\n` +
 			`  stun  udp   :${opts.stunPort}\n` +
 			`  pid         ${pid}\n\n` +
-			`Stop it: bunx @thoth-dev/screen-share --stop --port ${opts.port}\n`,
+			`Stop it: bunx @thoth-dev/tailcast --stop --port ${opts.port}\n`,
 	);
 	process.exit(0);
 }
