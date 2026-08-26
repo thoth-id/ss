@@ -1,6 +1,6 @@
-import type { ServerWebSocket } from "bun";
 import { readFileSync } from "node:fs";
 import nodePath from "node:path";
+import type { ServerWebSocket } from "bun";
 import { startStun } from "./stun";
 
 // resolved against the module, never against the cwd: installed as a package
@@ -10,32 +10,39 @@ const PUBLIC_DIR = nodePath.join(import.meta.dir, "public");
 
 /** absolute path inside public/, or null if the route tries to escape it. */
 function resolveStatic(pathname: string): string | null {
-  let rel: string;
-  try {
-    rel = decodeURIComponent(pathname);
-  } catch {
-    return null; // broken %-encoding
-  }
-  // null byte before any resolution: normalize and resolve both preserve the
-  // \0, startsWith approves the path, and Bun.file() is what throws later. no
-  // file is ever read, but the exception became Bun's error page: 67 KB with
-  // the install path and source lines, out of a 20-byte request.
-  if (rel.includes("\0")) return null;
-  if (rel === "/" || rel === "") rel = "/index.html";
-  const target = nodePath.resolve(PUBLIC_DIR, "." + nodePath.posix.normalize(rel));
-  if (target !== PUBLIC_DIR && !target.startsWith(PUBLIC_DIR + nodePath.sep)) return null;
-  return target;
+	let rel: string;
+	try {
+		rel = decodeURIComponent(pathname);
+	} catch {
+		return null; // broken %-encoding
+	}
+	// null byte before any resolution: normalize and resolve both preserve the
+	// \0, startsWith approves the path, and Bun.file() is what throws later. no
+	// file is ever read, but the exception became Bun's error page: 67 KB with
+	// the install path and source lines, out of a 20-byte request.
+	if (rel.includes("\0")) return null;
+	if (rel === "/" || rel === "") rel = "/index.html";
+	const target = nodePath.resolve(
+		PUBLIC_DIR,
+		`.${nodePath.posix.normalize(rel)}`,
+	);
+	if (target !== PUBLIC_DIR && !target.startsWith(PUBLIC_DIR + nodePath.sep))
+		return null;
+	return target;
 }
 
 // the banner names the version, so a bug report carries it. read lazily and
 // defensively: server.ts also runs straight from a clone.
 function getVersion(): string {
-  try {
-    const raw = readFileSync(nodePath.join(import.meta.dir, "package.json"), "utf8");
-    return JSON.parse(raw).version || "?";
-  } catch {
-    return "?";
-  }
+	try {
+		const raw = readFileSync(
+			nodePath.join(import.meta.dir, "package.json"),
+			"utf8",
+		);
+		return JSON.parse(raw).version || "?";
+	} catch {
+		return "?";
+	}
 }
 
 /* the environment is untrusted input, and Number() accepts things that are not
@@ -47,19 +54,28 @@ function getVersion(): string {
    measured default and names itself on stderr. */
 // twin of `num()` in bin/cli.ts: same rule, two sides of the same boundary.
 // if the rule changes here, change it there.
-function int(name: string, fallback: number, max = Number.MAX_SAFE_INTEGER): number {
-  const raw = process.env[name];
-  if (raw === undefined) return fallback;
-  const trimmed = raw.trim();
-  const n = Number(trimmed);
-  // the regex is what rejects " 0x10 ", "1e3", "2.5" and "", all accepted by
-  // Number() and none of them an integer written as an integer.
-  if (!/^\d+$/.test(trimmed) || !Number.isSafeInteger(n) || n < 1 || n > max) {
-    const range = max === Number.MAX_SAFE_INTEGER ? "a positive integer" : `an integer between 1 and ${max}`;
-    process.stderr.write(`${name}=${JSON.stringify(raw)} is not ${range}; using ${fallback}\n`);
-    return fallback;
-  }
-  return n;
+function int(
+	name: string,
+	fallback: number,
+	max = Number.MAX_SAFE_INTEGER,
+): number {
+	const raw = process.env[name];
+	if (raw === undefined) return fallback;
+	const trimmed = raw.trim();
+	const n = Number(trimmed);
+	// the regex is what rejects " 0x10 ", "1e3", "2.5" and "", all accepted by
+	// Number() and none of them an integer written as an integer.
+	if (!/^\d+$/.test(trimmed) || !Number.isSafeInteger(n) || n < 1 || n > max) {
+		const range =
+			max === Number.MAX_SAFE_INTEGER
+				? "a positive integer"
+				: `an integer between 1 and ${max}`;
+		process.stderr.write(
+			`${name}=${JSON.stringify(raw)} is not ${range}; using ${fallback}\n`,
+		);
+		return fallback;
+	}
+	return n;
 }
 
 const PORT = int("PORT", 3000, 65535);
@@ -103,213 +119,240 @@ const sharers = new Map<string, Set<string>>();
 const sessions = new Map<string, number>();
 
 function broadcast(room: string, payload: unknown, except?: Socket) {
-  const set = rooms.get(room);
-  if (!set) return;
-  const msg = JSON.stringify(payload);
-  for (const peer of set) if (peer !== except) peer.send(msg);
+	const set = rooms.get(room);
+	if (!set) return;
+	const msg = JSON.stringify(payload);
+	for (const peer of set) if (peer !== except) peer.send(msg);
 }
 
 function sharersOf(room: string) {
-  let set = sharers.get(room);
-  if (!set) sharers.set(room, (set = new Set()));
-  return set;
+	let set = sharers.get(room);
+	if (!set) {
+		set = new Set();
+		sharers.set(room, set);
+	}
+	return set;
 }
 
 // state-based broadcast, not event-based: the whole set ships on every change.
 // idempotent, survives reconnect, and the client never rebuilds state from
 // deltas.
 function publishSharers(room: string) {
-  if (!rooms.has(room)) return;
-  broadcast(room, { t: "sharers", ids: [...sharersOf(room)] });
+	if (!rooms.has(room)) return;
+	broadcast(room, { t: "sharers", ids: [...sharersOf(room)] });
 }
 
 // sanitizing happens server-side, in one place. empty after this means no entry
 // in the map, which is also how you erase your own name.
 function cleanName(raw: unknown) {
-  return String(raw ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_NAME);
+	return String(raw ?? "")
+		.replace(/\s+/g, " ")
+		.trim()
+		.slice(0, MAX_NAME);
 }
 
 // the map is derived from the room's sockets at publish time, not kept in a
 // second Map. leaving the room therefore erases the name by itself, with no
 // cleanup path that can drift from close.
 function namesOf(room: string) {
-  const map: Record<string, string> = {};
-  for (const peer of rooms.get(room) ?? []) {
-    if (peer.data.name) map[peer.data.id] = peer.data.name;
-  }
-  return map;
+	const map: Record<string, string> = {};
+	for (const peer of rooms.get(room) ?? []) {
+		if (peer.data.name) map[peer.data.id] = peer.data.name;
+	}
+	return map;
 }
 
 function publishNames(room: string) {
-  if (!rooms.has(room)) return;
-  broadcast(room, { t: "names", map: namesOf(room) });
+	if (!rooms.has(room)) return;
+	broadcast(room, { t: "names", map: namesOf(room) });
 }
 
 Bun.serve<Client>({
-  port: PORT,
+	port: PORT,
 
-  /* safety net for the whole handler, not just the null byte. without error()
+	/* safety net for the whole handler, not just the null byte. without error()
      Bun answers with its debug page, and the default is development mode
      because NODE_ENV !== "production" in any `bunx`. that is 67 KB carrying the
      absolute install path and source excerpts, reachable by anyone who reaches
      the port. the stack stays on the server, where it is useful. */
-  error(err) {
-    console.error(err);
-    return new Response("internal error", { status: 500 });
-  },
+	error(err) {
+		console.error(err);
+		return new Response("internal error", { status: 500 });
+	},
 
-  async fetch(req, server) {
-    const url = new URL(req.url);
+	async fetch(req, server) {
+		const url = new URL(req.url);
 
-    if (url.pathname === "/ws") {
-      const data: Client = { id: crypto.randomUUID().slice(0, 8), room: "", name: "" };
-      return server.upgrade(req, { data })
-        ? undefined
-        : new Response("upgrade failed", { status: 400 });
-    }
+		if (url.pathname === "/ws") {
+			const data: Client = {
+				id: crypto.randomUUID().slice(0, 8),
+				room: "",
+				name: "",
+			};
+			return server.upgrade(req, { data })
+				? undefined
+				: new Response("upgrade failed", { status: 400 });
+		}
 
-    if (url.pathname === "/config") {
-      return Response.json({ stunPort: STUN_PORT, maxPeers: MAX_PEERS, maxSharers: MAX_SHARERS, maxCapturePixels: MAX_CAPTURE_PIXELS });
-    }
+		if (url.pathname === "/config") {
+			return Response.json({
+				stunPort: STUN_PORT,
+				maxPeers: MAX_PEERS,
+				maxSharers: MAX_SHARERS,
+				maxCapturePixels: MAX_CAPTURE_PIXELS,
+			});
+		}
 
-    const target = resolveStatic(url.pathname);
-    if (!target) return new Response("not found", { status: 404 });
-    const file = Bun.file(target);
-    if (!(await file.exists())) return new Response("not found", { status: 404 });
+		const target = resolveStatic(url.pathname);
+		if (!target) return new Response("not found", { status: 404 });
+		const file = Bun.file(target);
+		if (!(await file.exists()))
+			return new Response("not found", { status: 404 });
 
-    // without a cache-control the browser invents a freshness lifetime by
-    // heuristic, and an installed PWA is where that becomes an app frozen on an
-    // old sw.js that never fetches the new one. no-cache does not forbid
-    // storing, it forces revalidation; with no ETag emitted here revalidating
-    // is just re-sending 80 KB inside the tailnet, which costs nothing. the
-    // icons stay out of it: stable name, stable bytes.
-    const icon = /\.(png|ico|svg)$/.test(target);
-    return new Response(file, {
-      headers: { "cache-control": icon ? "public, max-age=604800" : "no-cache" },
-    });
-  },
+		// without a cache-control the browser invents a freshness lifetime by
+		// heuristic, and an installed PWA is where that becomes an app frozen on an
+		// old sw.js that never fetches the new one. no-cache does not forbid
+		// storing, it forces revalidation; with no ETag emitted here revalidating
+		// is just re-sending 80 KB inside the tailnet, which costs nothing. the
+		// icons stay out of it: stable name, stable bytes.
+		const icon = /\.(png|ico|svg)$/.test(target);
+		return new Response(file, {
+			headers: {
+				"cache-control": icon ? "public, max-age=604800" : "no-cache",
+			},
+		});
+	},
 
-  websocket: {
-    message(ws, raw) {
-      let msg: any;
-      try {
-        msg = JSON.parse(String(raw));
-      } catch {
-        return;
-      }
+	websocket: {
+		message(ws, raw) {
+			let msg: Record<string, unknown>;
+			try {
+				msg = JSON.parse(String(raw));
+			} catch {
+				return;
+			}
 
-      if (msg.t === "join") {
-        if (ws.data.room) return; // already in; a repeated join is a no-op
+			if (msg.t === "join") {
+				if (ws.data.room) return; // already in; a repeated join is a no-op
 
-        const room = String(msg.room || "room").slice(0, 64);
-        let set = rooms.get(room);
-        if (!set) rooms.set(room, (set = new Set()));
+				const room = String(msg.room || "room").slice(0, 64);
+				let set = rooms.get(room);
+				if (!set) {
+					set = new Set();
+					rooms.set(room, set);
+				}
+				if (set.size >= MAX_PEERS) {
+					// never enters the Set, emits no peer-joined and leaves ws.data.room
+					// empty, so the close() later announces nobody.
+					ws.send(JSON.stringify({ t: "denied", reason: "room-full" }));
+					if (!set.size) rooms.delete(room);
+					return;
+				}
 
-        if (set.size >= MAX_PEERS) {
-          // never enters the Set, emits no peer-joined and leaves ws.data.room
-          // empty, so the close() later announces nobody.
-          ws.send(JSON.stringify({ t: "denied", reason: "room-full" }));
-          if (!set.size) rooms.delete(room);
-          return;
-        }
+				ws.data.room = room;
+				ws.data.name = cleanName(msg.name);
+				const peers = [...set].map((p) => p.data.id);
+				// the first peer in an empty room is also the room's birth: that is
+				// when the session clock starts. backfill if the room pre-dated sessions
+				// (deploy with live rooms) so the payload never ships undefined.
+				if (set.size === 0) sessions.set(room, Date.now());
+				if (!sessions.has(room)) sessions.set(room, Date.now());
+				ws.send(
+					JSON.stringify({
+						t: "joined",
+						id: ws.data.id,
+						peers,
+						startedAt: sessions.get(room) ?? Date.now(),
+					}),
+				);
+				// snapshot of who is transmitting, for whoever just arrived. this is
+				// what makes the state-based broadcast survive a reconnect.
+				ws.send(JSON.stringify({ t: "sharers", ids: [...sharersOf(room)] }));
+				broadcast(room, { t: "peer-joined", id: ws.data.id }, ws);
+				// if they brought a name the map changed for the whole room, so one
+				// broadcast serves both sides.
+				if (ws.data.name) publishNames(room);
+				else ws.send(JSON.stringify({ t: "names", map: namesOf(room) }));
+				return;
+			}
 
-        ws.data.room = room;
-        ws.data.name = cleanName(msg.name);
-        const peers = [...set].map((p) => p.data.id);
-        // the first peer in an empty room is also the room's birth: that is
-        // when the session clock starts. backfill if the room pre-dated sessions
-        // (deploy with live rooms) so the payload never ships undefined.
-        if (set.size === 0) sessions.set(room, Date.now());
-        if (!sessions.has(room)) sessions.set(room, Date.now());
-        set.add(ws);
+			if (!ws.data.room) return; // nothing below makes sense outside a room
 
-        ws.send(JSON.stringify({ t: "joined", id: ws.data.id, peers, startedAt: sessions.get(room)! }));
-        // snapshot of who is transmitting, for whoever just arrived. this is
-        // what makes the state-based broadcast survive a reconnect.
-        ws.send(JSON.stringify({ t: "sharers", ids: [...sharersOf(room)] }));
-        broadcast(room, { t: "peer-joined", id: ws.data.id }, ws);
-        // if they brought a name the map changed for the whole room, so one
-        // broadcast serves both sides.
-        if (ws.data.name) publishNames(room);
-        else ws.send(JSON.stringify({ t: "names", map: namesOf(room) }));
-        return;
-      }
+			if (msg.t === "rename") {
+				const name = cleanName(msg.name);
+				if (name === ws.data.name) return; // idempotent, no re-broadcast
+				ws.data.name = name;
+				publishNames(ws.data.room);
+				return;
+			}
 
-      if (!ws.data.room) return; // nothing below makes sense outside a room
+			if (msg.t === "share-start") {
+				const set = sharersOf(ws.data.room);
+				if (!set.has(ws.data.id) && set.size >= MAX_SHARERS) {
+					ws.send(JSON.stringify({ t: "share-denied", reason: "limit" }));
+					return;
+				}
+				if (set.has(ws.data.id)) return; // idempotent, no re-broadcast
+				set.add(ws.data.id);
+				publishSharers(ws.data.room);
+				return;
+			}
 
-      if (msg.t === "rename") {
-        const name = cleanName(msg.name);
-        if (name === ws.data.name) return; // idempotent, no re-broadcast
-        ws.data.name = name;
-        publishNames(ws.data.room);
-        return;
-      }
+			if (msg.t === "share-stop") {
+				const set = sharersOf(ws.data.room);
+				if (!set.delete(ws.data.id)) return;
+				publishSharers(ws.data.room);
+				return;
+			}
 
-      if (msg.t === "share-start") {
-        const set = sharersOf(ws.data.room);
-        if (!set.has(ws.data.id) && set.size >= MAX_SHARERS) {
-          ws.send(JSON.stringify({ t: "share-denied", reason: "limit" }));
-          return;
-        }
-        if (set.has(ws.data.id)) return; // idempotent, no re-broadcast
-        set.add(ws.data.id);
-        publishSharers(ws.data.room);
-        return;
-      }
+			// opaque relay: the server never looks inside data, it only delivers.
+			if (msg.t === "signal" && msg.to) {
+				const set = rooms.get(ws.data.room);
+				if (!set) return;
+				for (const peer of set) {
+					if (peer.data.id === msg.to) {
+						peer.send(
+							JSON.stringify({ t: "signal", from: ws.data.id, data: msg.data }),
+						);
+						break;
+					}
+				}
+			}
+		},
 
-      if (msg.t === "share-stop") {
-        const set = sharersOf(ws.data.room);
-        if (!set.delete(ws.data.id)) return;
-        publishSharers(ws.data.room);
-        return;
-      }
+		close(ws) {
+			const room = ws.data.room;
+			if (!room) return; // never got in (denied by a full room, say)
 
-      // opaque relay: the server never looks inside data, it only delivers.
-      if (msg.t === "signal" && msg.to) {
-        const set = rooms.get(ws.data.room);
-        if (!set) return;
-        for (const peer of set) {
-          if (peer.data.id === msg.to) {
-            peer.send(JSON.stringify({ t: "signal", from: ws.data.id, data: msg.data }));
-            break;
-          }
-        }
-      }
-    },
+			const set = rooms.get(room);
+			if (!set) return;
+			set.delete(ws);
 
-    close(ws) {
-      const room = ws.data.room;
-      if (!room) return; // never got in (denied by a full room, say)
+			// the tab-close path: free the sharer slot.
+			const wasSharing = sharers.get(room)?.delete(ws.data.id);
+			// the name lives on the socket, so leaving already took it out of the
+			// map. someone who left unnamed changes nothing and needs no broadcast.
+			const hadName = !!ws.data.name;
 
-      const set = rooms.get(room);
-      if (!set) return;
-      set.delete(ws);
+			if (!set.size) {
+				rooms.delete(room);
+				sharers.delete(room);
+				sessions.delete(room);
+				return;
+			}
 
-      // the tab-close path: free the sharer slot.
-      const wasSharing = sharers.get(room)?.delete(ws.data.id);
-      // the name lives on the socket, so leaving already took it out of the
-      // map. someone who left unnamed changes nothing and needs no broadcast.
-      const hadName = !!ws.data.name;
-
-      if (!set.size) {
-        rooms.delete(room);
-        sharers.delete(room);
-        sessions.delete(room);
-        return;
-      }
-
-      broadcast(room, { t: "peer-left", id: ws.data.id });
-      if (wasSharing) publishSharers(room);
-      if (hadName) publishNames(room);
-    },
-  },
+			broadcast(room, { t: "peer-left", id: ws.data.id });
+			if (wasSharing) publishSharers(room);
+			if (hadName) publishNames(room);
+		},
+	},
 });
 
 startStun(STUN_PORT);
 
 console.log(
-  `ss ${getVersion()}\n` +
-  `  http        http://localhost:${PORT}\n` +
-  `  stun  udp   :${STUN_PORT}\n` +
-  `  room        ${MAX_PEERS} peers  ·  ${MAX_SHARERS} sharers`
+	`ss ${getVersion()}\n` +
+		`  http        http://localhost:${PORT}\n` +
+		`  stun  udp   :${STUN_PORT}\n` +
+		`  room        ${MAX_PEERS} peers  ·  ${MAX_SHARERS} sharers`,
 );

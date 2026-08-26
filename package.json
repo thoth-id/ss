@@ -1,45 +1,45 @@
 {
-  "name": "@thoth-dev/screen-share",
-  "version": "0.4.0",
-  "publishConfig": {
-    "access": "public"
-  },
-  "description": "Peer-to-peer browser screen sharing. No SFU, no TURN, no account, no dependencies.",
-  "keywords": [
-    "screen-sharing",
-    "webrtc",
-    "p2p",
-    "tailscale",
-    "stun",
-    "bun"
-  ],
-  "license": "MIT",
-  "author": "Gabriel Andreello",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/thoth-id/ss.git"
-  },
-  "homepage": "https://github.com/thoth-id/ss#readme",
-  "bugs": {
-    "url": "https://github.com/thoth-id/ss/issues"
-  },
-  "type": "module",
-  "bin": {
-    "screen-share": "bin/screen-share.mjs"
-  },
-  "files": [
-    "bin/screen-share.mjs",
-    "bin/cli.ts",
-    "server.ts",
-    "stun.ts",
-    "public/",
-    "README.md",
-    "LICENSE"
-  ],
-  "engines": {
-    "bun": ">=1.1.0"
-  },
-  "scripts": {
-    "start": "bun run server.ts"
-  }
+	"name": "@thoth-dev/screen-share",
+	"version": "0.4.0",
+	"publishConfig": {
+		"access": "public"
+	},
+	"description": "Peer-to-peer browser screen sharing. No SFU, no TURN, no account, no dependencies.",
+	"keywords": [
+		"screen-sharing",
+		"webrtc",
+		"p2p",
+		"tailscale",
+		"stun",
+		"bun"
+	],
+	"license": "MIT",
+	"author": "Gabriel Andreello",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/thoth-id/ss.git"
+	},
+	"homepage": "https://github.com/thoth-id/ss#readme",
+	"bugs": {
+		"url": "https://github.com/thoth-id/ss/issues"
+	},
+	"type": "module",
+	"bin": {
+		"screen-share": "bin/screen-share.mjs"
+	},
+	"files": [
+		"bin/screen-share.mjs",
+		"bin/cli.ts",
+		"server.ts",
+		"stun.ts",
+		"public/",
+		"README.md",
+		"LICENSE"
+	],
+	"engines": {
+		"bun": ">=1.1.0"
+	},
+	"scripts": {
+		"start": "bun run server.ts"
+	}
 }
