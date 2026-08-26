@@ -67,16 +67,12 @@
   /* === wordmark and top pill === */
 
   .mark {
-    position: absolute; top: 18px; left: 18px; z-index: 6;
+    position: absolute; top: 14px; left: 18px; z-index: 6;
+    display: flex; align-items: center; gap: 7px;
     font-family: var(--mono); font-size: 12px; letter-spacing: .2em;
     color: var(--dim); pointer-events: none;
   }
-  .mark i {
-    display: inline-block; width: 6px; height: 6px; margin-left: 6px;
-    border-radius: 50%; background: var(--line-hi); vertical-align: 1px;
-    transition: background .3s;
-  }
-  .mark i.live { background: var(--accent); }
+  .mark img { width: 20px; height: 20px; border-radius: 5px; object-fit: cover; }
 
   .top {
     position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
@@ -383,7 +379,7 @@
 
 <main id="stage"></main>
 
-<span class="mark">tailcast<i id="live"></i></span>
+<span class="mark"><img src="/icon-tailcast.png" alt="">tailcast</span>
 
 <div class="top">
   <span id="topRoom">#room</span>
