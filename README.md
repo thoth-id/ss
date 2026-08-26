@@ -1,22 +1,7 @@
-<p align="center">
-  <img src="public/icon-tailcast.png" alt="tailcast logo" width="112">
-</p>
-
-<h1 align="center">tailcast</h1>
-
-```
-  ,-.       _,---._ __  / \
- /  )    .-'       `./ /   \
-(  (   ,'            `/    /|
- \  `-"             \'\   / |
-  `.              ,  \ \ /  |
-   /`.          ,'-`----Y   |
-  (            ;        |   '
-  |  ,-.    ,-'         |  /
-  |  | (   |            | /
-  )  |  \  `.___________|/
-  `--'   `--'
-```
+<div align="center">
+  <img src="public/icon-tailcast.png" alt="tailcast logo" width="88">
+  <h1>tailcast</h1>
+</div>
 
 Browser-to-browser screen sharing, no audio, for a small group on a network you
 already trust (a Tailscale tailnet, for instance). No TURN, no SFU, no accounts,
