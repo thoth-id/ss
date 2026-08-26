@@ -3,7 +3,7 @@ import type { Subprocess } from "bun";
 
 export const PORT = Number(process.env.PORT) || 3000;
 export const DBG = Number(process.env.CDP_PORT) || 9333;
-export const OUT = process.env.BENCH_OUT || "/tmp/ss-bench";
+export const OUT = process.env.BENCH_OUT || "/tmp/tailcast-bench";
 
 mkdirSync(OUT, { recursive: true });
 // a fresh profile every run: the gate only opens by itself on this browser's

@@ -1,4 +1,18 @@
-# ss
+# tailcast
+
+```
+  ,-.       _,---._ __  / \
+ /  )    .-'       `./ /   \
+(  (   ,'            `/    /|
+ \  `-"             \'\   / |
+  `.              ,  \ \ /  |
+   /`.          ,'-`----Y   |
+  (            ;        |   '
+  |  ,-.    ,-'         |  /
+  |  | (   |            | /
+  )  |  \  `.___________|/
+  `--'   `--'
+```
 
 Browser-to-browser screen sharing, no audio, for a small group on a network you
 already trust (a Tailscale tailnet, for instance). No TURN, no SFU, no accounts,
@@ -7,7 +21,7 @@ answer STUN. The video goes straight from one browser to another.
 
 Published on npm as **`@thoth-dev/screen-share`**.
 
-![A MacBook screen shared over the tailnet, in focus mode, seen from another machine](https://raw.githubusercontent.com/thoth-id/ss/main/docs/screenshot.png)
+![A MacBook screen shared over the tailnet, in focus mode, seen from another machine](https://raw.githubusercontent.com/thoth-id/tailcast/main/docs/screenshot.png)
 
 A real session between two machines. The shared screen is focused and takes the
 whole stage, whoever is not transmitting sits in the presence rail on the right,
