@@ -1,4 +1,8 @@
-# tailcast
+<p align="center">
+  <img src="public/icon-tailcast.png" alt="tailcast logo" width="112">
+</p>
+
+<h1 align="center">tailcast</h1>
 
 ```
   ,-.       _,---._ __  / \
