@@ -2,9 +2,9 @@
 /* tailcast launcher.
 
    this file exists because of the shebang, and for no other reason. on POSIX
-   npm links `node_modules/.bin/screen-share` straight at the file named in
+   npm links `node_modules/.bin/tailcast` (and the `screen-share` alias) straight at the file named in
    `bin`, so its first line picks the interpreter. with `bin` pointing at
-   cli.ts, shebang `bun`, anyone running `npx @thoth-dev/screen-share` without
+   cli.ts, shebang `bun`, anyone running `npx @thoth-dev/tailcast` without
    Bun installed got
 
      env: 'bun': No such file or directory
@@ -76,14 +76,14 @@ const MISSING_BUN = `tailcast needs Bun, and I could not find one on this machin
 
   And run:
 
-    bunx @thoth-dev/screen-share
+    bunx @thoth-dev/tailcast
 
   If Bun is already installed, then the shell that ran this command does not
   have its directory on PATH. I looked in PATH, in $BUN_INSTALL/bin and in
   ~/.bun/bin. Export BUN_INSTALL or call bun by its full path.
 `;
 
-/* already inside Bun, via `bunx` or a hand-written `bun bin/screen-share.mjs`.
+/* already inside Bun, via `bunx` or a hand-written `bun bin/tailcast.mjs`.
    importing cli.ts directly saves a process and, more importantly, keeps the
    process.argv it expects: whoever reads `argv.slice(2)` cannot be handed an
    extra level of indirection. */

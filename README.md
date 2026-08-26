@@ -19,7 +19,7 @@ already trust (a Tailscale tailnet, for instance). No TURN, no SFU, no accounts,
 no media server. The server does three things: serve the page, relay signaling,
 answer STUN. The video goes straight from one browser to another.
 
-Published on npm as **`@thoth-dev/screen-share`**.
+Published on npm as **`@thoth-dev/tailcast`** (`screen-share` still works as an alias).
 
 ![A MacBook screen shared over the tailnet, in focus mode, seen from another machine](https://raw.githubusercontent.com/thoth-id/tailcast/main/docs/screenshot.png)
 
@@ -37,11 +37,11 @@ ships `bin/cli.ts`, `server.ts` and `stun.ts` exactly as written, with no build
 step and no `dist/`, and Bun runs them directly.
 
 ```bash
-bunx @thoth-dev/screen-share
+bunx @thoth-dev/tailcast
 ```
 
 That brings up HTTP plus the signaling WebSocket on `:3000`, and STUN on UDP
-`:3478`. `npx @thoth-dev/screen-share` also works **if** Bun is already
+`:3478`. `npx @thoth-dev/tailcast` also works **if** Bun is already
 installed on the machine: the published entry point is a small Node launcher
 that finds `bun` (on `PATH`, in `$BUN_INSTALL/bin` or in `~/.bun/bin`, which
 covers a non-login shell that never read the install rc) and hands the run to
@@ -69,7 +69,7 @@ which proxies TCP only. If your tailnet has restrictive ACLs, open 3478/udp.
 ## Flags and configuration
 
 ```bash
-bunx @thoth-dev/screen-share [flags]
+bunx @thoth-dev/tailcast [flags]
 ```
 
 | flag | env | default | what it does |
@@ -96,9 +96,9 @@ only be serialized there.
 
 ### Background mode
 
-With `--bg`, the pidfile and the log live in `$XDG_RUNTIME_DIR/screen-share/`,
-as `screen-share-<port>.pid` and `screen-share-<port>.log`. Without
-`XDG_RUNTIME_DIR` they fall back to a `screen-share-<uid>/` directory inside the
+With `--bg`, the pidfile and the log live in `$XDG_RUNTIME_DIR/tailcast/`,
+as `tailcast-<port>.pid` and `tailcast-<port>.log`. Without
+`XDG_RUNTIME_DIR` they fall back to a `tailcast-<uid>/` directory inside the
 temp dir, created with mode 0700 and refused if it belongs to somebody else. Not
 `$TMPDIR` itself, on purpose: its 1777 mode lets any user on the machine plant a
 pidfile in the path. The command reports success only once the child's own
