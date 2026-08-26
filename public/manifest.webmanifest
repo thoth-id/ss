@@ -1,7 +1,7 @@
 {
 	"id": "/",
-	"name": "screen share",
-	"short_name": "screen share",
+	"name": "tailcast",
+	"short_name": "tailcast",
 	"description": "Peer-to-peer browser screen sharing. No SFU, no TURN, no account.",
 	"lang": "en",
 	"start_url": "/",

@@ -332,8 +332,23 @@ Bun.serve<Client>({
 
 startStun(STUN_PORT);
 
+const CAT = [
+	"  ,-.       _,---._ __  / \\",
+	" /  )    .-'       `./ /   \\",
+	"(  (   ,'            `/    /|",
+	" \\  `-\"             \\'\\   / |",
+	"  `.              ,  \\ \\ /  |",
+	"   /`.          ,'-`----Y   |",
+	"  (            ;        |   '",
+	"  |  ,-.    ,-'         |  /",
+	"  |  | (   |            | /",
+	"  )  |  \\  `.___________|/",
+	"  `--'   `--'",
+].join("\n");
+
 console.log(
-	`ss ${getVersion()}\n` +
+	`${CAT}\n` +
+		`tailcast ${getVersion()}\n` +
 		`  http        http://localhost:${PORT}\n` +
 		`  stun  udp   :${STUN_PORT}\n` +
 		`  room        ${MAX_PEERS} peers  ·  ${MAX_SHARERS} sharers`,

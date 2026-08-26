@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* ss launcher.
+/* tailcast launcher.
 
    this file exists because of the shebang, and for no other reason. on POSIX
    npm links `node_modules/.bin/screen-share` straight at the file named in
@@ -65,7 +65,7 @@ const findBun = () => {
 	return null;
 };
 
-const MISSING_BUN = `ss needs Bun, and I could not find one on this machine.
+const MISSING_BUN = `tailcast needs Bun, and I could not find one on this machine.
 
   The server uses Bun.serve for the signaling WebSocket, and Node has no
   equivalent. What is missing is the runtime, not a dependency.

@@ -114,7 +114,7 @@ async function testStatic() {
 	const root = await fetch(`${HTTP}/`);
 	const body = await root.text();
 	ok("GET / answers 200", root.status === 200, root.status);
-	ok("GET / serves index.html", body.includes("<title>ss</title>"));
+	ok("GET / serves index.html", body.includes("<title>tailcast</title>"));
 	ok("index has the share button", body.includes('id="shareBtn"'));
 
 	const cfg = await fetch(`${HTTP}/config`);
