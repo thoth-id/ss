@@ -43,7 +43,7 @@ type CleanState = { tr: string; cls: string; ind: string };
 
 async function typeText(v: string): Promise<void> {
 	await evalJS(`(() => {
-    const n = document.getElementById("gateName") as HTMLInputElement;
+    const n = document.getElementById("gateName");
     n.value = ${JSON.stringify(v)};
     n.dispatchEvent(new Event("input"));
   })()`);
