@@ -8,16 +8,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Tailscale tailnet. Bun + TypeScript, **zero dependencies**, no build step, no
 `npm install`. Four source files total.
 
-It is published on npm as **`@thoth-dev/screen-share`**, runnable with `bunx
-@thoth-dev/screen-share`. Nothing about the stack changed for that: the package
+It is published on npm as **`@thoth-dev/tailcast`**, runnable with `bunx
+@thoth-dev/tailcast` (`@thoth-dev/screen-share` still resolves as an alias for migration). Nothing about the stack changed for that: the package
 still ships `.ts` as written, and Bun still runs it directly — no
 transpilation, no `dist/`.
-`bin/screen-share.mjs` is the published entry point (`bin.screen-share` in
-`package.json`), and `bin/cli.ts` is what it hands over to; the CLI only parses
+`bin/tailcast.mjs` is the published entry point (`bin.tailcast` in
+`package.json`, with `screen-share` kept as an alias), and `bin/cli.ts` is what it hands over to; the CLI only parses
 flags and hands the real work to `server.ts`.
 
 **Why there are two files and not one.** On POSIX, npm links
-`node_modules/.bin/screen-share` straight at the file named in `bin`, so the
+`node_modules/.bin/tailcast` (and the `screen-share` alias) straight at the file named in `bin`, so the
 shebang picks the interpreter. With `bin/cli.ts` there (shebang `bun`), a
 machine without Bun died in `env` — `env: 'bun': No such file or directory` —
 before a single line of ours ran, which is why no message written inside
@@ -47,12 +47,12 @@ Keep the launcher free of CLI logic. Flags, `--bg` and `--stop` all stay in
 
 Three names, three jobs: the project's internal name stays `tailcast` — repo and UI
 strings keep saying `tailcast`. The **package name**,
-`@thoth-dev/screen-share`, is what `npm install`, `bun add` and `bunx` take, and
+`@thoth-dev/tailcast`, is what `npm install`, `bun add` and `bunx` take, and
 what appears in the npmjs.com URL — the org scope exists because a plain
-`screen-share` collided with existing package names on the registry. The
-**command name**, `screen-share`, is unchanged and unscoped, because `bin` is
+`tailcast` is kept scoped for consistency (and the old `screen-share` alias remains). The
+**command name**, `tailcast`, is now primary and unscoped, because `bin` is
 keyed by the command, not the package: once installed, the executable on
-`PATH` is `screen-share`, and the CLI's own `--help`, `--stop` and pidfiles all
+`PATH` is `tailcast` (and `screen-share` as an alias), and the CLI's own `--help`, `--stop` and pidfiles all
 refer to itself that way. Only the not-yet-installed, run-once-via-`bunx` case
 needs the package name; everything downstream of installation uses the command
 name. Be consistent about which is which when writing docs.
@@ -81,8 +81,8 @@ bun bin/cli.ts --help       # CLI flags: -p/--port, --stun-port, --peers,
 `MAX_SHARERS`, `MAX_CAPTURE_PIXELS`) and imports `server.ts` — running the
 server directly with `bun run server.ts` still works standalone, with the same
 env vars, no CLI in the loop. `--bg` backgrounds the process, writes a pidfile
-and log to `$XDG_RUNTIME_DIR/screen-share/screen-share-<port>.{pid,log}`
-(falling back to a 0700 `screen-share-<uid>/` under the temp dir, refused if
+and log to `$XDG_RUNTIME_DIR/tailcast/tailcast-<port>.{pid,log}`
+(falling back to a 0700 `tailcast-<uid>/` under the temp dir, refused if
 someone else owns it — never `$TMPDIR` directly, whose 1777 mode lets any user
 plant a pidfile in the path), and only reports success
 once the child's own `/config` answers (it checks the child is alive *before*
@@ -118,7 +118,7 @@ tailscale serve --bg 3000   # persists across restarts; only the Bun process nee
 ## Architecture
 
 ```
-bin/screen-share.mjs  published bin: node shebang, finds bun or explains why it cannot
+bin/tailcast.mjs  published bin: node shebang, finds bun or explains why it cannot (screen-share alias kept)
 bin/cli.ts       CLI: flags, --bg/--stop, env handoff to server.ts
 server.ts        Bun.serve: static files + /config + WebSocket signaling + room/sharer state
 stun.ts          ~50-line STUN server (node:dgram), Binding Request → XOR-MAPPED-ADDRESS
@@ -890,8 +890,8 @@ nothing here enforces the difference — so do all of it, in this order.
 
    ```bash
    npm pack --pack-destination /tmp
-   rm -rf /tmp/rel && mkdir -p /tmp/rel && tar -xzf /tmp/thoth-dev-screen-share-<v>.tgz -C /tmp/rel
-   node /tmp/rel/package/bin/screen-share.mjs -p 3300 --stun-port 3778 &
+   rm -rf /tmp/rel && mkdir -p /tmp/rel && tar -xzf /tmp/thoth-dev-tailcast-<v>.tgz -C /tmp/rel
+   node /tmp/rel/package/bin/tailcast.mjs -p 3300 --stun-port 3778 &
    PORT=3300 STUN_PORT=3778 bun run test.ts        # 97/97 against the packed copy
    ```
 
@@ -903,7 +903,7 @@ nothing here enforces the difference — so do all of it, in this order.
    **Pass the port as a flag, never as an env var.** `bin/cli.ts:100` defaults to
    `{ port: 3000, stunPort: 3478 }` and line ~303 writes `PORT: String(opts.port)`
    into the child env unconditionally, so an inherited `PORT` is silently
-   discarded: `PORT=3300 screen-share` serves on **3000**. Only `server.ts` run
+   discarded: `PORT=3300 tailcast` serves on **3000**. Only `server.ts` run
    directly honours the environment. Flag > env > default would be the
    conventional order; this is not fixed, just recorded — and it is why a release
    check that sets `PORT` looks like it passed while testing the wrong process.
@@ -924,9 +924,8 @@ nothing here enforces the difference — so do all of it, in this order.
 
 Three names, and a release touches all three (see *What this is*): the **npm**
 org is `thoth-dev`, the **GitHub** org is `thoth-id`, and the installed command
-is `screen-share`. The `repository` URL in `package.json` keeps `thoth-id` on
-purpose. A plain unscoped `screen-share` is not available — npm answers
-`403 too similar` against `screenshare` and `screen_share`.
+is `tailcast` (with `screen-share` as an alias). The `repository` URL in `package.json` keeps `thoth-id` on
+purpose. A plain unscoped `tailcast` is now the scoped name; the old `screen-share` alias remains for migration.
 
 ## Out of scope
 
