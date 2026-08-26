@@ -1,17 +1,25 @@
 {
-  "id": "/",
-  "name": "screen share",
-  "short_name": "screen share",
-  "description": "Peer-to-peer browser screen sharing. No SFU, no TURN, no account.",
-  "lang": "en",
-  "start_url": "/",
-  "scope": "/",
-  "display": "standalone",
-  "orientation": "any",
-  "background_color": "#090c0e",
-  "theme_color": "#090c0e",
-  "icons": [
-    { "src": "/android-chrome-192x192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/android-chrome-512x512.png", "sizes": "512x512", "type": "image/png" }
-  ]
+	"id": "/",
+	"name": "screen share",
+	"short_name": "screen share",
+	"description": "Peer-to-peer browser screen sharing. No SFU, no TURN, no account.",
+	"lang": "en",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"orientation": "any",
+	"background_color": "#090c0e",
+	"theme_color": "#090c0e",
+	"icons": [
+		{
+			"src": "/android-chrome-192x192.png",
+			"sizes": "192x192",
+			"type": "image/png"
+		},
+		{
+			"src": "/android-chrome-512x512.png",
+			"sizes": "512x512",
+			"type": "image/png"
+		}
+	]
 }

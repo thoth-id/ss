@@ -415,26 +415,26 @@
 </section>
 
 <div class="dock">
-  <button id="shareBtn" title="Share screen" aria-label="Share screen">
+  <button type="button" id="shareBtn" title="Share screen" aria-label="Share screen">
     <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8.5 20.5h7M12 17v3.5"/></svg>
   </button>
-  <button id="copyBtn" title="Copy link" aria-label="Copy link">
+  <button type="button" id="copyBtn" title="Copy link" aria-label="Copy link">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 13.5a4.5 4.5 0 0 0 6.4 0l2.6-2.6a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M13.5 10.5a4.5 4.5 0 0 0-6.4 0l-2.6 2.6a4.5 4.5 0 0 0 6.4 6.4l1-1"/></svg>
   </button>
   <span class="sep"></span>
-  <button id="roomBtn" title="Switch room" aria-label="Switch room">
+  <button type="button" id="roomBtn" title="Switch room" aria-label="Switch room">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 9h15M4.5 15h15M10 3.5 8 20.5M16 3.5l-2 17"/></svg>
   </button>
-  <button id="meBtn" title="Your name" aria-label="Your name">
+  <button type="button" id="meBtn" title="Your name" aria-label="Your name">
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>
   </button>
-  <button id="gridBtn" title="Leave focus" aria-label="Leave focus" disabled>
+  <button type="button" id="gridBtn" title="Leave focus" aria-label="Leave focus" disabled>
     <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>
   </button>
-  <button id="soundBtn" title="Mute sounds" aria-label="Mute sounds">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H2.5v6H6l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M17.2 6.2a8 8 0 0 1 0 11.6"/></svg>
+  <button type="button" id="soundBtn" title="Mute sounds" aria-label="Mute sounds">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H2.5v6H6l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M17.5 6a8.5 8.5 0 0 1 0 12"/></svg>
   </button>
-  <button id="installBtn" title="Install as an app" aria-label="Install as an app" hidden>
+  <button type="button" id="installBtn" title="Install as an app" aria-label="Install as an app" hidden>
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11M8 11l4 4 4-4"/><path d="M4.5 16v2.5a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V16"/></svg>
   </button>
 </div>
@@ -463,7 +463,7 @@
       </div>
     </div>
     <div class="recents" id="gateRecents"></div>
-    <button class="go" id="gateGo">Enter</button>
+    <button type="button" class="go" id="gateGo">Enter</button>
     <span class="url" id="gateUrl"></span>
   </div>
 </div>
@@ -556,8 +556,8 @@ function playShareStop() {
   if (!soundOn || document.hidden || gateOpen) return;
   tone(300, 150, 0.16, "sine", 0.11);
 }
-const SOUND_ICON_ON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H2.5v6H6l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M17.2 6.2a8 8 0 0 1 0 11.6"/></svg>';
-const SOUND_ICON_OFF = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H2.5v6H6l5 4V5Z"/><path d="M3 3l18 18"/></svg>';
+const SOUND_ICON_ON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H2.5v6H6l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M17.5 6a8.5 8.5 0 0 1 0 12"/></svg>';
+const SOUND_ICON_OFF = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H2.5v6H6l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7" opacity=".38"/><path d="M17.5 6a8.5 8.5 0 0 1 0 12" opacity=".38"/><path d="M3 20.2L20.8 3.4" style="stroke-width:2.2;stroke-linecap:round"/></svg>';
 function renderSoundBtn() {
   const b = $("soundBtn");
   if (!b) return;
@@ -679,7 +679,7 @@ function handle(msg) {
     sharersSynced = false;
 
     peers.clear();
-    msg.peers.forEach((id) => peers.add(id));
+    msg.peers.forEach((id) => { peers.add(id); });
     // one timestamp, and the clock counts from there locally: no periodic sync
     // needed. an old server without startedAt sends undefined, which hides the clock.
     startedAt = msg.startedAt ?? 0;
@@ -1045,7 +1045,7 @@ async function startShare() {
 // STOPPED has to tell the server and close the sending PCs, since a denied
 // peer never held a slot.
 function discardCapture() {
-  localStream?.getTracks().forEach((t) => t.stop());
+  localStream?.getTracks().forEach((t) => { t.stop(); });
   localStream = null;
   dropTile(myId);
 }
@@ -1066,22 +1066,22 @@ function attachTile(id, stream, isSelf = false) {
   let tile = tiles.get(id);
   // the presence tile lives in the same map under the same id. drop it before
   // building the video tile: it has no srcObject, so nothing flickers.
-  if (tile && tile.classList.contains("peer")) {
+  if (tile?.classList.contains("peer")) {
     tile.remove();
     tiles.delete(id);
     tile = null;
   }
   if (!tile) {
     tile = document.createElement("div");
-    tile.className = "tile" + (isSelf ? " self" : "");
+    tile.className = `tile${isSelf ? " self" : ""}`;
     tile.dataset.id = id;
     tile.innerHTML =
       '<div class="frame">' +
         '<video autoplay playsinline muted></video>' +
-        '<button class="zoom" hidden></button>' +
+        '<button type="button" class="zoom" hidden></button>' +
         '<div class="ctl">' +
-          '<button class="act focus"></button>' +
-          '<button class="act full">fullscreen</button>' +
+          '<button type="button" class="act focus"></button>' +
+          '<button type="button" class="act full">fullscreen</button>' +
         '</div>' +
         '<span class="who"><i></i><b></b><em>(you)</em></span>' +
         '<div class="tel"><span class="rate"></span><span class="size"></span>' +
@@ -1196,7 +1196,7 @@ function applyZoom(id) {
     const native = video.videoWidth ? video.videoWidth / (W * devicePixelRatio) : Infinity;
     const up = z.k > Math.max(1, native);
     badge.hidden = false;
-    badge.textContent = z.k.toFixed(1) + "×";
+    badge.textContent = `${z.k.toFixed(1)}×`;
     badge.classList.toggle("up", up);
     badge.title = up
       ? `${z.k.toFixed(1)}× · past native, this is interpolation · click restores`
@@ -1389,10 +1389,10 @@ function place(tile, x, y, w, h, mini) {
   tile.classList.toggle("mini", mini);
   tile.classList.toggle("tight", w < WAVE_BELOW);
   tile.classList.toggle("narrow", w < TEL_BELOW);
-  tile.style.left = Math.round(x) + "px";
-  tile.style.top = Math.round(y) + "px";
-  tile.style.width = Math.round(w) + "px";
-  tile.style.setProperty("--vh", Math.round(h) + "px");
+  tile.style.left = `${Math.round(x)}px`;
+  tile.style.top = `${Math.round(y)}px`;
+  tile.style.width = `${Math.round(w)}px`;
+  tile.style.setProperty("--vh", `${Math.round(h)}px`);
 }
 
 function layout() {
@@ -1691,7 +1691,7 @@ function remember(room) {
 }
 
 function paintRoom() {
-  $("topRoom").textContent = "#" + ROOM;
+  $("topRoom").textContent = `#${ROOM}`;
   document.title = `#${ROOM} · ss`;
 }
 
@@ -1706,7 +1706,7 @@ function switchRoom(name) {
   ROOM = target;
   remember(ROOM);
   paintRoom();
-  history.replaceState(null, "", "#" + encodeURIComponent(ROOM));
+  history.replaceState(null, "", `#${encodeURIComponent(ROOM)}`);
 
   // a refusal from the previous room does not carry into the next.
   dead = false;
@@ -1774,7 +1774,7 @@ function paintGate() {
 
   const av = $("gateAv");
   av.textContent = initial(name);
-  av.className = "av" + (ok ? "" : " anon");
+  av.className = `av${ok ? "" : " anon"}`;
 
   // only complain once something has been typed: an untouched field with a
   // warning lit is a telling-off before the mistake.
@@ -1798,7 +1798,8 @@ function paintGate() {
   box.append(k);
   for (const r of list) {
     const b = document.createElement("button");
-    b.className = "rchip" + (r === room ? " on" : "");
+    b.type = "button";
+    b.className = `rchip${r === room ? " on" : ""}`;
     b.textContent = r;
     b.onclick = () => {
       $("gateRoom").value = r;
@@ -1996,12 +1997,15 @@ function rate(key, bytes) {
 
 function fmt(bps) {
   if (bps == null) return "";
-  return bps >= 1e6 ? (bps / 1e6).toFixed(1) + " Mb/s" : Math.round(bps / 1e3) + " kb/s";
+  return bps >= 1e6 ? `${(bps / 1e6).toFixed(1)} Mb/s` : `${Math.round(bps / 1e3)} kb/s`;
 }
 
 function push(id, bps) {
   let a = hist.get(id);
-  if (!a) hist.set(id, (a = []));
+  if (!a) {
+    a = [];
+    hist.set(id, a);
+  }
   a.push(Math.max(0, bps || 0));
   if (a.length > WAVE_LEN) a.shift();
   const tile = tiles.get(id);
@@ -2059,18 +2063,18 @@ setInterval(async () => {
     let bps = null, size = "", fps = 0;
     stats.forEach((r) => {
       if (r.type === "inbound-rtp" && r.kind === "video") {
-        bps = rate("rx:" + id, r.bytesReceived || 0);
+        bps = rate(`rx:${id}`, r.bytesReceived || 0);
         fps = Math.round(r.framesPerSecond || 0);
         if (r.frameWidth) size = `${r.frameWidth}×${r.frameHeight}`;
       }
     });
     const path = pathOf(stats);
     tile.querySelector(".tel").classList.add("vivo");
-    tile.querySelector(".rate").textContent = "↓ " + (fmt(bps) || "--");
+    tile.querySelector(".rate").textContent = `↓ ${fmt(bps) || "--"}`;
     tile.querySelector(".size").textContent = size ? `${size} · ${fps}fps` : "";
     const el = tile.querySelector(".path");
     el.textContent = path ? `${path.type} · ${path.rtt ?? "--"}ms` : "negotiating";
-    el.className = "path " + (path?.type === "relay" ? "warn" : path ? "hi" : "");
+    el.className = `path ${path?.type === "relay" ? "warn" : path ? "hi" : ""}`;
     push(id, bps);
   }
 
@@ -2082,7 +2086,7 @@ setInterval(async () => {
       const stats = await pc.getStats();
       stats.forEach((r) => {
         if (r.type === "outbound-rtp" && r.kind === "video") {
-          const b = rate("tx:" + id, r.bytesSent || 0);
+          const b = rate(`tx:${id}`, r.bytesSent || 0);
           if (b) total += b;
           // the worst destination is the interesting one: an encoder that
           // dropped a rung is what the sharer needs to see, even if the others
@@ -2113,17 +2117,16 @@ setInterval(async () => {
     const didDrop = outW && cap?.width && outW < cap.width;
     const detail = (didDrop ? ` → ${outW}×${outH}` : "") + (limitReason ? ` ${limitReason}` : "");
     self.querySelector(".tel").classList.add("vivo");
-    self.querySelector(".rate").textContent = "↑ " + (fmt(total) || "--");
+    self.querySelector(".rate").textContent = `↑ ${fmt(total) || "--"}`;
     const size = self.querySelector(".size");
     size.textContent =
-      (capTxt ? capTxt + detail + " · " : "") +
-      `${sending.size} destination${sending.size > 1 ? "s" : ""}`;
-    size.className = "size" + (didDrop || limitReason ? " warn" : "");
+      `${capTxt ? `${capTxt}${detail} · ` : ""}${sending.size} destination${sending.size > 1 ? "s" : ""}`;
+    size.className = `size${didDrop || limitReason ? " warn" : ""}`;
     // the path field is useless on our own tile (there is no ICE pair to talk
     // about), so it is where the encoding policy fits at no layout cost.
     const via = self.querySelector(".path");
     via.textContent = policy || "";
-    via.className = "path" + (policy ? " warn" : "");
+    via.className = `path${policy ? " warn" : ""}`;
     push(myId, total);
   }
 
