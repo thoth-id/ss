@@ -1854,8 +1854,6 @@ function render() {
     $("fSharers").textContent = `${sharers.size}/${maxSharers}`;
     $("fCap").textContent = `up to ${w}×${h}`;
   }
-  $("live").classList.toggle("live", !!localStream);
-
   if (focusId && !tiles.has(focusId)) focusId = null;
   $("gridBtn").disabled = !focusId;
 
