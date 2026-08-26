@@ -175,6 +175,11 @@ bar. Once installed the button is gone for good. On iPhone and iPad there is no
 install event — the path is **Share → Add to Home Screen**, in Safari. It is for
 watching only: no mobile browser captures a screen.
 
+Some Chromium browsers ship the API without the install UI — Arc is one, and
+says so in its own documentation. There the button appears and the click cannot
+do anything, so it explains that in its tooltip. Chrome, Edge and Brave install
+normally.
+
 This rides on the same HTTPS as everything else: a service worker, like
 `getDisplayMedia`, only exists in a secure context. The worker is network-first
 for everything and the cache is only a safety net. There is no real offline mode
