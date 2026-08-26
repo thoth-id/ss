@@ -17,11 +17,11 @@
 	"author": "Gabriel Andreello",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/thoth-id/ss.git"
+		"url": "git+https://github.com/thoth-id/tailcast.git"
 	},
-	"homepage": "https://github.com/thoth-id/ss#readme",
+	"homepage": "https://github.com/thoth-id/tailcast#readme",
 	"bugs": {
-		"url": "https://github.com/thoth-id/ss/issues"
+		"url": "https://github.com/thoth-id/tailcast/issues"
 	},
 	"type": "module",
 	"bin": {

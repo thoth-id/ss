@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-/* ss command line.
+/* tailcast command line.
 
    the shebang is bun, not node: the server uses Bun.serve for the signaling
    WebSocket and there is no equivalent in Node. that is also why this file is
@@ -43,8 +43,22 @@ const ROOT = path.join(import.meta.dir, "..");
 const getVersion = (): string =>
 	JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
 
+const CAT = [
+	"  ,-.       _,---._ __  / \\",
+	" /  )    .-'       `./ /   \\",
+	"(  (   ,'            `/    /|",
+	" \\  `-\"             \\'\\   / |",
+	"  `.              ,  \\ \\ /  |",
+	"   /`.          ,'-`----Y   |",
+	"  (            ;        |   '",
+	"  |  ,-.    ,-'         |  /",
+	"  |  | (   |            | /",
+	"  )  |  \\  `.___________|/",
+	"  `--'   `--'",
+].join("\n");
+
 const helpText =
-	() => `ss ${getVersion()} - peer-to-peer screen sharing, no account and no media server
+	() => `${CAT}\n\ntailcast ${getVersion()} - peer-to-peer screen sharing, no account and no media server
 
   bunx @thoth-dev/screen-share [flags]
 
@@ -272,7 +286,7 @@ if (stop) {
 		// recycled pid or planted pidfile; either way, killing would hit a third
 		// party with nothing to do with this.
 		process.stdout.write(
-			`pid ${pid} registered for port ${opts.port} is not an ss server; leaving it alone.\n` +
+			`pid ${pid} registered for port ${opts.port} is not a tailcast server; leaving it alone.\n` +
 				`Clearing the record.\n`,
 		);
 		clearRecord();
@@ -280,7 +294,7 @@ if (stop) {
 	}
 	if (identity === null && !force) {
 		process.stderr.write(
-			`cannot confirm that pid ${pid} is an ss server on this platform (no /proc).\n` +
+			`cannot confirm that pid ${pid} is a tailcast server on this platform (no /proc).\n` +
 				`Nothing was stopped. If you are sure, repeat with --force.\n`,
 		);
 		process.exit(1);
@@ -351,7 +365,7 @@ if (bg) {
 		const registered = readPid();
 		const hint =
 			registered !== null && isOurServer(registered) === true
-				? ` Looks like the ss server at pid ${registered}: stop it with --stop --port ${opts.port}.`
+				? ` Looks like the tailcast server at pid ${registered}: stop it with --stop --port ${opts.port}.`
 				: "";
 		process.stderr.write(
 			portError === "EADDRINUSE"
@@ -501,7 +515,7 @@ if (bg) {
 	}
 
 	process.stdout.write(
-		`ss ${getVersion()}  ·  background\n` +
+		`tailcast ${getVersion()}  ·  background\n` +
 			`  http        http://localhost:${opts.port}\n` +
 			`  stun  udp   :${opts.stunPort}\n` +
 			`  pid         ${pid}\n\n` +

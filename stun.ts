@@ -61,7 +61,7 @@ export function startStun(port = 3478) {
 		process.stderr.write(
 			err.code === "EADDRINUSE"
 				? `stun: EADDRINUSE on UDP port ${port}, already in use.\n` +
-						`Another ss instance? Each one needs its own --stun-port.\n`
+						`Another tailcast instance? Each one needs its own --stun-port.\n`
 				: `stun: could not bind UDP port ${port} (${err.code}): ${err.message}\n`,
 		);
 		process.exit(1);
