@@ -140,10 +140,9 @@ async function evalJS(expr: string) {
 }
 async function capture(name: string) {
 	const r = await cdp("Page.captureScreenshot", { format: "png" });
-	await Bun.write(
-		`${OUT}/cdp-${name}.png`,
-		Buffer.from(r.result.data, "base64"),
-	);
+	const data = r.result?.data;
+	if (typeof data !== "string") throw new Error("captureScreenshot returned no data");
+	await Bun.write(`${OUT}/cdp-${name}.png`, Buffer.from(data, "base64"));
 }
 async function setViewport(w: number, h: number) {
 	await cdp("Emulation.setDeviceMetricsOverride", {
@@ -244,8 +243,8 @@ function check(name: string, cond: boolean, detail = "") {
 // its old place. wait twice the transition.
 const settle = () => Bun.sleep(340);
 
-async function measure() {
-	return await evalJS(`(() => {
+async function measure(): Promise<MeasureInfo> {
+	return (await evalJS(`(() => {
     const st = document.getElementById("stage").getBoundingClientRect();
     const dock = document.querySelector(".dock").getBoundingClientRect();
     const topBar = document.querySelector(".top").getBoundingClientRect();
@@ -280,7 +279,7 @@ async function measure() {
       myId: typeof myId !== "undefined" ? myId : null,
       topBar: [...document.querySelectorAll(".top span")].filter((s) => !s.hidden).map((s) => s.textContent),
     };
-  })()`);
+  })()`) as MeasureInfo);
 }
 
 const allInside = (m: MeasureInfo) =>

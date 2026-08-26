@@ -59,6 +59,11 @@ function ok(name: string, cond: unknown, detail?: unknown) {
 	}
 }
 
+function eq(name: string, got: unknown, want: unknown) {
+	const same = JSON.stringify(got) === JSON.stringify(want);
+	ok(name, same, same ? undefined : { got, want });
+}
+
 /** opens a socket that accumulates everything it receives in an array. */
 async function peer(label: string) {
 	const ws = new WebSocket(WS);

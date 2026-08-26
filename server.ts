@@ -257,6 +257,7 @@ Bun.serve<Client>({
 				// (deploy with live rooms) so the payload never ships undefined.
 				if (set.size === 0) sessions.set(room, Date.now());
 				if (!sessions.has(room)) sessions.set(room, Date.now());
+				set.add(ws);
 				ws.send(
 					JSON.stringify({
 						t: "joined",
@@ -304,9 +305,8 @@ Bun.serve<Client>({
 				publishSharers(ws.data.room);
 				return;
 			}
-
 			// opaque relay: the server never looks inside data, it only delivers.
-			if (msg.t === "signal" && msg.to) {
+			if (msg.t === "signal" && typeof msg.to === "string") {
 				const set = rooms.get(ws.data.room);
 				if (!set) return;
 				for (const peer of set) {
