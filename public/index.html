@@ -11,10 +11,7 @@
      so installing needs https (tailscale serve) or localhost. -->
 <link rel="manifest" href="/manifest.webmanifest">
 <!-- the favicon set lives at the site root. -->
-<link rel="icon" href="/favicon.ico?v=2" sizes="32x32">
-<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
-<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-<link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png">
+<link rel="icon" href="/favicon.ico?v=3" sizes="16x16 32x32 48x48">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <meta name="msapplication-config" content="/browserconfig.xml">
 <meta name="theme-color" content="#090c0e">
@@ -67,12 +64,12 @@
   /* === wordmark and top pill === */
 
   .mark {
-    position: absolute; top: 14px; left: 18px; z-index: 6;
+    position: absolute; top: 10px; left: 18px; z-index: 6;
     display: flex; align-items: center; gap: 7px;
     font-family: var(--mono); font-size: 12px; letter-spacing: .2em;
     color: var(--dim); pointer-events: none;
   }
-  .mark img { width: 20px; height: 20px; border-radius: 5px; object-fit: cover; }
+  .mark img { width: 32px; height: 32px; border-radius: 7px; object-fit: cover; }
 
   .top {
     position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
