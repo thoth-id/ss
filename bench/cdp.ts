@@ -83,6 +83,22 @@ export async function setViewport(w: number, h: number): Promise<void> {
 	});
 }
 
+// `(pointer: coarse)` is what separates a phone from a desktop window that
+// merely happens to be tall, and touch emulation is what sets it: measured,
+// the metrics override alone leaves it false at any viewport.
+//
+// `maxTouchPoints` goes only with `enabled`: 0 is out of the protocol's 1..16
+// range, so passing it while disabling makes the call fail with "Touch points
+// must be between 1 and 16" -- and cdp() RESOLVES protocol errors instead of
+// throwing, so the emulation silently stayed on and the desktop case measured
+// a phone.
+export async function setTouch(on: boolean): Promise<void> {
+	await cdp(
+		"Emulation.setTouchEmulationEnabled",
+		on ? { enabled: true, maxTouchPoints: 5 } : { enabled: false },
+	);
+}
+
 export function closeCdp(): void {
 	ws?.close();
 	ws = null;

@@ -7,7 +7,7 @@ is what you need when you are actually running or editing a suite.
 ## What each suite covers
 
 - **`test.ts`** — signaling, room limits, sharer arbitration, the STUN wire
-  format, static-file serving. 100 assertions, headless, needs a live server.
+  format, static-file serving. 108 assertions, headless, needs a live server.
   It derives `MAX_PEERS`/`MAX_SHARERS` from `/config` rather than keeping
   literals, so an exported `MAX_PEERS` in the shell cannot fail the suite for a
   defect that is not there — that mistake cost 8 false failures before it was
@@ -15,8 +15,9 @@ is what you need when you are actually running or editing a suite.
 - **`cli.test.ts`** — the CLI's `--bg`/`--stop` round trip inside a temp
   `XDG_RUNTIME_DIR`, falling back to `--stop --force`, plus the exact 11 lines of
   the startup banner. The one `bun:test` file; needs no server.
-- **`bench/`** — layout, presence, the gate, room switching and receiver-side
-  zoom, over CDP against real Chrome. Six scenarios, 73 assertions.
+- **`bench/`** — layout, presence, the gate, room switching, receiver-side zoom,
+  the capture-quality menu and which capture sources the dock offers, over CDP
+  against real Chrome. Eight scenarios, 132 assertions.
 
 **WebRTC is covered by none of them**, and cannot be here — no browser pair, no
 second machine. ICE over `100.x` **is** verified cross-machine and T0 is closed;

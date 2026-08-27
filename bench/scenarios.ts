@@ -1,4 +1,4 @@
-import { capture, evalJS, setViewport } from "./cdp.ts";
+import { capture, evalJS, setTouch, setViewport } from "./cdp.ts";
 import { clickAt, drag, wheel } from "./input.ts";
 import type { TileInfo } from "./measure.ts";
 import { allInside, measure, settle } from "./measure.ts";
@@ -1127,6 +1127,55 @@ export async function sourcesScenario(check: CheckFn): Promise<void> {
     return out;
   })()`);
 	check("two cameras with no lens between them offer no flip", desk.both === false);
+
+	// the box follows the DEVICE and not the monitor. a phone held upright asked
+	// for a landscape box answers with a landscape frame, which is the field
+	// report of the front camera coming out lying down, and applyCapture cannot
+	// undo it: it fits what ARRIVED into the budget and only ever shrinks. what
+	// is read back here is the constraint that reached getUserMedia, not
+	// cameraBox()'s return value -- the swap only matters if it travels.
+	await evalJS(`window.__askBox = async () => {
+    let asked = null;
+    const restore = window.__rig({
+      cams: 1,
+      gives: () => window.__mkCam("user"),
+      onCall: (c) => { asked = c.video; return null; },
+    });
+    camFacingKnown = false;
+    await startShare("camera");
+    await new Promise((r) => setTimeout(r, 300));
+    stopShare("camera");
+    restore();
+    const p = pickerBox();
+    return { w: asked?.width?.ideal, h: asked?.height?.ideal, pw: p.w, ph: p.h };
+  };`);
+
+	await setViewport(430, 780);
+	await setTouch(true);
+	await settle();
+	const upright = await evalJS<{ w: number; h: number; pw: number; ph: number }>(
+		"window.__askBox()",
+	);
+	check(
+		"a phone held upright asks the camera for a portrait box",
+		upright.h > upright.w,
+		`${upright.w}x${upright.h}`,
+	);
+	check(
+		"and it is the same budget on its side",
+		upright.w === upright.ph && upright.h === upright.pw,
+	);
+	check("while the screen picker stays landscape", upright.pw > upright.ph);
+
+	// a tall desktop window is not a phone: its webcam has one orientation, and
+	// ideal width/height is answered by cropping the native frame, so following
+	// the window would carve a portrait strip out of a landscape camera.
+	await setTouch(false);
+	await settle();
+	const tall = await evalJS<{ w: number; h: number }>("window.__askBox()");
+	check("a tall desktop window keeps the landscape box", tall.w > tall.h, `${tall.w}x${tall.h}`);
+	await setViewport(1440, 900);
+	await settle();
 
 	// the flip asks exactly, and it asks with the old lens already released:
 	// ideal lets a device answer with the camera that is open, and macOS/iOS

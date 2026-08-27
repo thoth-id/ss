@@ -1372,12 +1372,16 @@ async function applyCapture(src) {
 // returns the same lens is indistinguishable from a dead button; exact turns
 // that into an OverconstrainedError, which is an answer. starting a share
 // stays ideal: there, refusing outright would cost the capture entirely.
-function grabCamera(hintW, hintH, facing = camFacing, exact = false) {
+//
+// the box is cameraBox()'s and never the picker's: a camera's orientation is
+// the device's, and the caller is in no position to know it. see below.
+function grabCamera(facing = camFacing, exact = false) {
+  const { w, h } = cameraBox();
   return navigator.mediaDevices.getUserMedia({
     video: {
       facingMode: exact ? { exact: facing } : facing,
-      width: { ideal: hintW },
-      height: { ideal: hintH },
+      width: { ideal: w },
+      height: { ideal: h },
       frameRate: { ideal: CAP_FRAMERATE },
     },
     audio: false,
@@ -1411,6 +1415,30 @@ function grabCamera(hintW, hintH, facing = camFacing, exact = false) {
 const CAP_SLACK = 1.32;
 const pickerBox = () => boxFor(maxCapturePixels * CAP_SLACK);
 
+// the box asked of the CAMERA, which is the picker's turned on its side when
+// the device is being held upright. the swap is not cosmetic: the hint is what
+// decides which way the sensor opens. a phone in portrait asked for 1838x1034
+// answers with a landscape frame -- reported from the field as the front
+// camera coming out lying down -- and nothing downstream can undo it, since
+// applyCapture fits the geometry that ARRIVED into the budget and only ever
+// shrinks. it also spends the budget worse than any screen does: by the same
+// arithmetic as the paragraph above, where the browser fits the source in
+// preserving its own aspect and never crops, a 9:16 sensor lands at 32% of a
+// 16:9 box against the 75% a 4:3 one gets.
+//
+// gated on a coarse pointer and not on the window's orientation alone. a
+// portrait monitor is ordinary on a desktop and its webcam is still landscape,
+// and ideal width/height is a request the browser may answer by CROPPING the
+// native frame: following the window there would carve a portrait strip out of
+// the only orientation that camera has.
+const heldUpright = () =>
+  matchMedia("(orientation: portrait)").matches &&
+  matchMedia("(pointer: coarse)").matches;
+const cameraBox = () => {
+  const { w, h } = pickerBox();
+  return heldUpright() ? { w: h, h: w } : { w, h };
+};
+
 async function startShare(src = "screen") {
   if (src === "camera" ? !canShareCamera() : !canShareScreen()) {
     notice(whyCantShare());
@@ -1419,19 +1447,19 @@ async function startShare(src = "screen") {
 
   notice("");
 
-  const { w: hintW, h: hintH } = pickerBox();
+  const box = pickerBox();
 
   let stream;
   try {
     // the picker (and the camera permission) needs the user gesture, so it
     // comes before any round trip.
     stream = src === "camera"
-      ? await grabCamera(hintW, hintH)
+      ? await grabCamera()
       : await navigator.mediaDevices.getDisplayMedia({
           video: {
             frameRate: CAP_FRAMERATE,
-            width: { max: hintW },
-            height: { max: hintH },
+            width: { max: box.w },
+            height: { max: box.h },
           },
           audio: false,
         });
@@ -1510,7 +1538,6 @@ async function flipCamera() {
   if (!cap) return;
   const from = camFacing;
   const want = from === "environment" ? "user" : "environment";
-  const { w: hintW, h: hintH } = pickerBox();
   const old = cap.stream.getVideoTracks()[0];
 
   // the old lens is released BEFORE the new one is asked for, and the order is
@@ -1524,14 +1551,14 @@ async function flipCamera() {
 
   let stream = null;
   try {
-    stream = await grabCamera(hintW, hintH, want, true);
+    stream = await grabCamera(want, true);
   } catch (err) {
     // one lens on the device: stop claiming a second one exists. the notice is
     // for a share that ended up with nothing, not for a flip that simply had
     // nowhere to go.
     camHasBoth = false;
     try {
-      stream = await grabCamera(hintW, hintH, from);
+      stream = await grabCamera(from);
     } catch {}
     if (!stream) {
       notice(captureError("camera", err));

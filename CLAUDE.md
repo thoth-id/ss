@@ -645,6 +645,23 @@ Four things hold it together:
   of it was visible to the bench before, which set `camHasBoth` by hand and
   never went through the probe.
 
+- **The camera's box follows the device, not the monitor.** `pickerBox()` is
+  16:9 by construction, and handing it to `getUserMedia` asked a phone held
+  upright for a landscape frame — which is what it answered with, so the front
+  camera came out lying down. Nothing downstream could undo it: `applyCapture`
+  fits the geometry that *arrived* into the budget and only ever shrinks. It
+  was also the worse half of the pixel arithmetic the `CAP_SLACK` comment
+  already documents — the browser fits the source in preserving its own aspect
+  and never crops, so a 9:16 sensor lands at **32%** of a 16:9 box where a 4:3
+  one gets 75%. `cameraBox()` turns the box on its side, and the gate is
+  `(orientation: portrait)` **and** `(pointer: coarse)`, not the window's shape
+  alone: a portrait monitor is ordinary on a desktop, its webcam still has one
+  orientation, and ideal width/height is a request the browser may answer by
+  *cropping* the native frame — following the window there would carve a
+  portrait strip out of the only orientation that camera has. The screen picker
+  stays 16:9 for the reason it always did (following `screen` delivers 31% of
+  the budget on a portrait monitor).
+
 - **The same error name says opposite things per source, and getting it
   backwards is silent by construction.** Cancelling the screen picker is
   `NotAllowedError` and deserves no notice; the *same name* out of
@@ -667,11 +684,18 @@ capability alone left a phone with no way to stop, judged against a source that
 never existed there.
 
 **What is not covered.** The bench drives fake streams, so it asserts the
-button's states, the `hidden` rule and the fit — it cannot assert that a real
-camera opens, that `facingMode` picks the lens you meant, or what a phone
-camera does to the encoder. And the portrait geometry has the same cost the
-capture cut already documents: a phone camera held upright lands well under the
-pixel budget, because `boxFor` is fixed 16:9.
+button's states, the `hidden` rule, the fit and the box that reaches
+`getUserMedia` — it cannot assert that a real camera opens, that `facingMode`
+picks the lens you meant, or what a phone camera does to the encoder. The
+orientation case is emulated (430×780 plus `Emulation.setTouchEmulationEnabled`,
+which is what actually sets `(pointer: coarse)`; the metrics override alone
+leaves it false), so what is verified is that a portrait device asks for a
+portrait box, not that a given sensor honours it. And **rotating the phone
+mid-share is still open**: `applyCapture` pins the width and height it computed
+from the geometry that arrived, so turning the device sideways afterwards leaves
+the cut asking for the orientation it started in. That was true before this
+change too, in the other direction; nobody has measured what a real device does
+with it.
 
 ### Presence is a call tile
 
