@@ -18,6 +18,10 @@ const CACHE = "tailcast-v1";
 const SHELL = [
 	"/",
 	"/manifest.webmanifest",
+	// the wordmark's icon: the shell paints it on first frame, and the runtime
+	// handler only caches what has already been fetched once, so leaving it out
+	// lost it on a first-load-then-offline reload.
+	"/icon-tailcast.png",
 	"/favicon.svg",
 	"/favicon-32x32.png",
 	"/apple-touch-icon.png",
