@@ -1,6 +1,14 @@
 <div align="center">
   <img src="public/icon-tailcast.png" alt="tailcast logo" width="88">
   <h1>tailcast</h1>
+  <p>
+    <a href="https://www.npmjs.com/package/@thoth-dev/tailcast"><img
+      src="https://img.shields.io/badge/bunx%20%40thoth--dev%2Ftailcast-141c20?style=flat-square&logo=bun&logoColor=5ad3bb"
+      alt="Run it with bunx @thoth-dev/tailcast"></a>
+    <a href="https://www.npmjs.com/package/@thoth-dev/tailcast"><img
+      src="https://img.shields.io/npm/v/%40thoth-dev%2Ftailcast?style=flat-square&label=npm&labelColor=090c0e&color=cb3837&logo=npm&logoColor=white"
+      alt="Latest version on npm"></a>
+  </p>
 </div>
 
 Browser-to-browser screen sharing for a small group on a network you already
