@@ -3,21 +3,22 @@
   <h1>tailcast</h1>
 </div>
 
-Browser-to-browser screen sharing, no audio, for a small group on a network you
-already trust (a Tailscale tailnet, for instance). No TURN, no SFU, no accounts,
-no media server. The server does three things: serve the page, relay signaling,
-answer STUN. The video goes straight from one browser to another.
+Browser-to-browser screen sharing for a small group on a network you already
+trust — a Tailscale tailnet, for instance. No TURN, no SFU, no accounts, no media
+server. The server does three things: serve the page, relay signaling, answer
+STUN. The video goes straight from one browser to another.
 
-Published on npm as **`@thoth-dev/tailcast`** (`screen-share` still works as an alias).
+Published on npm as **`@thoth-dev/tailcast`** (`screen-share` still works as an
+alias).
 
 ![A MacBook screen shared over the tailnet, in focus mode, seen from another machine](https://raw.githubusercontent.com/thoth-id/tailcast/main/docs/screenshot.png)
 
 A real session between two machines. The shared screen is focused and takes the
 whole stage, whoever is not transmitting sits in the presence rail on the right,
 and the pill at the top names the room and its occupancy. The line worth reading
-is the telemetry over the frame: `254 kb/s 1600×900 · 28fps srflx · 8ms`, an
-`srflx` path being the video going straight from one browser to the other, with
-nothing relaying it.
+is the telemetry over the frame: `254 kb/s 1600×900 · 28fps srflx · 8ms`. An
+`srflx` path means the video is going straight from one browser to the other,
+with nothing relaying it.
 
 ## Install and run
 
@@ -30,12 +31,11 @@ bunx @thoth-dev/tailcast
 ```
 
 That brings up HTTP plus the signaling WebSocket on `:3000`, and STUN on UDP
-`:3478`. `npx @thoth-dev/tailcast` also works **if** Bun is already
-installed on the machine: the published entry point is a small Node launcher
-that finds `bun` (on `PATH`, in `$BUN_INSTALL/bin` or in `~/.bun/bin`, which
-covers a non-login shell that never read the install rc) and hands the run to
-`bin/cli.ts`. Without Bun it prints what is missing, why the server needs it,
-and the one line that installs it, then exits 1.
+`:3478`. `npx @thoth-dev/tailcast` also works **if** Bun is already installed:
+the published entry point is a small Node launcher that finds `bun` (on `PATH`,
+in `$BUN_INSTALL/bin` or in `~/.bun/bin`, which covers a non-login shell that
+never read the install rc) and hands the run over. Without Bun it prints what is
+missing, why the server needs it, and the one line that installs it, then exits.
 
 Then, on the same machine:
 
@@ -49,13 +49,13 @@ optional:** `getDisplayMedia` exists only in a secure context, so serving on
 `http://100.64.x.y:3000` makes the API disappear from `navigator.mediaDevices`.
 
 `tailscale serve` needs HTTPS enabled on the tailnet first (admin console,
-**DNS → Enable HTTPS**). Without it, `tailscale cert` answers `HTTPS cert
-support is not enabled` and serve never comes up.
+**DNS → Enable HTTPS**). Without it, `tailscale cert` answers `HTTPS cert support
+is not enabled` and serve never comes up.
 
 STUN runs on UDP 3478 directly on the tailnet IP, outside `tailscale serve`,
 which proxies TCP only. If your tailnet has restrictive ACLs, open 3478/udp.
 
-## Flags and configuration
+## Flags
 
 ```bash
 bunx @thoth-dev/tailcast [flags]
@@ -70,166 +70,116 @@ bunx @thoth-dev/tailcast [flags]
 | `--pixels <n>` | `MAX_CAPTURE_PIXELS` | 1440000 | capture pixel budget (1600×900) |
 | `--bg` | | | run in the background |
 | `--stop` | | | stop whatever runs in the background on the same port |
-| `--force` | | | with `--stop`, kill even when the process can't be confirmed as ours (no `/proc`) |
+| `--force` | | | with `--stop`, kill even when the process can't be confirmed as ours |
 | `-h, --help` | | | print the help |
 | `-v, --version` | | | print the version |
 
 The CLI only forwards these to `server.ts` through the environment, which keeps
-`bun run server.ts` working on its own, with the same variables and no CLI in
-the loop. `GET /config` hands `stunPort`, `maxPeers`, `maxSharers` and
-`maxCapturePixels` to the client, so no limit is duplicated in the HTML.
+`bun run server.ts` working on its own. The server stays the sole authority over
+the room limits: it is the only place that sees a whole room, so two simultaneous
+clicks on different machines can only be serialized there.
 
-The server stays the sole authority over the room limits. It is the only place
-that sees a whole room, so two simultaneous clicks on different machines can
-only be serialized there.
-
-### Background mode
-
-With `--bg`, the pidfile and the log live in `$XDG_RUNTIME_DIR/tailcast/`,
-as `tailcast-<port>.pid` and `tailcast-<port>.log`. Without
-`XDG_RUNTIME_DIR` they fall back to a `tailcast-<uid>/` directory inside the
-temp dir, created with mode 0700 and refused if it belongs to somebody else. Not
-`$TMPDIR` itself, on purpose: its 1777 mode lets any user on the machine plant a
-pidfile in the path. The command reports success only once the child's own
-`/config` answers, which means after it actually bound the port, not merely
-after it was spawned. `--stop --port <n>` kills whatever that pidfile registers.
-
-## Install as an app
-
-The page is a PWA. On Chrome and Edge an install button appears as the last one
-in the dock, and the app then opens in its own window, with no tab and no
-address bar. Once installed the button is gone for good.
-
-This rides on the same HTTPS as everything else: a service worker, like
-`getDisplayMedia`, only exists in a secure context. Over `http://100.x` there is
-no button and no worker, and the page works exactly the same.
-
-On iPhone and iPad there is no install event — the path is **Share → Add to Home
-Screen**, in Safari. It is for watching only: no mobile browser captures a
-screen.
-
-The worker is network-first for everything and the cache is only a safety net.
-There is no real offline mode: without signaling there is no room. What it fixes
-is a network drop mid-call, which now shows the page that was already loaded,
-reconnecting on its own, instead of the browser's error screen.
-
-Losing the address bar costs nothing: the room button in the dock switches rooms
-without one.
-
-The icons are the thoth favicon set as delivered, at the root of `public/`.
+With `--bg`, the pidfile and the log live in `$XDG_RUNTIME_DIR/tailcast/` as
+`tailcast-<port>.{pid,log}`, falling back to a 0700 `tailcast-<uid>/` in the temp
+dir. The command reports success only once the child's own `/config` answers,
+which means after it actually bound the port rather than merely after it was
+spawned.
 
 ## Rooms
 
-The room comes from the URL hash: `/#retro`, `/#pair`. With no hash it falls
-back to `room`.
+The room comes from the URL hash: `/#retro`, `/#pair`. With no hash it falls back
+to `room`. Anyone opening the same link lands in the same place, and a room
+exists only while somebody is inside it.
+
+Your name is chosen once, in the entry dialog, and is **required** (3 characters
+minimum, 24 maximum): whoever is on the other side needs to know whose screen
+they are looking at. It is a label and nothing more — there is no login and no
+identity behind it.
 
 ## Why there is a STUN server here
 
 Chrome hides private-IP host candidates behind mDNS names (`.local`), and a
-Tailscale address falls in the CGNAT range 100.64/10, which it treats as
-private. mDNS needs multicast, multicast does not cross the tailnet, the remote
-peer never resolves the name, and ICE fails in silence.
+Tailscale address falls in the CGNAT range 100.64/10, which it treats as private.
+mDNS needs multicast, multicast does not cross the tailnet, the remote peer never
+resolves the name, and ICE fails in silence.
 
-A STUN server inside the tailnet returns the peer's 100.x as an srflx candidate,
-which is not obfuscated. It is about 50 lines in `stun.ts`, and it is what makes
-the thing connect.
+A STUN server inside the tailnet returns the peer's 100.x as an `srflx`
+candidate, which is not obfuscated. It is about 50 lines in `stun.ts`, and it is
+what makes the thing connect.
 
 ## Topology
 
 Star per sharer, not mesh. Whoever shares opens one `RTCPeerConnection` per
 viewer. With 1 sharer and 4 viewers that is 4 connections and an upload of
-4 × bitrate. `CAP_BITRATE` is 1.5 Mbps per peer, so roughly 6 Mbps of upload
-with 4 viewers.
+4 × bitrate; the cap is 1.5 Mb/s per peer, so roughly 6 Mb/s of upload.
 
-PeerConnections are **directional**: `sending` and `receiving` are separate maps
-and a bidirectional PC never exists. Each PC has exactly one offerer, which
-removes glare and makes perfect negotiation unnecessary. Do not unify the two
-maps.
+**The sharer's CPU cost is a step, not a curve.** There is one encoder per
+PeerConnection, and it was measured: with 4 destinations, capturing at 1920×1080
+eats 10.1 cores out of 12 and delivers 6–9 fps, while 1600×900 costs 2.0 cores at
+a full 30 fps. The cause is thread oversubscription, not pixel cost. That is why
+the capture budget exists (`--pixels`, 1,440,000 by default): the client scales
+the captured track down to fit it once at the source, preserving the real aspect
+ratio, so 1920×1200 becomes 1518×948. **Raising it past 2,073,600 brings the step
+back.**
 
-### The sharer's CPU cost is a step, not a curve
+Notice which limit drives which cost. A sharer opens one PC per destination —
+that is `--peers - 1` encoders — and that number does not change when a second
+person also starts transmitting. What `--sharers` controls is how many streams
+each machine *decodes*, and decoding is cheap: 0.18 core per stream. What
+deserves care is the number of people in the room, not the number of
+transmitters; if `--peers` ever grows much it turns into N² and you need an SFU.
 
-There is **one encoder per PeerConnection**, and that was measured. With 4
-destinations, capturing at 1920×1080 eats 10.1 cores out of 12 and delivers 6 to
-9 fps, while 1600×900 costs 2.0 cores at a full 30 fps. Even 1856×1044, only 7%
-fewer pixels than 1080p, already drops to 3.8 cores.
+Every number here, with the run that produced it: [`docs/measurements.md`](docs/measurements.md).
 
-The cause is thread oversubscription, not pixel cost. WebRTC gives each
-PeerConnection around 8 encode threads at 1920×1080 and above, around 3 below
-it. Counted in `/proc`, the sharer's renderer carries 51 threads at 1920×1080
-against 33 at 1600×900. Four encoders means 32 encode threads fighting over 12
-logical CPUs.
+## The interface
 
-That is why the capture budget exists (`--pixels`, 1,440,000 by default). The
-client scales the captured track down to fit the budget while preserving the
-screen's real aspect ratio, so 1920×1200 becomes 1518×948. The cut happens
-**once at the source**, not once per connection: the N encoders all read the
-same track. Any new budget has to stay below 1920×1080 pixels (2,073,600) or the
-step comes back.
+- The telemetry over each tile shows bitrate, resolution, fps, candidate type and
+  RTT. `host` instead of `srflx` means both peers are on the same physical LAN
+  and STUN was never needed; `relay` would mean the direct path failed.
+- On your own tile it shows the **captured** resolution, and if the encoder is
+  sending less than that, the real one appears beside it
+  (`1600×900 → 640×360 bandwidth`): a correct capture with the output one rung
+  down is the whole diagnosis. If the encoding policy did not take in your
+  browser, `policy refused` or `policy not confirmed` shows up in place of the
+  path field.
+- The bar meter is the last minute of bitrate, one bar per second. A link going
+  bad shows up there before the instantaneous number explains why.
+- Anyone in the room who is not transmitting appears as a monogram in a rail
+  below the screens; with nobody transmitting, the monograms inherit the stage.
+  Whoever asked to share and is still negotiating reads `connecting…`.
+- Click a screen (or its focus button) to give it the whole stage; the others
+  become thumbnails. `esc` leaves focus, and `fullscreen` hands the frame to the
+  browser's own fullscreen.
+- **Wheel zooms the tile you are pointing at**, drag pans, double-click resets.
+  This is receiver-side and costs the sender nothing. Page zoom is not a
+  substitute: it was measured, and it makes the picture *worse*.
+- Sounds mark someone joining, leaving and starting to share. The dock button
+  mutes them; nothing plays while the tab is in the background.
+- The page never scrolls. The stage takes the height that is left and every tile
+  is fitted inside it at the real aspect ratio of the shared screen. Nothing is
+  cropped.
 
-### Which limit governs what
+## Install as an app
 
-With `--sharers 3` the room's worst case is 3 sharers × 4 destinations = 12
-PeerConnections. But notice which limit drives which cost. **A sharer opens one
-PC per destination, that is `--peers - 1` = 4 encoders**, and that number does
-not change when a second or third person also starts transmitting. What
-`--sharers` controls is how many streams each machine *decodes*, and decoding is
-cheap: 0.18 core per stream, measured. That is why the cap went from 2 to 3. The
-fear was CPU and it was pointed at the wrong axis.
+The page is a PWA. On Chrome and Edge an install button appears as the last one
+in the dock, and the app then opens in its own window, with no tab and no address
+bar. Once installed the button is gone for good. On iPhone and iPad there is no
+install event — the path is **Share → Add to Home Screen**, in Safari. It is for
+watching only: no mobile browser captures a screen.
 
-What still deserves care is the number of people in the room, not the number of
-transmitters. If `--peers` ever grows much, it turns into N² and you need an SFU
-(mediasoup, LiveKit).
+This rides on the same HTTPS as everything else: a service worker, like
+`getDisplayMedia`, only exists in a secure context. The worker is network-first
+for everything and the cache is only a safety net. There is no real offline mode
+— without signaling there is no room. What it fixes is a network drop mid-call,
+which now shows the page that was already loaded, reconnecting on its own,
+instead of the browser's error screen.
 
 ## Protocol
 
-JSON over WebSocket at `/ws`, discriminated by `t`.
-
-Client to server:
-
-```jsonc
-{ "t": "join",   "room": "standup", "name": "gabriel" }   // name is optional
-{ "t": "rename", "name": "gabriel" }
-{ "t": "signal", "to": "<peerId>", "data": { /* opaque */ } }
-{ "t": "share-start" }
-{ "t": "share-stop" }
-```
-
-Server to client:
-
-```jsonc
-{ "t": "joined",       "id": "<myId>", "peers": ["<id>", ...], "startedAt": <epoch ms> }
-{ "t": "denied",       "reason": "room-full" }
-{ "t": "peer-joined",  "id": "<id>" }
-{ "t": "peer-left",    "id": "<id>" }
-{ "t": "names",        "map": { "<id>": "gabriel", ... } }
-{ "t": "sharers",      "ids": ["<id>", ...] }
-{ "t": "share-denied", "reason": "limit" }
-{ "t": "signal",       "from": "<id>", "data": { /* opaque */ } }
-```
-
-`sharers` is a **state-based** broadcast: the whole set goes out on every
-change, plus a snapshot for whoever just joined. That makes it idempotent, it
-survives a reconnect, and the client never has to rebuild state from deltas. An
-id that leaves the set has its tile and its PC torn down at once, without
-waiting for `connectionstatechange`.
-
-`startedAt` is the room session clock: the epoch (ms) when the first peer
-joined, sent once on `joined`. Every client counts from that single timestamp
-locally, so there is no periodic sync. It shares the room's lifecycle — it is
-born when the first peer joins and dies when the room empties — because an empty
-room does not exist here.
-
-`names` follows the same idea and is **derived from the sockets**: the name
-lives on the peer's socket rather than in a separate `Map`, and the published
-map is built by walking the room at publish time. Leaving the room erases the
-name by itself, with no second cleanup path to drift from `close`. A name is
-optional and purely cosmetic, so whoever picks none shows up by id. The server
-collapses whitespace, trims, and cuts at 24 characters. A name that is empty
-after that gets no entry in the map, which is also how you erase your own.
-
-The server **never** looks inside `data`. That rule is what allows the
-negotiation to change without touching the backend. The name travels in a field
-of its own (`join`/`rename`) for the same reason, never inside `data`.
+JSON over WebSocket at `/ws`, discriminated by `t`. The server never looks inside
+`data` — that rule is what allows the WebRTC negotiation to change without
+touching the backend. Full wire format:
+[`docs/protocol.md`](docs/protocol.md).
 
 ## Security
 
@@ -238,67 +188,23 @@ layer**. Do not add Funnel, port forwarding or a public bind without real auth
 first. Outside the tailnet, peers also stop sharing a network, which breaks the
 STUN premise and starts requiring TURN.
 
-## The interface
-
-The UI is in Brazilian Portuguese, so the labels below are quoted as they
-appear.
-
-- The telemetry strip under each tile shows bitrate, resolution, fps, candidate
-  type and RTT. `host` instead of `srflx` means both peers are on the same
-  physical LAN and STUN was never needed.
-- On your own tile the strip shows the **captured** resolution. If the encoder
-  is sending less than that, the real resolution appears beside it
-  (`1600×900 → 640×360 bandwidth`): a correct capture with the output one rung
-  down is the whole diagnosis. And if the encoding policy did not take in your
-  browser, `política recusada` or `política não confirmada` shows up in place of
-  the path field. Without that policy the encoder trades resolution for
-  framerate and walks down a ladder that takes tens of seconds to climb back, if
-  it climbs at all.
-- The bar meter is the last minute of bitrate, one bar per second. A link going
-  bad shows up there before the instantaneous number explains why. On a wide
-  tile it sits at the end of the telemetry line; on a narrow one it takes a
-  full-width band just above it.
-- Your name is chosen once, in the entry dialog, and is **required** (minimum 3
-  characters): the `join` only leaves after it, so an unnamed person stays
-  connected but in no room. Up to 24 characters, kept in the browser's
-  `localStorage` and resent on reconnect. It is a label and nothing more, with
-  no login or identity behind it. The server still accepts erasing it with an
-  empty `rename`, and then you show up by id.
-- Anyone in the room who is not transmitting appears on a plate with the initial
-  of their name, in a rail below the screens. Whoever picked no name shows `_`
-  and the id, because ids are hex and the initial of `3f9a1b2c` is nobody.
-  Whoever asked to share and is still negotiating shows up as `conectando…`. The
-  rail has a height cap on purpose: a plate carries almost no information per
-  pixel, and the stage is video area. With nobody transmitting, the plates
-  inherit the stage.
-- Click a screen (or its `focar` button) to give it the whole stage; the others
-  become thumbnails in a rail, presence plates included. `esc` leaves focus.
-  `tela cheia` uses the browser's fullscreen API and hides the interface.
-- The page never scrolls. The stage takes the height that is left and every tile
-  is fitted inside it at the real aspect ratio of the shared screen. Nothing is
-  cropped.
-
-## Tuning worth knowing about
-
-- `contentHint = "detail"` is already set: it favors text sharpness over
-  smoothness. To share video instead of code, switch it to `"motion"`.
-- `degradationPreference = "maintain-resolution"` holds the resolution and drops
-  the framerate under pressure. For code that is what you want. Switching to
-  `"balanced"` was measured and does **not** relieve CPU with several
-  destinations (10.4 cores against 10.1); lowering the framerate was measured
-  too and makes it **worse** (11.2 cores at 15fps). The pixel budget is what
-  actually helps.
-- Raising `--pixels` past 2,073,600 brings back the CPU collapse described under
-  Topology.
-
-## Testing (from a clone of the repository)
+## Development
 
 ```bash
+bun install
+bun run server.ts       # then http://localhost:3000
+
 (bun run server.ts > /tmp/s.log 2>&1 & echo $! > /tmp/p); sleep 2; \
-  timeout 90 bun run test.ts; kill $(cat /tmp/p)
+  timeout 90 bun run test.ts; kill $(cat /tmp/p)     # 100 assertions, needs the server
+bun test                                             # the CLI's own suite
+bun run format                                       # biome; also runs on commit
 ```
 
-Covers static files, signaling, the room cap, sharer arbitration and the STUN
-wire format, all headless, with no browser. **WebRTC is not covered:** ICE
-closing over 100.x addresses can only be verified with two real machines on the
-tailnet and `chrome://webrtc-internals`.
+`test.ts` covers static files, signaling, the room cap, sharer arbitration and
+the STUN wire format, all headless. `bench/layout.ts` drives real Chrome over CDP
+for the layout, the presence rail, the entry gate and receiver-side zoom.
+**WebRTC itself is covered by neither:** ICE closing over 100.x addresses can
+only be verified with two real machines on the tailnet — which has been done, and
+is recorded in [`docs/measurements.md`](docs/measurements.md).
+
+MIT.
