@@ -36,6 +36,9 @@
     --fg:     #dbe4e8;
     --dim:    #7a8b95;
     --accent: #5ad3bb;
+    /* what reads on the accent: the on and go glyphs. undefined, they fell
+       back to --fg and sat near-white on the mint, washed out. */
+    --ink: #04211b;
     --warn:   #e6b25c;
     --stop:   #d9534a;
     /* mono is machine truth (ids, rates, resolutions, paths, room names, and
@@ -247,8 +250,10 @@
     width: 20px; height: 20px; fill: none; stroke: currentColor;
     stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
   }
-  .dock button.on { background: var(--accent); color: var(--ink); }
-  .dock button.on:hover { background: #6bd8c4; }
+  /* the lit state is a lamp, not a highlight: deeper than the mint accent so
+     it reads filled at a glance. */
+  .dock button.on { background: #26a58f; color: var(--ink); }
+  .dock button.on:hover { background: #2fb59d; }
   .dock button.stop { background: var(--stop); color: #fff; }
   .dock button.stop:hover { background: #e35f55; }
   /* copying is not a state. the button used to go green for 1.4s, and a steady
@@ -1168,7 +1173,6 @@ function applyZoom(id) {
     zooms.delete(id);
     video.style.transform = "";
     frame.classList.remove("zoomed", "dragging");
-    frame.title = "click focuses · wheel zooms · double click restores";
     if (badge) { badge.hidden = true; badge.classList.remove("up"); }
     return;
   }
@@ -1180,7 +1184,6 @@ function applyZoom(id) {
   video.style.transformOrigin = "0 0";
   video.style.transform = `translate(${z.x}px, ${z.y}px) scale(${z.k})`;
   frame.classList.add("zoomed");
-  frame.title = "drag to move · wheel adjusts · double click restores";
   if (badge) {
     // how much detail is left to recover: the frame shows the video already
     // shrunk, and this ratio says by how much. past it no new pixel arrives,
@@ -1200,9 +1203,8 @@ function applyZoom(id) {
 
 function bindZoom(tile, id) {
   const frame = tile.querySelector(".frame");
-  // the hint lives in the frame's title, not in a new button: zoom is not a
-  // dock mode, it is a gesture over the video.
-  frame.title = "click focuses · wheel zooms · double click restores";
+  // no title on the frame: the browser paints it as a black banner over the
+  // video mid-call, and the empty-stage card already documents the gestures.
   let drag = null;                // { px, py, zx, zy } while panning
   let panned = false;             // the click after a pan must not focus
 
@@ -1870,7 +1872,7 @@ function render() {
         named ? initial(nameOf(id)) : "_";
       if (waiting) tile.querySelector(".who b").textContent = "connecting…";
       // two people with the same name are only told apart by id.
-      tile.title = named ? `${nameOf(id)} · ${id}` : id;
+      tile.querySelector(".who").title = named ? `${nameOf(id)} · ${id}` : id;
       continue;
     }
     const on = id === focusId;
@@ -1947,11 +1949,16 @@ if ("serviceWorker" in navigator) {
 // promising an install that will not happen, on firefox or safari or plain
 // http, is worse than having no button. ios fires no such event: there the path
 // is safari's own "Add to Home Screen", which is what the apple-mobile-web-app
-// metas serve.
+// metas serve. and once the app IS the window it runs in, the prompt is noise:
+// standalone (the manifest window, or ios's navigator.standalone) means
+// installed, so the offered event is dropped.
 let installPrompt = null;
+const standaloneMQ = matchMedia("(display-mode: standalone)");
+const standalone = () => standaloneMQ.matches || navigator.standalone === true;
 
 addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();             // without this chrome shows its own bar on top
+  if (standalone()) return;
   installPrompt = e;
   $("installBtn").hidden = false;
 });
