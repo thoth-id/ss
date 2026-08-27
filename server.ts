@@ -110,6 +110,49 @@ function broadcast(room: string, payload: unknown, except?: Socket) {
 	for (const peer of set) if (peer !== except) peer.send(msg);
 }
 
+// a sharer slot is a STREAM, not a person: one peer can hold two, its screen
+// and its camera. that is the same axis MAX_SHARERS was always measured on --
+// how many streams each machine DECODES, at 0.18 core each -- so counting
+// people here would have made the limit stop describing what it protects.
+//
+// the set holds "<peerId>#<src>" keys. the composite lives in one place, here
+// and in the client's keyOf(), and nothing between them parses it.
+const SOURCES = new Set(["screen", "camera"]);
+
+function sourceOf(raw: unknown): string | null {
+	// absent means screen: that is what every message meant before there were
+	// two, and an old client must keep working.
+	if (raw === undefined || raw === null) return "screen";
+	return typeof raw === "string" && SOURCES.has(raw) ? raw : null;
+}
+
+const streamKey = (id: string, src: string) => `${id}#${src}`;
+const peerOfStream = (key: string) => key.slice(0, key.indexOf("#"));
+
+// every stream a peer holds. used by the close path, where the socket dies and
+// takes all of its sources with it.
+function streamsOf(set: Set<string>, id: string): string[] {
+	return [...set].filter((k) => peerOfStream(k) === id);
+}
+
+// which streams a share-stop names. absent means every source this peer holds,
+// which is what a client that predates the second one intends by sending it at
+// all; anything else goes through sourceOf, so `SOURCES` governs both messages
+// and an unknown source cannot half-land.
+function stopKeys(raw: unknown, set: Set<string>, id: string): string[] {
+	if (raw === undefined) return streamsOf(set, id);
+	const src = sourceOf(raw);
+	return src ? [streamKey(id, src)] : [];
+}
+
+// delete every key and say whether the set actually moved: only a real change
+// is worth a broadcast.
+function dropStreams(set: Set<string>, keys: string[]): boolean {
+	let changed = false;
+	for (const k of keys) if (set.delete(k)) changed = true;
+	return changed;
+}
+
 function sharersOf(room: string) {
 	let set = sharers.get(room);
 	if (!set) {
@@ -272,20 +315,27 @@ Bun.serve<Client>({
 			}
 
 			if (msg.t === "share-start") {
+				const src = sourceOf(msg.src);
+				// the environment is untrusted and so is the wire: an unknown source
+				// would take a slot under a key nothing can ever free.
+				if (!src) return;
 				const set = sharersOf(ws.data.room);
-				if (!set.has(ws.data.id) && set.size >= MAX_SHARERS) {
-					ws.send(JSON.stringify({ t: "share-denied", reason: "limit" }));
+				const key = streamKey(ws.data.id, src);
+				if (!set.has(key) && set.size >= MAX_SHARERS) {
+					// name the source: the client holds a live capture for it and has
+					// to know which one to drop, now that it can hold two.
+					ws.send(JSON.stringify({ t: "share-denied", reason: "limit", src }));
 					return;
 				}
-				if (set.has(ws.data.id)) return; // idempotent, no re-broadcast
-				set.add(ws.data.id);
+				if (set.has(key)) return; // idempotent, no re-broadcast
+				set.add(key);
 				publishSharers(ws.data.room);
 				return;
 			}
 
 			if (msg.t === "share-stop") {
 				const set = sharersOf(ws.data.room);
-				if (!set.delete(ws.data.id)) return;
+				if (!dropStreams(set, stopKeys(msg.src, set, ws.data.id))) return;
 				publishSharers(ws.data.room);
 				return;
 			}
@@ -310,8 +360,10 @@ Bun.serve<Client>({
 			if (!set) return;
 			set.delete(ws);
 
-			// the tab-close path: free the sharer slot.
-			const wasSharing = sharers.get(room)?.delete(ws.data.id);
+			// the tab-close path: free every sharer slot the socket held, since one
+			// peer can hold both its screen and its camera.
+			const held = sharers.get(room);
+			const wasSharing = !!held && dropStreams(held, streamsOf(held, ws.data.id));
 			// the name lives on the socket, so leaving already took it out of the
 			// map. someone who left unnamed changes nothing and needs no broadcast.
 			const hadName = !!ws.data.name;

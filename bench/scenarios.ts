@@ -84,9 +84,14 @@ export async function gateScenario(check: CheckFn): Promise<void> {
 	check("joined after answering", !!m.myId && m.gate === false, `${m.myId} gate=${m.gate}`);
 }
 
-export async function callScenario(check: CheckFn): Promise<void> {
-	// a populated room: the call grid of everybody not transmitting.
-	await evalJS(`(() => {
+// the one canvas stream the scenarios inject. it was defined twice with
+// different framerates and different content, and a stream that draws once and
+// a stream that animates are not interchangeable: an assertion that needs live
+// frames passes under one and hangs under the other, for a reason that is
+// nowhere in the assertion. installing it is idempotent, so a scenario can be
+// run on its own without depending on which one ran before it.
+const INSTALL_FAKE = `(() => {
+  if (window.fake) return;
   window.fake = (w, h) => {
     const c = document.createElement("canvas");
     c.width = w; c.height = h;
@@ -99,6 +104,12 @@ export async function callScenario(check: CheckFn): Promise<void> {
     }, 66);
     return c.captureStream(15);
   };
+})()`;
+
+export async function callScenario(check: CheckFn): Promise<void> {
+	// a populated room: the call grid of everybody not transmitting.
+	await evalJS(INSTALL_FAKE);
+	await evalJS(`(() => {
   peers.add("aaaa1111"); peers.add("bbbb2222"); peers.add("cccc3333");
   names.set("aaaa1111", "GRO"); names.set("bbbb2222", "Malu"); names.set("cccc3333", "Ana");
   sharers = new Set();
@@ -567,4 +578,619 @@ export async function roomScenario(check: CheckFn): Promise<void> {
 	);
 	check("the page does not scroll", !m.scrolls, `${m.scrollH} > ${m.innerH}`);
 	await capture("7-room-switch");
+}
+
+type QualProbe = {
+	emptyPolicy: string | null;
+	emptyDeg: string | undefined;
+	onePolicy: string | null;
+	oneBitrate: number | undefined;
+	oneFps: number | undefined;
+};
+
+type MenuBox = { left: number; top: number; right: number; bottom: number; items: number };
+
+// the profile selector, and the regression under it.
+//
+// what cannot be checked here is the encoder: no remote peer, no real sender.
+// what can, and is the whole point, is that an empty `encodings` no longer
+// takes `degradationPreference` down with it. that ordering is what turned a
+// 1600×900 capture into 640×360 on the machine that reported it, and a fake
+// sender reproduces the shape exactly: getParameters() answering with an empty
+// list is one object literal.
+export async function qualityScenario(check: CheckFn): Promise<void> {
+	console.log("\n--- capture quality ---");
+	await setViewport(1440, 900);
+	await settle();
+
+	check(
+		"the dock offers the selector, on the default profile",
+		await evalJS<boolean>(`(() => {
+  const b = document.getElementById("qualBtn");
+  return !!b && !b.disabled && !b.classList.contains("on") && quality === QUALITY_DEFAULT;
+})()`),
+		await evalJS<string>(`quality`),
+	);
+
+	const qualBtnAt = await evalJS<{ x: number; y: number }>(`(() => {
+  const r = document.getElementById("qualBtn").getBoundingClientRect();
+  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+})()`);
+	const menuShown = () =>
+		evalJS<boolean>(`getComputedStyle(document.getElementById("qmenu")).display !== "none"`);
+	const itemAt = (key: string) =>
+		evalJS<{ x: number; y: number }>(`(() => {
+  const r = document.querySelector('#qmenu [data-q="${key}"]').getBoundingClientRect();
+  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+})()`);
+
+	await clickAt(qualBtnAt.x, qualBtnAt.y);
+	await Bun.sleep(150);
+	const box = await evalJS<MenuBox>(`(() => {
+  const m = document.getElementById("qmenu").getBoundingClientRect();
+  return { left: m.left, top: m.top, right: m.right, bottom: m.bottom,
+           items: document.querySelectorAll("#qmenu [data-q]").length };
+})()`);
+	check("it opens with one item per profile", box.items === 3, JSON.stringify(box));
+	check(
+		"and lands inside the viewport, above the dock",
+		box.left >= 0 && box.top >= 0 && box.right <= 1440 && box.bottom <= 900,
+		JSON.stringify(box),
+	);
+	// `position: fixed` is what keeps it out of the stage the tiles are fitted
+	// into. a menu in the flow would extend the document and scroll the page,
+	// which is the one thing this whole layout exists to prevent.
+	const m1 = await measure();
+	check("the page does not scroll with it open", !m1.scrolls, `${m1.scrollH} > ${m1.innerH}`);
+	await capture("7-quality");
+	check(
+		"the checked item is the active profile",
+		(await evalJS<string | null>(
+			`document.querySelector('#qmenu [aria-checked="true"]').dataset.q`,
+		)) === (await evalJS<string>(`quality`)),
+	);
+
+	await evalJS(
+		`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`,
+	);
+	await Bun.sleep(80);
+	// the computed display, never the `hidden` attribute. `.qmenu { display:
+	// flex }` outranks the browser's `[hidden]` rule, so the attribute was set
+	// correctly while the menu stayed on screen taking clicks, and an assertion
+	// reading the attribute passed through the whole defect.
+	check("esc closes it", (await menuShown()) === false && !(await evalJS<boolean>(`qualOpen`)));
+	check(
+		"and the focus returns to the button",
+		await evalJS<boolean>(`document.activeElement === document.getElementById("qualBtn")`),
+	);
+
+	// real clicks from here down: the menu is dismissed by pointerdown, and a
+	// synthetic .click() never fires one.
+	await clickAt(qualBtnAt.x, qualBtnAt.y);
+	await Bun.sleep(150);
+	const textItem = await itemAt("text");
+	await clickAt(textItem.x, textItem.y);
+	await Bun.sleep(250);
+	// the mark used to be rewritten only by openQual(), so the menu closed still
+	// showing the previous profile ticked and the click read as ignored.
+	check(
+		"choosing a profile marks it at once",
+		(await evalJS<string>(
+			`[...document.querySelectorAll("#qmenu [data-q]")].map((b) => b.dataset.q + ":" + b.getAttribute("aria-checked")).join(" ")`,
+		)) === "text:true sharp:false motion:false",
+		await evalJS<string>(`quality`),
+	);
+	check(
+		"and colours the button, and stays open to compare",
+		(await evalJS<boolean>(`(() => {
+  const b = document.getElementById("qualBtn");
+  return quality === "text" && b.classList.contains("on") && b.title.includes("Text");
+})()`)) && (await menuShown()) === true,
+		await evalJS<string>(`document.getElementById("qualBtn").title`),
+	);
+	check(
+		"and it survives a reload",
+		(await evalJS<string | null>(`localStorage.getItem(QUALITY_KEY)`)) === "text",
+	);
+
+	// clicking the stage is how the menu is dismissed in practice, and the
+	// tiles answer pointerdown, so the close has to happen there and not on
+	// click.
+	await clickAt(720, 300);
+	await Bun.sleep(150);
+	check("a click outside closes it", (await menuShown()) === false);
+	const under = await evalJS<{ inMenu: boolean; what: string }>(`(() => {
+  const el = document.elementFromPoint(${textItem.x}, ${textItem.y});
+  return {
+    inMenu: !!el?.closest("#qmenu"),
+    what: el ? el.tagName + " q=" + (el.closest("[data-q]")?.dataset.q ?? "-") : "nothing",
+  };
+})()`);
+	check("and the closed menu takes no clicks", !under.inMenu, under.what);
+
+	const probe = await evalJS<QualProbe>(`(async () => {
+  const mk = (encodings) => {
+    let seen = null;
+    const sender = {
+      track: { kind: "video" },
+      getParameters: () => seen || { encodings: encodings.map((e) => ({ ...e })) },
+      setParameters: async (p) => { seen = p; },
+    };
+    return { getSenders: () => [sender], read: () => seen };
+  };
+  // the throw is caught here rather than left to kill the run: the mutant
+  // below throws OUTSIDE applyEncoding's own try, and a stack trace is a worse
+  // answer than a red line naming the assertion.
+  const run = async (pc) => {
+    try { await applyEncoding(pc); } catch (e) { pc.policy = "threw: " + (e?.name || e); }
+  };
+  const empty = mk([]);
+  await run(empty);
+  const one = mk([{}]);
+  await run(one);
+  return {
+    emptyPolicy: empty.policy ?? null,
+    emptyDeg: empty.read()?.degradationPreference,
+    onePolicy: one.policy ?? null,
+    oneBitrate: one.read()?.encodings?.[0]?.maxBitrate,
+    oneFps: one.read()?.encodings?.[0]?.maxFramerate,
+  };
+})()`);
+	// the mutant: move `params.degradationPreference = ...` back under the
+	// encodings assignment and this one goes red with "policy refused:
+	// TypeError", which is the bug as it shipped.
+	check(
+		"an empty encodings list still gets the policy",
+		probe.emptyDeg === "maintain-resolution",
+		JSON.stringify(probe),
+	);
+	check(
+		"and says so instead of reporting a refusal",
+		probe.emptyPolicy === "no encodings",
+		String(probe.emptyPolicy),
+	);
+	check(
+		"a normal sender takes the profile's bitrate and framerate",
+		probe.oneBitrate === 4_000_000 && probe.oneFps === 5 && probe.onePolicy === null,
+		JSON.stringify(probe),
+	);
+
+	// a locked target is the difference between a stable stream and a negotiated
+	// one, so it has to survive the server's budget rather than scale with it.
+	const budgets = await evalJS<{ motion: number; sharp: number; cap: number }>(
+		`({ motion: budgetOf(QUALITY.motion), sharp: budgetOf(QUALITY.sharp), cap: maxCapturePixels })`,
+	);
+	check(
+		"Motion locks its target at 720p, under the server's budget",
+		budgets.motion === 1280 * 720 && budgets.sharp === budgets.cap,
+		`${budgets.motion} of ${budgets.cap}`,
+	);
+	await evalJS(`setQuality("motion")`);
+	await Bun.sleep(250);
+	const fCap = await evalJS<string>(`document.getElementById("fCap").textContent`);
+	check("and the empty card announces that, not the budget", fCap === "up to 1280×720", fCap);
+
+	// the general rule, not this menu's copy of it: every hideable element at
+	// once, measured as pixels. `#installBtn` was on screen with `hidden` set in
+	// every browser that never fires beforeinstallprompt, and nothing here would
+	// have caught it, because each element carried its own override and this one
+	// had none.
+	// every element, not the five that happened to use `hidden` the day this was
+	// written: nobody writes down the name of the element they forgot, which is
+	// exactly how `#installBtn` spent a release on screen with `hidden` set. the
+	// attribute is set with toggleAttribute so the source buttons' SVG icons are
+	// covered too -- they have no `hidden` IDL property, which is its own trap.
+	// one evaluation, because the second copy of a probe is where the list drifts
+	// and the failure message stops describing the failure.
+	const hid = await evalJS<string>(`(() => {
+  const bad = [];
+  for (const el of document.querySelectorAll("*")) {
+    const was = el.hasAttribute("hidden");
+    el.toggleAttribute("hidden", true);
+    const d = getComputedStyle(el).display;
+    if (d !== "none") bad.push((el.id || el.tagName.toLowerCase()) + "=" + d);
+    el.toggleAttribute("hidden", was);
+  }
+  return bad.join(" ");
+})()`);
+	check("`hidden` actually hides, on every element in the page", hid === "", hid);
+
+	await evalJS(`setQuality(QUALITY_DEFAULT)`);
+	await Bun.sleep(150);
+	check(
+		"the bench leaves the default profile behind",
+		await evalJS<boolean>(
+			`quality === QUALITY_DEFAULT && !document.getElementById("qualBtn").classList.contains("on")`,
+		),
+	);
+
+	// the cut, read back rather than assumed. reported from the field on a
+	// 2560×1440 screen: the sharer's strip read `2560×1440 → 640×360 · 30fps
+	// bandwidth`, and switching profile and back fixed it — the same call, the
+	// same arguments, working seconds later. so the source is one that swallows
+	// the first applyConstraints and honours the rest, which is what a screen
+	// capture with no sink did, and the assertion is on what getSettings()
+	// says afterwards, never on the call having resolved.
+	const cut = await evalJS<{
+		took: string;
+		policy: string | null;
+		refused: string;
+		refusedPolicy: string | null;
+	}>(
+		`(async () => {
+  const src = { width: 2560, height: 1440 };
+  const make = (swallow) => {
+    const c = document.createElement("canvas");
+    c.width = src.width; c.height = src.height;
+    const g = c.getContext("2d");
+    const draw = () => { g.fillStyle = "#0b1416"; g.fillRect(0, 0, c.width, c.height); };
+    setInterval(draw, 66); draw();
+    const s = c.captureStream(30);
+    const t = s.getVideoTracks()[0];
+    const real = t.applyConstraints.bind(t);
+    let left = swallow;
+    t.applyConstraints = (x) => (left-- > 0 ? Promise.resolve() : real(x));
+    return s;
+  };
+  const keep = local.get("screen");
+  const run = async (swallow) => {
+    const cap = { stream: make(swallow), geom: { ...src }, policy: null, gen: 0 };
+    local.set("screen", cap);
+    await applyCapture("screen");
+    const g = cap.stream.getVideoTracks()[0].getSettings();
+    cap.stream.getTracks().forEach((t) => t.stop());
+    return { box: g.width + "x" + g.height, policy: cap.policy };
+  };
+  const a = await run(1);    // the field case: the first call is lost
+  const b = await run(999);  // a source that will never take it
+  if (keep) local.set("screen", keep); else local.delete("screen");
+  return { took: a.box, policy: a.policy, refused: b.box, refusedPolicy: b.policy };
+})()`,
+	);
+	check(
+		"a swallowed applyConstraints is retried until the capture is inside the budget",
+		cut.took === "1600x900" && cut.policy === null,
+		JSON.stringify(cut),
+	);
+	check(
+		"and a source that never takes it says so instead of encoding the whole screen quietly",
+		cut.refused === "2560x1440" && cut.refusedPolicy === "cut refused",
+		JSON.stringify(cut),
+	);
+}
+
+type SourceState = {
+	screenHidden: boolean;
+	screenDisabled: boolean;
+	screenTitle: string;
+	camHidden: boolean;
+	camDisabled: boolean;
+	camTitle: string;
+	flipHidden: boolean;
+	icoScreen: boolean;
+	icoStop: boolean;
+	icoCam: boolean;
+	icoCamStop: boolean;
+};
+
+// reads what is actually rendered, not the flags that were set: `hidden` on a
+// dock button only means anything because of the [hidden] !important rule, and
+// that rule is the thing most easily reverted.
+async function sourceState(): Promise<SourceState> {
+	return await evalJS<SourceState>(`(() => {
+    const vis = (el) => getComputedStyle(el).display !== "none";
+    const s = document.getElementById("shareBtn");
+    const c = document.getElementById("camBtn");
+    return {
+      screenHidden: !vis(s),
+      screenDisabled: s.disabled,
+      screenTitle: s.title,
+      camHidden: !vis(c),
+      camDisabled: c.disabled,
+      camTitle: c.title,
+      flipHidden: !vis(document.getElementById("flipBtn")),
+      icoScreen: vis(document.getElementById("icoScreen")),
+      icoStop: vis(document.getElementById("icoStop")),
+      icoCam: vis(document.getElementById("icoCam")),
+      icoCamStop: vis(document.getElementById("icoCamStop")),
+    };
+  })()`);
+}
+
+export async function sourcesScenario(check: CheckFn): Promise<void> {
+	console.log("\n--- capture sources ---");
+
+	// the phone case: getDisplayMedia simply is not there. measured on an iPhone
+	// 16 Pro, iOS 18.7, in a secure context, so this is the real shape and not a
+	// hypothetical one.
+	await evalJS(`(() => {
+    window.__gdm = navigator.mediaDevices.getDisplayMedia;
+    Object.defineProperty(navigator.mediaDevices, "getDisplayMedia",
+      { value: undefined, configurable: true });
+    render();
+  })()`);
+	let st = await sourceState();
+	check("no getDisplayMedia leaves no screen button", st.screenHidden);
+	check("and the camera button is what remains", !st.camHidden && !st.camDisabled);
+
+	// hiding must follow the browser ANSWERING, never the origin: on an insecure
+	// origin the capability exists and the fix belongs to the user, so erasing
+	// the button would erase the only hint that screen sharing exists.
+	await evalJS(`(() => {
+    Object.defineProperty(window, "isSecureContext", { value: false, configurable: true });
+    render();
+  })()`);
+	st = await sourceState();
+	check("an insecure origin keeps the button instead", !st.screenHidden);
+	check("and puts the reason in its title", st.screenTitle.length > 20);
+	await evalJS(`(() => {
+    Object.defineProperty(window, "isSecureContext", { value: true, configurable: true });
+    render();
+  })()`);
+
+	// each button toggles its OWN source, because both can be on air together: a
+	// single shared stop is what made stopping the camera stop the screen.
+	await evalJS(INSTALL_FAKE);
+	await evalJS(`(() => {
+    local.set("camera", { stream: window.fake(640, 360), geom: null, policy: null, gen: 0 });
+    camHasBoth = true;
+    render();
+  })()`);
+	st = await sourceState();
+	check("a camera on air offers its own stop", !st.camHidden && !st.camDisabled);
+	check("and that button wears stop, not a lens", st.icoCamStop && !st.icoCam);
+	check("the screen button stays gone where there is no screen API", st.screenHidden);
+	check("and the flip appears only with a second camera", !st.flipHidden);
+
+	// the flip is a third action, so it got a button of its own: cramming it
+	// into the camera button is what cost the ability to stop the camera.
+	await evalJS("camHasBoth = false; render();");
+	st = await sourceState();
+	check("one camera means no flip button", st.flipHidden);
+	check("and the camera can still be stopped", !st.camDisabled);
+	await evalJS("camHasBoth = true; render();");
+
+	// both sources at once, which is the whole point of the composite key.
+	await evalJS(`(() => {
+    Object.defineProperty(navigator.mediaDevices, "getDisplayMedia",
+      { value: window.__gdm, configurable: true });
+    local.set("screen", { stream: window.fake(1280, 720), geom: null, policy: null, gen: 0 });
+    render();
+  })()`);
+	st = await sourceState();
+	check("screen and camera on air together", !st.screenHidden && st.icoStop && st.icoCamStop);
+	check(
+		"and each names the source it stops",
+		/screen/i.test(st.screenTitle) && /camera/i.test(st.camTitle),
+	);
+
+	// the dock grew two buttons, and 430px is where it runs out of room first.
+	// with both sources on air and the flip showing, this is its widest state.
+	await setViewport(430, 780);
+	await settle();
+	const fit = await evalJS<{
+		dock: number;
+		inner: number;
+		sw: number;
+		sh: number;
+		ih: number;
+	}>(`(() => {
+    const d = document.querySelector(".dock").getBoundingClientRect();
+    return {
+      dock: Math.round(d.width), inner: innerWidth,
+      sw: document.documentElement.scrollWidth,
+      sh: document.documentElement.scrollHeight, ih: innerHeight,
+    };
+  })()`);
+	check(
+		"the widest dock still fits 430px",
+		fit.dock <= fit.inner,
+		`dock=${fit.dock} inner=${fit.inner}`,
+	);
+	check("and the page does not scroll with it", fit.sw <= fit.inner && fit.sh === fit.ih);
+	await setViewport(1440, 900);
+	await settle();
+
+	// stopping one must leave the other alone: everything is keyed per source.
+	const after = await evalJS<{ screen: boolean; camera: boolean }>(`(() => {
+    local.get("camera").stream.getTracks().forEach((t) => t.stop());
+    local.delete("camera");
+    render();
+    return { screen: local.has("screen"), camera: local.has("camera") };
+  })()`);
+	check("stopping the camera leaves the screen up", after.screen && !after.camera);
+
+	await evalJS(`(() => {
+    for (const [s, cap] of [...local]) {
+      cap.stream.getTracks().forEach((t) => t.stop());
+      local.delete(s);
+    }
+    render();
+  })()`);
+	st = await sourceState();
+	check("restoring the API brings the screen button back", !st.screenHidden && st.icoScreen);
+
+	// existing is not working: a browser that defines getDisplayMedia and then
+	// refuses the capability has answered, and the button has to retire.
+	await evalJS("screenWorks = false; render();");
+	st = await sourceState();
+	check("an API that exists but refuses retires the button", st.screenHidden);
+	await evalJS("screenWorks = true; render();");
+
+	// and the mirror image: no camera on the machine, no camera button.
+	await evalJS("camHasAny = false; render();");
+	st = await sourceState();
+	check("no camera device leaves no camera button", st.camHidden);
+	await evalJS("camHasAny = true; render();");
+
+	// the same error name means opposite things per source, and getting that
+	// backwards is silent by construction: a refused camera permission that says
+	// nothing looks exactly like a button that does not work.
+	const msg = await evalJS<Record<string, string>>(`(() => ({
+    camDenied: captureError("camera", { name: "NotAllowedError" }),
+    screenCancel: captureError("screen", { name: "NotAllowedError" }),
+    camBusy: captureError("camera", { name: "NotReadableError" }),
+    camNone: captureError("camera", { name: "NotFoundError" }),
+  }))()`);
+	check("a cancelled screen picker stays silent", msg.screenCancel === "");
+	check("a refused camera does not", msg.camDenied.length > 40);
+	check("and says where to grant it", /settings/i.test(msg.camDenied));
+	check("a busy camera says what is holding it", /busy|one capture/i.test(msg.camBusy));
+	check("an absent camera says so plainly", /no camera/i.test(msg.camNone));
+
+	// and the whole path, not just the string: a rejected getUserMedia has to
+	// reach the stage.
+	const shown = await evalJS<{ text: string; visible: boolean }>(`(async () => {
+    const real = navigator.mediaDevices.getUserMedia;
+    Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+      value: () => Promise.reject(Object.assign(new Error("x"), { name: "NotAllowedError" })),
+      configurable: true,
+    });
+    await startShare("camera");
+    const n = document.getElementById("notice");
+    const out = { text: n.textContent, visible: getComputedStyle(n).display !== "none" };
+    Object.defineProperty(navigator.mediaDevices, "getUserMedia", { value: real, configurable: true });
+    notice("");
+    return out;
+  })()`);
+	check("a denied camera reaches the stage", shown.visible && /refused/i.test(shown.text));
+
+	// a camera rig: a stream whose track names a lens, the way a phone's does
+	// and a webcam's does not, plus an enumeration that stays blind until a
+	// permission is granted.
+	await evalJS(`(() => {
+    window.__mkCam = (facing) => {
+      const s = window.fake(640, 360);
+      const t = s.getVideoTracks()[0];
+      const real = t.getSettings.bind(t);
+      t.getSettings = () => Object.assign(real(), facing ? { facingMode: facing } : {});
+      return s;
+    };
+    window.__rig = ({ cams, gives, onCall }) => {
+      const realEnum = navigator.mediaDevices.enumerateDevices;
+      const realGum = navigator.mediaDevices.getUserMedia;
+      let granted = false;
+      Object.defineProperty(navigator.mediaDevices, "enumerateDevices", {
+        value: () => Promise.resolve(granted
+          ? Array.from({ length: cams }, (_, i) => ({ kind: "videoinput", deviceId: "c" + i }))
+          : []),
+        configurable: true,
+      });
+      Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+        value: (c) => { granted = true; return onCall(c) ?? Promise.resolve(gives()); },
+        configurable: true,
+      });
+      return () => {
+        Object.defineProperty(navigator.mediaDevices, "enumerateDevices", { value: realEnum, configurable: true });
+        Object.defineProperty(navigator.mediaDevices, "getUserMedia", { value: realGum, configurable: true });
+      };
+    };
+  })()`);
+
+	// the phone case, and the one the flip exists for: enumerateDevices does not
+	// tell the truth until a permission has been granted. safari answers an
+	// empty list before one and chrome a single generic entry whatever the
+	// device holds, so the single probe at boot counted no second camera on any
+	// phone and camHasBoth stayed false for the whole session. granting the
+	// camera is the moment the count becomes real.
+	//
+	// the same run answers `user` to a request for `environment`, which a phone
+	// is entitled to do: what the flip has to remember is the lens that came
+	// back, or its first click asks for the camera already open.
+	const grant = await evalJS<{ before: boolean; after: boolean; facing: string }>(`(async () => {
+    const restore = window.__rig({ cams: 2, gives: () => window.__mkCam("user"), onCall: () => null });
+    camHasBoth = false; camFacing = "environment"; camFacingKnown = false;
+    await probeCameras();
+    const before = camHasBoth;
+    await startShare("camera");
+    await new Promise((r) => setTimeout(r, 400));
+    const out = { before, after: camHasBoth, facing: camFacing };
+    stopShare("camera");
+    restore();
+    return out;
+  })()`);
+	check("no second camera is countable before the permission", grant.before === false);
+	check("and granting the camera is what reveals the flip", grant.after === true);
+	check("the lens that answered is the one remembered", grant.facing === "user", grant.facing);
+
+	// counting devices is not counting lenses. a laptop with a webcam and a
+	// phone offered as a Continuity camera enumerates two videoinputs and has
+	// nothing to flip between, which is exactly where the button turned up.
+	const desk = await evalJS<{ both: boolean }>(`(async () => {
+    const restore = window.__rig({ cams: 2, gives: () => window.__mkCam(null), onCall: () => null });
+    camHasBoth = false; camFacingKnown = false;
+    await startShare("camera");
+    await new Promise((r) => setTimeout(r, 400));
+    const out = { both: camHasBoth };
+    stopShare("camera");
+    restore();
+    return out;
+  })()`);
+	check("two cameras with no lens between them offer no flip", desk.both === false);
+
+	// the flip asks exactly, and it asks with the old lens already released:
+	// ideal lets a device answer with the camera that is open, and macOS/iOS
+	// allow one camera capture at a time, so overlapping the two is a second
+	// capture rather than a flip.
+	const flip = await evalJS<{ exact: string; oldLive: boolean; facing: string }>(`(async () => {
+    const seen = [];
+    const restore = window.__rig({
+      cams: 2,
+      gives: () => window.__mkCam(seen.length > 1 ? "environment" : "user"),
+      onCall: (c) => { seen.push({ f: c.video.facingMode, live: window.__old?.readyState }); return null; },
+    });
+    camHasBoth = false; camFacing = "environment"; camFacingKnown = false;
+    await startShare("camera");
+    await new Promise((r) => setTimeout(r, 300));
+    window.__old = local.get("camera").stream.getVideoTracks()[0];
+    await flipCamera();
+    await new Promise((r) => setTimeout(r, 300));
+    const out = {
+      exact: JSON.stringify(seen[1]?.f),
+      oldLive: seen[1]?.live === "live",
+      facing: camFacing,
+    };
+    stopShare("camera");
+    restore();
+    return out;
+  })()`);
+	check(
+		"the flip asks for the other lens exactly",
+		flip.exact === '{"exact":"environment"}',
+		flip.exact,
+	);
+	check("and the old lens is released before it asks", flip.oldLive === false);
+	check(
+		"and the share ends up on the lens that answered",
+		flip.facing === "environment",
+		flip.facing,
+	);
+
+	// a device with one lens refuses the exact request. the share must not be
+	// left black for it: the old lens comes back and the button retires.
+	const only = await evalJS<{ live: boolean; both: boolean }>(`(async () => {
+    let calls = 0;
+    const restore = window.__rig({
+      cams: 2,
+      gives: () => window.__mkCam("user"),
+      onCall: (c) => (calls++ === 1
+        ? Promise.reject(Object.assign(new Error("x"), { name: "OverconstrainedError" }))
+        : null),
+    });
+    camHasBoth = false; camFacing = "environment"; camFacingKnown = false;
+    await startShare("camera");
+    await new Promise((r) => setTimeout(r, 300));
+    await flipCamera();
+    await new Promise((r) => setTimeout(r, 300));
+    const t = local.get("camera")?.stream.getVideoTracks()[0];
+    const out = { live: t?.readyState === "live", both: camHasBoth };
+    stopShare("camera");
+    restore();
+    return out;
+  })()`);
+	check("a refused flip puts the old lens back", only.live === true);
+	check("and the flip button retires with it", only.both === false);
+
+	st = await sourceState();
+	check("the bench leaves both sources behind", !st.screenHidden && !st.camHidden);
 }

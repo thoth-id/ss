@@ -35,10 +35,13 @@
     --line-hi:#2f3d44;
     --fg:     #dbe4e8;
     --dim:    #7a8b95;
-    --accent: #5ad3bb;
-    /* what reads on the accent: the on and go glyphs. undefined, they fell
-       back to --fg and sat near-white on the mint, washed out. */
-    --ink: #04211b;
+    --accent: #2f9e88;
+    /* what sits on top of a filled accent (.dock button.on, .go). both rules
+       already asked for it and nothing ever declared it, and a var() with no
+       fallback is invalid at computed-value time, so `color` silently fell
+       back to inherit. white and not a dark ink: the icons are 1.7px strokes
+       and dark ones read as a hole punched in the button. */
+    --ink:    #fff;
     --warn:   #e6b25c;
     --stop:   #d9534a;
     /* mono is machine truth (ids, rates, resolutions, paths, room names, and
@@ -49,6 +52,17 @@
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
+  /* the browser's own `[hidden]` rule is `display: none` at the specificity of
+     a bare attribute, so ANY class that sets `display` outranks it and the
+     element stays on screen with `hidden` set. this was four hand-written
+     overrides (.notice, .empty, .gate, .qmenu) and one element nobody had
+     written one for: `#installBtn` is `.dock button { display: grid }`, so it
+     was on screen in every browser that never fires `beforeinstallprompt`,
+     which is the one place this app promises an install it cannot perform.
+     one rule, and the next hideable element is covered before it exists. the
+     only `!important` in this file, because specificity alone cannot beat a
+     class from a bare attribute selector. */
+  [hidden] { display: none !important; }
   html, body { height: 100%; }
   /* no scrolling: the stage takes the height that is left and fits the tiles
      inside it. a tile allowed to grow past that would scroll the page. */
@@ -96,7 +110,6 @@
     overflow-y: auto; padding: 10px 14px; border-radius: 10px;
     background: #241d10; color: var(--warn); border: 1px solid #3d3016;
   }
-  .notice[hidden] { display: none; }
 
   /* === tile === */
 
@@ -250,10 +263,8 @@
     width: 20px; height: 20px; fill: none; stroke: currentColor;
     stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
   }
-  /* the lit state is a lamp, not a highlight: deeper than the mint accent so
-     it reads filled at a glance. */
-  .dock button.on { background: #26a58f; color: var(--ink); }
-  .dock button.on:hover { background: #2fb59d; }
+  .dock button.on { background: var(--accent); color: var(--ink); }
+  .dock button.on:hover { background: #38b39b; }
   .dock button.stop { background: var(--stop); color: #fff; }
   .dock button.stop:hover { background: #e35f55; }
   /* copying is not a state. the button used to go green for 1.4s, and a steady
@@ -280,6 +291,30 @@
   .dock button.off:hover { background: var(--raise); color: var(--dim); }
   .dock .sep { width: 1px; height: 24px; background: var(--line); flex: none; }
 
+  /* === quality menu === */
+
+  /* the dock is round buttons and a profile is a choice among three, not a
+     toggle: it needs words. so the menu floats above the button instead of
+     living inside the dock, whose height is the band the fit reserves
+     (PAD_BOT). it is opaque, not glass: it sits over moving video. */
+  .qmenu {
+    position: fixed; z-index: 9; width: min(272px, calc(100vw - 24px));
+    padding: 6px; display: flex; flex-direction: column; gap: 2px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; box-shadow: 0 22px 44px -20px #000;
+  }
+  .qmenu button {
+    width: 100%; text-align: left; cursor: pointer; font: inherit;
+    padding: 8px 10px; border-radius: 10px;
+    background: none; color: var(--fg); border: 1px solid transparent;
+  }
+  .qmenu button:hover { background: var(--raise); }
+  .qmenu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .qmenu b { display: block; font-size: 13px; }
+  .qmenu span { display: block; margin-top: 2px; font-size: 11px; color: var(--dim); }
+  .qmenu [aria-checked="true"] { background: var(--raise); border-color: var(--accent); }
+  .qmenu [aria-checked="true"] b { color: var(--accent); }
+
   /* === empty stage === */
 
   .empty {
@@ -287,7 +322,6 @@
     display: flex; align-items: center; justify-content: center;
     padding: 60px 34px 96px; overflow-y: auto;
   }
-  .empty[hidden] { display: none; }
   .card { max-width: 560px; display: flex; flex-direction: column; gap: 16px; }
   .card h1 { font-size: 21px; font-weight: 600; margin: 0; letter-spacing: -.02em; }
   .card p { margin: 0; color: var(--dim); }
@@ -309,7 +343,6 @@
      goes out. whoever enters a room shows up to everybody, and "3f9a1b2c" is
      not a person. */
   .gate { position: fixed; inset: 0; z-index: 50; display: flex; }
-  .gate[hidden] { display: none; }
   .gate .scrim { position: absolute; inset: 0; background: rgba(3,6,8,.78); backdrop-filter: blur(4px); }
   .gate .card {
     position: relative; margin: auto; width: min(400px, calc(100% - 28px));
@@ -355,12 +388,12 @@
     background: transparent; cursor: pointer;
   }
   .rchip:hover { border-color: var(--line-hi); color: var(--fg); }
-  .rchip.on { color: var(--accent); border-color: #2b5a53; background: #12302c; }
+  .rchip.on { color: var(--accent); border-color: #265049; background: #0d2320; }
   .go {
     font: inherit; padding: 10px; border-radius: 10px; cursor: pointer;
     background: var(--accent); border: 1px solid var(--accent); color: var(--ink); font-weight: 600;
   }
-  .go:hover { background: #6bd8c4; }
+  .go:hover { background: #38b39b; }
   .go:disabled { opacity: .4; cursor: not-allowed; background: var(--raise); border-color: var(--line); color: var(--dim); }
   .gate .url { font-family: var(--mono); font-size: 10.5px; color: var(--dim); text-align: center; word-break: break-all; }
 
@@ -369,6 +402,17 @@
     .dock button { width: 40px; height: 40px; }
     .top { max-width: calc(100% - 24px); }
     .mark { display: none; }
+  }
+
+  /* the dock carries up to ten buttons now: two sources, the camera flip, and
+     install. measured at 430px, the step above left it 475px wide against a
+     430px viewport, which scrolls the page sideways -- the one thing the fit
+     exists to prevent. the bench asserts the widest state, both sources on air
+     with the flip showing, so this cannot regress quietly. */
+  @media (max-width: 480px) {
+    .dock { gap: 4px; padding: 5px; }
+    .dock button { width: 36px; height: 36px; }
+    .dock button svg { width: 18px; height: 18px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -411,7 +455,19 @@
 
 <div class="dock">
   <button type="button" id="shareBtn" title="Share screen" aria-label="Share screen">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8.5 20.5h7M12 17v3.5"/></svg>
+    <svg id="icoScreen" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8.5 20.5h7M12 17v3.5"/></svg>
+    <svg id="icoStop" viewBox="0 0 24 24" aria-hidden="true" hidden><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>
+  </button>
+  <button type="button" id="camBtn" title="Share camera" aria-label="Share camera" hidden>
+    <svg id="icoCam" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 7.5h3l1.5-2h6l1.5 2h3a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17V9a1.5 1.5 0 0 1 1.5-1.5Z"/><circle cx="12" cy="13" r="3.2"/></svg>
+    <svg id="icoCamStop" viewBox="0 0 24 24" aria-hidden="true" hidden><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>
+  </button>
+  <button type="button" id="flipBtn" title="Switch camera" aria-label="Switch camera" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9a8 8 0 0 1 13.5-3.5L20 8"/><path d="M20 15a8 8 0 0 1-13.5 3.5L4 16"/><path d="M20 4.5V8h-3.5M4 19.5V16h3.5"/></svg>
+  </button>
+  <button type="button" id="qualBtn" title="Capture quality" aria-label="Capture quality"
+    aria-haspopup="true" aria-expanded="false">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h7.6M16.4 7.5H20M4 16.5h3.6M12.4 16.5H20"/><circle cx="14" cy="7.5" r="2.4"/><circle cx="10" cy="16.5" r="2.4"/></svg>
   </button>
   <button type="button" id="copyBtn" title="Copy link" aria-label="Copy link">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 13.5a4.5 4.5 0 0 0 6.4 0l2.6-2.6a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M13.5 10.5a4.5 4.5 0 0 0-6.4 0l-2.6 2.6a4.5 4.5 0 0 0 6.4 6.4l1-1"/></svg>
@@ -433,6 +489,8 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11M8 11l4 4 4-4"/><path d="M4.5 16v2.5a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V16"/></svg>
   </button>
 </div>
+
+<div class="qmenu" id="qmenu" hidden role="menu" aria-label="Capture quality"></div>
 
 <div class="gate" id="gate" hidden role="dialog" aria-modal="true" aria-labelledby="gateTitle">
   <div class="scrim" id="gateScrim"></div>
@@ -467,8 +525,82 @@
 // the room comes from the fragment, but it is not constant: the dock switches
 // rooms at runtime, and a hand-edited `#` still counts.
 let ROOM = "";
-const CAP_BITRATE = 1_500_000;   // per peer
+// what the picker is asked for: the ceiling of every profile, since a profile
+// only ever cuts below it and switching profile must not reopen the picker.
 const CAP_FRAMERATE = 30;
+
+/* ---------- capture quality ---------- */
+
+// the encoder negotiates quality by itself, and the trade it picks is not
+// always the one being watched: shared code and terminals arrive at 640×360
+// because the bitrate went into 30 frames a second of a page that was not
+// moving. `degradationPreference` is the name of that trade, and these three
+// profiles are the three answers to it.
+//
+// `pixels` is an absolute target, `null` meaning the server's whole budget.
+// absolute and not a fraction on purpose: what makes a stream stable is a fixed
+// target the encoder is not allowed to walk away from, which is why Discord
+// publishes "720p/30" as a tier instead of negotiating one. `fps` is asked of
+// the track AND of the encoder: the first is what is never captured, the second
+// is the ceiling that holds when a source refuses the constraint.
+//
+// the hints name no resolution and no framerate, and that is a correction. the
+// menu said "720p locked" for a release, which is true only on a 16:9 source:
+// `pixels` is an AREA, and applyCapture fits the source's own aspect into it.
+// the same profile lands 1188x770 on a 1.54 laptop screen, 1214x758 at 16:10
+// and 1176x784 at 3:2, all within 1% of 921,600 px and none of them 720 lines.
+// measured in the field, the sharer's strip read 1486x964 on Sharp against
+// 1188x770 on Motion: a ratio of 1.2508 where sqrt(1,440,000 / 921,600) is 1.25
+// exactly, the arithmetic doing its job while the label said something else. on
+// a window smaller than the budget it was wronger still, since `k` is capped at
+// 1 and both profiles then deliver the same box. and no number here can be
+// promised at the moment the menu is read anyway: applyConstraints resolving
+// does not prove the source reconfigured, which is what the read-back below
+// exists for. measured numbers belong where they are measured, on the strip.
+//
+// the default trades frames for pixels, and that is the whole opinion of this
+// product: a shared screen is read, not watched. full resolution at 15fps costs
+// about half of what 30fps does and stays legible when the link tightens, while
+// 30fps at full resolution is what asks for more than a tailnet link reliably
+// gives and is the request that ends in an unreadable rung.
+const QUALITY = {
+  text: {
+    label: "Text",
+    hint: "most detail, least motion. terminals and slides",
+    pixels: null, fps: 5, bitrate: 4_000_000,
+    degradation: "maintain-resolution", contentHint: "text",
+  },
+  sharp: {
+    label: "Sharp",
+    hint: "balanced detail and motion. code and interfaces",
+    pixels: null, fps: 15, bitrate: 3_000_000,
+    degradation: "maintain-resolution", contentHint: "detail",
+  },
+  motion: {
+    label: "Motion",
+    hint: "most motion, least detail. video and animation",
+    pixels: 1_280 * 720, fps: 30, bitrate: 2_500_000,
+    degradation: "maintain-framerate", contentHint: "motion",
+  },
+};
+const QUALITY_DEFAULT = "sharp";
+const QUALITY_KEY = "tailcast:quality";
+
+function loadQuality() {
+  try {
+    const v = localStorage.getItem(QUALITY_KEY);
+    return v && QUALITY[v] ? v : QUALITY_DEFAULT;
+  } catch { return QUALITY_DEFAULT; }
+}
+function storeQuality(v) {
+  try { localStorage.setItem(QUALITY_KEY, v); } catch {}
+}
+let quality = loadQuality();
+const qual = () => QUALITY[quality] ?? QUALITY[QUALITY_DEFAULT];
+// the server's budget is the ceiling and a profile may aim under it, never over
+// it: `--pixels` exists to protect the sharer's CPU, and a profile is a
+// preference.
+const budgetOf = (p) => Math.min(maxCapturePixels, p.pixels ?? Number.POSITIVE_INFINITY);
 
 const $ = (id) => document.getElementById(id);
 ROOM = cleanRoom(decodeURIComponent(location.hash.slice(1)));
@@ -480,7 +612,61 @@ const tiles = new Map();          // peerId -> element
 const names = new Map();          // peerId -> name, according to the server
 let sharers = new Set();          // who is transmitting, according to the server
 let sharersSynced = false;        // first sharers after joined is snapshot, not transition
-let localStream = null;
+// every source this browser is capturing right now, because a screen and a
+// camera can be on air together. each entry carries its own geometry, its own
+// cut generation and its own policy warning: they are separate captures that
+// happen to belong to the same person.
+const local = new Map();          // "screen"|"camera" -> { stream, geom, policy, gen }
+const sharingAny = () => local.size > 0;
+const streamOf = (src) => local.get(src)?.stream || null;
+
+// the composite key. one peer can own two streams, so anything that used to be
+// keyed by peer id -- tiles, zooms, sending, receiving, and the server's own
+// `sharers` set -- is keyed by "<peerId>#<src>" instead. presence tiles keep
+// the bare peer id, which is why peerOf() has to survive a key with no "#".
+const keyOf = (id, src) => `${id}#${src}`;
+const peerOf = (key) => {
+  const i = key.indexOf("#");
+  return i < 0 ? key : key.slice(0, i);
+};
+const srcOf = (key) => {
+  const i = key.indexOf("#");
+  return i < 0 ? null : key.slice(i + 1);
+};
+// how many videos this peer owns on stage. a presence tile is keyed by the
+// bare id and is not one: syncRoster() asks this to decide who still needs a
+// monogram, and pill() asks it to decide whether the source is worth naming.
+// written per call site it is one rule in three shapes, and they drift the day
+// a third source exists.
+const videosOf = (peer) => {
+  let n = 0;
+  for (const [k, t] of tiles) {
+    if (peerOf(k) === peer && !t.classList.contains("peer")) n++;
+  }
+  return n;
+};
+
+// close every PeerConnection whose key matches and drop it from the map. the
+// snapshot is not optional -- deleting while iterating is what it is for -- and
+// forgetting it in the fourth copy is why this is a function.
+function closePCs(map, match) {
+  for (const [key, pc] of [...map]) {
+    if (!match(key)) continue;
+    pc.close();
+    map.delete(key);
+  }
+}
+// the back camera first: a phone camera gets pointed AT something, and the
+// front one is the selfie case, which is not what a screen-share room is for.
+let camFacing = "environment";
+// the lens that ARRIVED, and whether the device names one at all. asking for
+// `environment` is a request, not a result: a phone is free to answer it with
+// the front camera, and assuming otherwise made the first flip ask for the
+// camera that was already open. see noteCamera().
+let camFacingKnown = false;
+let camHasBoth = false;           // more than one camera: only then is the flip offered
+// starts true and only a CONCLUSIVE enumeration can clear it. see probeCameras().
+let camHasAny = true;
 let iceServers = [];
 let maxSharers = 3;
 let maxCapturePixels = 1_440_000; // capture pixel budget; see startShare()
@@ -577,12 +763,16 @@ async function boot() {
     .catch(() => ({ stunPort: 3478, maxSharers: 3, maxCapturePixels: 1_440_000 }));
   maxSharers = cfg.maxSharers ?? 3;
   maxCapturePixels = cfg.maxCapturePixels ?? 1_440_000;
-  // say so up front instead of leaving a button that does nothing.
-  if (!canShare()) notice(whyCantShare());
+  // say so up front instead of leaving a button that does nothing. on a phone
+  // this is what points at the camera button, which is the source that works
+  // there.
+  if (!canShareScreen()) notice(whyCantShare());
+  probeCameras();
   paintRoom();
   remember(ROOM);
   render();
   renderSoundBtn();
+  buildQualMenu();
   // no stored name means the gate blocks until it is answered. with one, the
   // link opens straight into its room, which is the point of sending a link.
   if (!nameOk(myName)) openGate(true);
@@ -628,21 +818,103 @@ function notice(text) {
 // getDisplayMedia only exists in a secure context. http://100.x and
 // http://192.168.x do NOT count; localhost and https:// do. without one the API
 // is absent from navigator.mediaDevices and the button has nothing to call.
+// cleared only by a call that came back saying the browser will not do this.
+// see the catch in startShare().
+let screenWorks = true;
+
+// an API that is defined and then refuses the capability outright has ANSWERED
+// the question. one list, because the catch that retires the button and the
+// sentence that explains the retirement have to agree: written twice, a fourth
+// name added to one of them makes the notice describe a state that never
+// happened, or retires the button with no explanation at all.
+const SCREEN_REFUSED = new Set(["NotSupportedError", "TypeError", "InvalidStateError"]);
+
+function canShareScreen() {
+  return typeof navigator.mediaDevices?.getDisplayMedia === "function" && screenWorks;
+}
+
+// the camera is the one capture a phone browser does give. iOS and Android hand
+// the screen to no browser, by any API, over any transport: measured on an
+// iPhone 16 Pro, iOS 18.7, Safari 26.5, in a secure context, getDisplayMedia
+// came back absent while getUserMedia was a function. so the dock asks two
+// separate questions instead of one.
+function canShareCamera() {
+  return typeof navigator.mediaDevices?.getUserMedia === "function";
+}
+
 function canShare() {
-  return typeof navigator.mediaDevices?.getDisplayMedia === "function";
+  return canShareScreen() || canShareCamera();
+}
+
+// what a failed capture MEANS, in a sentence the person can act on. the same
+// error name says opposite things for the two sources: cancelling the screen
+// picker is NotAllowedError and deserves silence, while the very same name out
+// of getUserMedia is a permission that was refused and has to be granted in the
+// site settings, which nobody guesses from silence. returning "" is what keeps
+// a cancel quiet.
+function captureError(src, err) {
+  const name = err?.name || String(err);
+  if (src === "camera") {
+    if (name === "NotAllowedError") {
+      return (
+        "The camera was refused. Allow it for this address in the browser's " +
+        "site settings and try again. On iOS that is the \u201caA\u201d menu in the " +
+        "address bar, under Website Settings."
+      );
+    }
+    if (name === "NotFoundError") return "There is no camera on this device.";
+    if (name === "NotReadableError") {
+      return (
+        "The camera is busy: another app or tab already holds it. macOS and " +
+        "iOS only allow one capture at a time."
+      );
+    }
+    if (name === "OverconstrainedError") {
+      return "This camera cannot deliver what was asked for.";
+    }
+    if (name === "SecurityError") return whyCantShare();
+    return `The camera failed: ${name}. ${err?.message || ""}`.trim();
+  }
+  // the screen picker: a cancel is the common case and stays silent.
+  if (name === "NotAllowedError") return "";
+  if (SCREEN_REFUSED.has(name)) {
+    return (
+      "This browser offers a screen-capture API and then refuses to use it, " +
+      "so the screen button is gone. The camera button still works."
+    );
+  }
+  if (name === "NotReadableError") {
+    return (
+      "The screen could not be read: another app may already be capturing it. " +
+      "macOS only allows one capture at a time."
+    );
+  }
+  return `Screen capture failed: ${name}. ${err?.message || ""}`.trim();
 }
 
 function whyCantShare() {
-  if (canShare()) return "";
+  if (canShareScreen()) return "";
   if (!window.isSecureContext) {
     return (
       `Without HTTPS there is no sharing: the browser only exposes screen ` +
-      `capture in a secure context, and ${location.origin} is not one. Open ` +
+      `capture and the camera in a secure context, and ${location.origin} is not one. Open ` +
       `http://localhost:${location.port || 80} on this machine, or publish it ` +
       `with "tailscale serve --bg ${location.port || 3000}" and use the .ts.net URL.`
     );
   }
-  return "This browser does not expose getDisplayMedia. Use Chrome, Edge or Firefox on the desktop.";
+  if (canShareCamera()) {
+    return (
+      "Sharing a screen is not possible in this browser: no browser on iOS or " +
+      "Android hands the screen to a web page, so the screen button is not " +
+      "here. The camera button is the capture this device does offer. To put " +
+      "the phone's own screen in the room, mirror it to a desktop and share " +
+      "that window from there."
+    );
+  }
+  return (
+    "This browser exposes neither screen capture nor a camera, so there is " +
+    "nothing here to share. Use Chrome, Edge or Firefox on the desktop."
+  );
 }
 
 /* tears everything down: used when the server hands us a new id (reconnect). */
@@ -685,9 +957,9 @@ function handle(msg) {
     // if we were transmitting, the server already dropped us from the sharer
     // set on close. ask for the slot again; sending starts when the `sharers`
     // broadcast confirms it.
-    if (localStream) {
-      attachTile(myId, localStream, true);
-      send({ t: "share-start" });
+    for (const [src, cap] of local) {
+      attachTile(keyOf(myId, src), cap.stream, true);
+      send({ t: "share-start", src });
     }
     render();
     return;
@@ -695,7 +967,9 @@ function handle(msg) {
 
   if (msg.t === "peer-joined") {
     peers.add(msg.id);
-    if (localStream && sharers.has(myId)) openSend(msg.id);
+    for (const src of local.keys()) {
+      if (sharers.has(keyOf(myId, src))) openSend(msg.id, src);
+    }
     if (myId && soundOn && msg.id !== myId) playJoin();
     render();
     return;
@@ -703,11 +977,12 @@ function handle(msg) {
 
   if (msg.t === "peer-left") {
     peers.delete(msg.id);
-    sending.get(msg.id)?.close();
-    receiving.get(msg.id)?.close();
-    sending.delete(msg.id);
-    receiving.delete(msg.id);
-    dropTile(msg.id);
+    // one peer can hold two streams, so every key that belongs to it goes --
+    // including its bare-id presence tile, which peerOf() returns unchanged.
+    for (const map of [sending, receiving]) {
+      closePCs(map, (key) => peerOf(key) === msg.id);
+    }
+    for (const key of [...tiles.keys()]) if (peerOf(key) === msg.id) dropTile(key);
     if (myId && soundOn && msg.id !== myId) playLeave();
     render();
     return;
@@ -724,16 +999,20 @@ function handle(msg) {
     }
     // whoever left the set: drop the receiving PC and the tile right away,
     // rather than waiting for connectionstatechange to fall on its own.
-    for (const id of sharers) {
-      if (next.has(id) || id === myId) continue;
-      receiving.get(id)?.close();
-      receiving.delete(id);
-      dropTile(id);
+    for (const key of sharers) {
+      if (next.has(key) || peerOf(key) === myId) continue;
+      receiving.get(key)?.close();
+      receiving.delete(key);
+      dropTile(key);
     }
     sharers = next;
     sharersSynced = true;
-    // accepted as a sharer: now open the sends.
-    if (localStream && sharers.has(myId)) peers.forEach(openSend);
+    // accepted as a sharer: now open the sends, one fan-out per source. a
+    // source still waiting for its own slot opens nothing.
+    for (const src of local.keys()) {
+      if (!sharers.has(keyOf(myId, src))) continue;
+      peers.forEach((id) => { openSend(id, src); });
+    }
     render();
     return;
   }
@@ -753,7 +1032,11 @@ function handle(msg) {
     // the picker already gave us the stream and there was no slot, so drop it.
     // no `share-stop` and no teardown: the server never registered us, so there
     // is no slot to free and no PC open.
-    discardCapture();
+    // which source was refused: the server names it on every share-denied it
+    // sends, and this client is served by that same process. guessing from
+    // which source holds no slot yet was a second, weaker rule for a fact the
+    // wire already carries, and it could only ever run by picking wrong.
+    if (msg.src) discardCapture(msg.src);
     notice(
       msg.reason === "limit"
         ? `${maxSharers} ${maxSharers > 1 ? "people are" : "person is"} already sharing. Wait for somebody to stop.`
@@ -783,100 +1066,135 @@ async function flush(pc) {
 // there is one encoder per PeerConnection: identical parameters do NOT make
 // Chrome reuse a single instance.
 //
-// what matters here is `maintain-resolution`. without it the encoder trades
-// pixels for frames, descending a ladder of capture fractions (¼, ⅜, ½, ¾),
-// and it is slow to climb back: measured, 30 to 40s on a 1ms lossless loopback,
-// and with moving content it did not climb a single rung in 90s. with it in
-// force the resolution does not move even at 2fps. video arriving at 640×360
-// and 30fps is exactly this policy missing: 640×360 is the ½ rung of 1280×720,
-// not a capture size.
+// what matters here is `degradationPreference`, the encoder's trade between
+// pixels and frames. under `maintain-resolution` the resolution does not move
+// even at 2fps; without it the encoder descends a ladder of capture fractions
+// (¼, ⅜, ½, ¾) and is slow to climb back: measured, 30 to 40s on a 1ms
+// lossless loopback, and with moving content it did not climb a single rung in
+// 90s. video arriving at 640×360 and 30fps is exactly this policy missing:
+// 640×360 is the ½ rung of 1280×720, not a capture size.
 //
-// `encodings[0]` always exists: the spec (WebRTC 1.0 § 5.2, *create an
-// RTCRtpSender*, step 11) requires an entry when `sendEncodings` is empty, and
-// no algorithm empties the list afterwards. filling it in by hand would change
-// the length of `encodings`, which is the one thing `setParameters` rejects.
+// the policy is assigned BEFORE anything touches `encodings`, and that ordering
+// is the fix, not a style choice. `params.encodings[0].maxBitrate = ...` throws
+// a TypeError when the list comes back empty, and the throw used to take
+// `degradationPreference` down with it: one absent field, and the whole trade
+// reverted to the browser's, which is the 360p above. the spec (WebRTC 1.0
+// § 5.2, *create an RTCRtpSender*, step 11) requires an entry and Chrome
+// returned one in all seven states measured, but that was Chrome, and macOS is
+// where the collapse was reported. the list is still never filled in by hand:
+// changing its length is the one thing `setParameters` rejects.
 //
-// what really counts is not swallowing the failure: the `catch {}` that used to
-// be here turned "the policy did not apply" into "the video looks strange"
-// found days later. and setParameters resolving does not prove the field took,
-// so `degradationPreference` is read back.
+// and the failure is not swallowed. the `catch {}` that used to be here turned
+// "the policy did not apply" into "the video looks strange" found days later.
+// setParameters resolving does not prove the field took either, so it is read
+// back, and an empty `encodings` is reported too: the profile's bitrate and
+// framerate did not reach that browser, and the strip is where the sharer sees
+// it.
 async function applyEncoding(pc) {
   const sender = pc.getSenders().find((s) => s.track?.kind === "video");
   if (!sender) return;
 
+  const p = qual();
   const params = sender.getParameters();
-  params.encodings[0].maxBitrate = CAP_BITRATE;
-  params.encodings[0].maxFramerate = CAP_FRAMERATE;
-  params.degradationPreference = "maintain-resolution";
+  params.degradationPreference = p.degradation;
+  const enc = params.encodings?.[0];
+  if (enc) {
+    enc.maxBitrate = p.bitrate;
+    enc.maxFramerate = p.fps;
+  }
 
   try {
     await sender.setParameters(params);
   } catch (err) {
     pc.policy = `policy refused: ${err?.name || err}`;
-    console.warn("applyEncoding falhou", err);
+    console.warn("applyEncoding failed", err);
     return;
   }
 
   const got = sender.getParameters();
-  pc.policy =
-    got.degradationPreference === "maintain-resolution"
-      ? null
-      : "policy not confirmed";
-  if (pc.policy) {
+  if (got.degradationPreference !== p.degradation) {
+    pc.policy = "policy not confirmed";
     console.warn(
       `applyEncoding: degradationPreference came back as ${JSON.stringify(got.degradationPreference)}`,
     );
+  } else if (!enc) {
+    pc.policy = "no encodings";
+    console.warn(
+      "applyEncoding: getParameters() returned no encodings, so the profile's " +
+        "bitrate and framerate were not applied",
+    );
+  } else {
+    pc.policy = null;
   }
 }
 
-async function openSend(id) {
-  if (sending.has(id) || !localStream || id === myId) return;
+// one PC per (destination, source), which is the directional rule already in
+// force taken one step further. a single PC carrying both tracks would have
+// left the receiver guessing which track is which screen, and the cost is not
+// where it looks: there is one encoder per PC either way, so two sources are
+// two encoders whether they share a connection or not.
+async function openSend(id, src) {
+  const key = keyOf(id, src);
+  const stream = streamOf(src);
+  if (sending.has(key) || !stream || id === myId) return;
 
   const pc = newPeer();
-  sending.set(id, pc);
+  sending.set(key, pc);
   pc.onicecandidate = (e) =>
-    e.candidate && signal(id, { kind: "ice", dir: "tx", candidate: e.candidate });
+    e.candidate && signal(id, { kind: "ice", dir: "tx", src, candidate: e.candidate });
 
-  for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
+  for (const track of stream.getTracks()) pc.addTrack(track, stream);
 
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
   await applyEncoding(pc);
-  signal(id, { kind: "offer", sdp: pc.localDescription });
+  signal(id, { kind: "offer", src, sdp: pc.localDescription });
 }
 
 async function route(from, data) {
+  // `src` names which of the sender's streams this negotiation is about, and it
+  // is always stated from the point of view of whoever sends the MEDIA, which
+  // is what makes the key match on both sides. absent means screen: that is
+  // what every message meant when a peer could only have one.
+  const src = data.src || "screen";
+  const key = keyOf(from, src);
   if (data.kind === "offer") {
-    let pc = receiving.get(from);
+    let pc = receiving.get(key);
     if (!pc) {
       pc = newPeer();
-      receiving.set(from, pc);
+      receiving.set(key, pc);
       pc.onicecandidate = (e) =>
-        e.candidate && signal(from, { kind: "ice", dir: "rx", candidate: e.candidate });
-      pc.ontrack = (e) => attachTile(from, e.streams[0]);
+        e.candidate && signal(from, { kind: "ice", dir: "rx", src, candidate: e.candidate });
+      pc.ontrack = (e) => attachTile(key, e.streams[0]);
       pc.onconnectionstatechange = () => {
-        if (["failed", "closed"].includes(pc.connectionState)) dropTile(from);
+        if (["failed", "closed"].includes(pc.connectionState)) dropTile(key);
       };
     }
     await pc.setRemoteDescription(data.sdp);
     await flush(pc);
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    signal(from, { kind: "answer", sdp: pc.localDescription });
+    signal(from, { kind: "answer", src, sdp: pc.localDescription });
     return;
   }
 
   if (data.kind === "answer") {
-    const pc = sending.get(from);
+    const pc = sending.get(key);
     if (!pc) return;
     await pc.setRemoteDescription(data.sdp);
     await flush(pc);
+    // again, now that the sender is negotiated. the first call runs before the
+    // answer exists, and a browser that reports no encodings until then keeps
+    // whatever it chose on its own. setParameters does not renegotiate, so the
+    // second pass costs nothing on the wire.
+    await applyEncoding(pc);
     return;
   }
 
   if (data.kind === "ice") {
-    // dir is from the sender's point of view, so invert it here.
-    const pc = data.dir === "tx" ? receiving.get(from) : sending.get(from);
+    // dir is from the sender's point of view, so invert it here. src is not
+    // inverted: it names the media's source on both sides.
+    const pc = data.dir === "tx" ? receiving.get(key) : sending.get(key);
     if (!pc) return;
     if (pc.remoteDescription) await pc.addIceCandidate(data.candidate).catch(() => {});
     else pc.pending.push(data.candidate);
@@ -932,110 +1250,322 @@ function boxFor(pixels) {
   return { w, h: Math.round((w * 9) / 16 / 2) * 2 };
 }
 
-async function startShare() {
-  if (!canShare()) {
+// each entry of `local` carries its own `geom` (the source's real geometry,
+// kept because switching profile recomputes the cut from what the SOURCE has
+// and not from what the last profile left in the track) and its own `policy`
+// (set when the cut was asked for and the source did not take it, so the sharer
+// reads it in their own strip instead of only seeing the consequence).
+//
+// a newer applyCapture() owns the track: without a generation, the retry loop
+// of a call being replaced (a profile change, a restarted share) would keep
+// writing the old profile's box over the new one. the counter is global and
+// monotonic, but the stamp it leaves lives on the source, so two captures never
+// cancel each other.
+let captureGen = 0;
+
+// the active profile applied to the live capture. separate from startShare
+// because changing profile mid-share has to redo exactly this and nothing
+// else: no second picker, no renegotiation, no tile rebuilt.
+//
+// the resolution cut happens at the SOURCE, not per PeerConnection. the
+// sharer's CPU cost is a step, not a curve: WebRTC gives each PC ~8 encode
+// threads above 1920×1080 and ~3 below. measured in the sharer's renderer, 51
+// threads at 1920×1080 against 33 at 1600×900 (18 idle). with 4 destinations
+// that is 32 threads over 12 logical CPUs, thread oversubscription rather than
+// pixel cost: 1920×1080 eats 10.12 of 12 cores at 6-9 fps while 1600×900 costs
+// 1.95 cores at a full 30. cutting here is ONE reduction shared by the N
+// encoders; cutting per PeerConnection would be N of them.
+//
+// the factor is capped at 1 because this only shrinks: growing past what the
+// source delivers would be upscale, spending bandwidth to invent pixels.
+//
+// the framerate travels in the same call and then alone if that call was
+// refused. a source that rejects a frameRate constraint must not take the
+// resize down with it, and the encoder's `maxFramerate` holds the ceiling
+// either way. lowering it is a legibility move, not a CPU one: measured ABOVE
+// the cap at 1920×1080 it made CPU worse (11.15 cores at 15fps against 10.12
+// at 30), and "balanced" changed nothing (10.44).
+//
+// **applyConstraints RESOLVING does not prove the source reconfigured**, and
+// that is the same lesson `setParameters` already taught two functions up.
+// reported from the field on a 2560×1440 screen: the sharer's own strip read
+// `2560×1440 → 640×360 · 30fps bandwidth`, meaning the cut never happened and
+// the encoder was handed 3,686,400 px — 1.78× the 2,073,600 where encoding
+// jumps from ~2 to ~10 cores — so it walked down its ladder to the ½ rung of
+// 1280×720. switching profile and coming back fixed it, which is the whole
+// clue: the SAME call, with the same arguments, works seconds later. what
+// differs is that by then the track has sinks, and at startShare it had none —
+// geometriaReal's <video> was disconnected one line earlier and the tile was
+// attached one line later. a source with no consumer has nothing to
+// reconfigure, and the constraint was lost without a word.
+//
+// so two things changed. startShare attaches the tile BEFORE calling this, and
+// the result is read back here and retried. the retries cost nothing on the
+// path that works: they only run when the read-back says the cut did not land.
+const CUT_TRIES = 4;
+const CUT_RETRY = 300;
+
+async function applyCapture(src) {
+  const cap = local.get(src);
+  const track = cap?.stream.getVideoTracks()[0];
+  if (!track) return;
+  const p = qual();
+  track.contentHint = p.contentHint;
+  if (!cap.geom) return;
+
+  const budget = budgetOf(p);
+  const k = Math.min(1, Math.sqrt(budget / (cap.geom.width * cap.geom.height)));
+  const width = Math.round((cap.geom.width * k) / 2) * 2;
+  const height = Math.round((cap.geom.height * k) / 2) * 2;
+  // the generation is stamped on the SOURCE and not held in one global: with
+  // two captures alive, a global counter made the second call's increment
+  // cancel the first one's retries, and the screen would silently keep
+  // encoding its whole source because the camera started a moment later.
+  const gen = ++captureGen;
+  cap.gen = gen;
+
+  let got = null;
+  for (let attempt = 0; attempt < CUT_TRIES; attempt++) {
+    if (attempt) await new Promise((r) => setTimeout(r, CUT_RETRY));
+    // a profile change or a restarted share landed while we waited: that call
+    // owns the track now, and its box is the right one.
+    if (local.get(src) !== cap || cap.gen !== gen ||
+        cap.stream.getVideoTracks()[0] !== track) return;
+    try {
+      await track.applyConstraints({ width, height, frameRate: { max: p.fps } });
+    } catch {
+      // a source that refuses the framerate must not take the resize down with
+      // it: the encoder's maxFramerate holds the ceiling either way.
+      await track.applyConstraints({ width, height }).catch(() => {});
+    }
+    if (local.get(src) !== cap || cap.gen !== gen) return;
+    got = track.getSettings();
+    // a source that reports no geometry cannot be checked, and retrying would
+    // spin for nothing. the strip still shows whatever getSettings() says.
+    if (!got.width || !got.height) return;
+    // checked against the AREA, not the box: the source keeps its own aspect,
+    // so some geometries settle at 96% of the budget and none of that is a
+    // failure. the budget is what the cut exists to hold.
+    if (got.width * got.height <= budget * 1.02) {
+      cap.policy = null;
+      return;
+    }
+  }
+
+  // still encoding the whole source. the field case was a 2560×1440 screen:
+  // 3,686,400 px, 1.78× the 2,073,600 where encoding jumps from ~2 to ~10
+  // cores, and the encoder answered by walking down its ladder to 640×360.
+  // it cannot die silently, and the console is not where it belongs either:
+  // the sharer is the one person who can act on it.
+  cap.policy = "cut refused";
+  console.warn(
+    `applyConstraints did not take on the ${src}: asked for ${width}×${height}, ` +
+      `capture is ${got.width}×${got.height} (source ${cap.geom.width}×${cap.geom.height})`,
+  );
+}
+
+// the camera has no picker, so the constraint IS the whole request. `ideal`
+// and not `max`: a phone camera that cannot do the box has to answer with what
+// it has instead of failing the whole call with OverconstrainedError.
+// `exact` is for the flip and nothing else. an ideal facingMode is a hint the
+// device may answer with the camera that is already open, and a flip that
+// returns the same lens is indistinguishable from a dead button; exact turns
+// that into an OverconstrainedError, which is an answer. starting a share
+// stays ideal: there, refusing outright would cost the capture entirely.
+function grabCamera(hintW, hintH, facing = camFacing, exact = false) {
+  return navigator.mediaDevices.getUserMedia({
+    video: {
+      facingMode: exact ? { exact: facing } : facing,
+      width: { ideal: hintW },
+      height: { ideal: hintH },
+      frameRate: { ideal: CAP_FRAMERATE },
+    },
+    audio: false,
+  });
+}
+
+// the cap asked of the picker. it is NOT the budget, it is the budget plus
+// slack, and the slack is the point: applyConstraints below does the exact
+// crop, knowing the real aspect of what arrived, but it only shrinks, so the
+// capture has to land ABOVE the budget for it to have anything to cut.
+//
+// that is what used to be broken. the box carried the budget's exact area
+// (1600×900), and the browser honours the request by fitting the source in
+// preserving ITS OWN aspect, never cropping. so any non-16:9 source arrived
+// BELOW the cap (90% at 16:10, 84% at 3:2, 75% at 4:3, 70% at 5:4) and the
+// crop below never ran, because there was never any excess. with 32% slack
+// the source lands above the budget at every usual aspect and the crop takes
+// it to the exact cap: 100% at 16:9, 16:10 and 3:2, 99% at 4:3, 98% at 21:9.
+//
+// the box is fixed 16:9 on purpose, not derived from `screen`. following the
+// monitor's aspect was measured and is worse: `screen` describes the MONITOR,
+// not the source picked in the picker, and on a portrait monitor sharing a
+// 16:9 window the box becomes 900×1600 and delivers 31% of the budget.
+//
+// the slack has no absolute ceiling on top of it. a `Math.min(..., 2e6)` used
+// to promise the capture never reaches the 2,073,600 px CPU cliff, and the
+// promise undid itself: with `--pixels` above 2,000,000 the arithmetic
+// collapsed to the exact area, zero slack, and the crop went back to being
+// dead code. the default's arithmetic is what holds: 1,440,000 × 1.32 =
+// 1,900,800, below the 2,073,600 where encoding jumps from ~2 to ~10 cores.
+const CAP_SLACK = 1.32;
+const pickerBox = () => boxFor(maxCapturePixels * CAP_SLACK);
+
+async function startShare(src = "screen") {
+  if (src === "camera" ? !canShareCamera() : !canShareScreen()) {
     notice(whyCantShare());
     return;
   }
 
   notice("");
 
-  // the cap asked of the picker. it is NOT the budget, it is the budget plus
-  // slack, and the slack is the point: applyConstraints below does the exact
-  // crop, knowing the real aspect of what arrived, but it only shrinks, so the
-  // capture has to land ABOVE the budget for it to have anything to cut.
-  //
-  // that is what used to be broken. the box carried the budget's exact area
-  // (1600×900), and the browser honours the request by fitting the source in
-  // preserving ITS OWN aspect, never cropping. so any non-16:9 source arrived
-  // BELOW the cap (90% at 16:10, 84% at 3:2, 75% at 4:3, 70% at 5:4) and the
-  // crop below never ran, because there was never any excess. with 32% slack
-  // the source lands above the budget at every usual aspect and the crop takes
-  // it to the exact cap: 100% at 16:9, 16:10 and 3:2, 99% at 4:3, 98% at 21:9.
-  //
-  // the box is fixed 16:9 on purpose, not derived from `screen`. following the
-  // monitor's aspect was measured and is worse: `screen` describes the MONITOR,
-  // not the source picked in the picker, and on a portrait monitor sharing a
-  // 16:9 window the box becomes 900×1600 and delivers 31% of the budget.
-  //
-  // the slack has no absolute ceiling on top of it. a `Math.min(..., 2e6)` used
-  // to promise the capture never reaches the 2,073,600 px CPU cliff, and the
-  // promise undid itself: with `--pixels` above 2,000,000 the arithmetic
-  // collapsed to the exact area, zero slack, and the crop went back to being
-  // dead code. the default's arithmetic is what holds: 1,440,000 × 1.32 =
-  // 1,900,800, below the 2,073,600 where encoding jumps from ~2 to ~10 cores.
-  const { w: hintW, h: hintH } = boxFor(maxCapturePixels * 1.32);
+  const { w: hintW, h: hintH } = pickerBox();
 
   let stream;
   try {
-    // the picker needs the user gesture, so it comes before any round trip.
-    stream = await navigator.mediaDevices.getDisplayMedia({
-      video: {
-        frameRate: CAP_FRAMERATE,
-        width: { max: hintW },
-        height: { max: hintH },
-      },
-      audio: false,
-    });
+    // the picker (and the camera permission) needs the user gesture, so it
+    // comes before any round trip.
+    stream = src === "camera"
+      ? await grabCamera(hintW, hintH)
+      : await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            frameRate: CAP_FRAMERATE,
+            width: { max: hintW },
+            height: { max: hintH },
+          },
+          audio: false,
+        });
   } catch (err) {
-    // cancelling in the picker is NotAllowedError and deserves no notice.
-    // anything else is a real failure and has to surface.
-    if (err?.name !== "NotAllowedError") {
-      notice(`Screen capture failed: ${err?.name || err}. ${err?.message || ""}`.trim());
+    // the API existing is not the API working. a browser that defines
+    // getDisplayMedia and then refuses the capability outright has answered the
+    // question, so stop offering it instead of keeping a button that fails the
+    // same way on every click. a cancel is NotAllowedError and never lands
+    // here, which is what keeps a decline from being read as a refusal.
+    if (src === "screen" && SCREEN_REFUSED.has(err?.name)) {
+      screenWorks = false;
+      render();
     }
+    // NotFoundError is the enumeration having been wrong rather than a fault:
+    // say what it means and stop offering a button for a device that is absent.
+    if (src === "camera" && err?.name === "NotFoundError") {
+      camHasAny = false;
+      render();
+    }
+    notice(captureError(src, err));
     return;
   }
 
-  localStream = stream;
+  // enumerateDevices only tells the truth once a permission has been granted,
+  // and the one probe at boot runs before any. safari answers an empty list
+  // there, and chrome answers a single generic videoinput whatever the device
+  // holds, so `cams > 1` was false on every phone and stayed false for the
+  // session: the flip button never appeared on the only devices that have a
+  // second camera to flip to. granting the camera is the moment the count
+  // becomes real, so that is where it is counted again.
+  const cap = { stream, geom: null, policy: null, gen: 0 };
+  local.set(src, cap);
   const track = stream.getVideoTracks()[0];
-  track.contentHint = "detail"; // sharp text over smooth motion
-  track.onended = stopShare;
+  track.onended = () => stopShare(src);
 
-  // the resolution cut happens at the SOURCE, not per PeerConnection. the
-  // sharer's CPU cost is a step, not a curve: WebRTC gives each PC ~8 encode
-  // threads above 1920×1080 and ~3 below. measured in the sharer's renderer, 51
-  // threads at 1920×1080 against 33 at 1600×900 (18 idle). with 4 destinations
-  // that is 32 threads over 12 logical CPUs, thread oversubscription rather
-  // than pixel cost: 1920×1080 eats 10.12 of 12 cores at 6-9 fps while
-  // 1600×900 costs 1.95 cores at a full 30.
-  //
-  // cutting here is ONE reduction shared by the N encoders; cutting per
-  // PeerConnection would be N of them, and the step belongs to the encoder.
-  // measured and discarded: lowering the framerate made it WORSE (11.15 cores
-  // at 15fps against 10.12 at 30) and "balanced" changed nothing (10.44).
-  //
-  // the factor is capped at 1 because this only shrinks: growing past what the
-  // source delivers would be upscale, spending bandwidth to invent pixels.
+  if (src === "camera") {
+    noteCamera(track);
+    probeCameras();
+  }
+
+  // what arrived is not what is transmitted: the profile's cut happens here,
+  // once, at the source. see applyCapture().
   const s = await geometriaReal(track);
 
   // stopping the share during the await above left a trail: `share-stop` went
   // out before `share-start`, the server saw them inverted, the sharer slot
   // stayed burnt and viewers hung on "connecting…" forever. reproduced by
-  // stopping at 200ms. stopShare clears localStream, so this comparison asks
-  // "is this still my share?".
-  if (localStream !== stream) return;
+  // stopping at 200ms. discardCapture removes the entry, so this comparison
+  // asks "is this still my share?" against the source and not a global.
+  if (local.get(src) !== cap) return;
 
-  if (s.width && s.height) {
-    const k = Math.min(1, Math.sqrt(maxCapturePixels / (s.width * s.height)));
-    const w = Math.round((s.width * k) / 2) * 2;
-    const h = Math.round((s.height * k) / 2) * 2;
-    if (w !== s.width || h !== s.height) {
-      try {
-        await track.applyConstraints({ width: w, height: h });
-      } catch (err) {
-        // failing here means encoding the whole source. on a 4K screen that is
-        // the CPU cliff (~2 cores become ~10), so it cannot die silently.
-        console.warn(
-          `applyConstraints failed: capture stays at ${s.width}×${s.height}`,
-          err,
-        );
-      }
+  cap.geom = s.width && s.height ? { width: s.width, height: s.height } : null;
+
+  // the tile comes BEFORE the cut, and the order is the fix, not a tidy-up:
+  // applyConstraints needs the track to have a consumer, and between
+  // geometriaReal releasing its own <video> and this line the track had none.
+  // see applyCapture().
+  attachTile(keyOf(myId, src), stream, true);
+
+  // the slot is asked for BEFORE the cut, not after: applyCapture can spend up
+  // to 900ms retrying a source that swallows the constraint, and the message
+  // carries no geometry. waiting on it left the room on "connecting…" for that
+  // whole window, on exactly the machines whose capture is already the worst.
+  // nothing is sent on the wire until the server confirms the slot anyway.
+  send({ t: "share-start", src });
+  await applyCapture(src);
+  render();
+}
+
+// front to back and back again. this replaces the track in place: replaceTrack
+// does not renegotiate, so the sharer slot is never released, no SDP crosses
+// the wire and no tile is rebuilt. stopping and restarting would drop all
+// three, and the slot could be taken in between by someone else.
+async function flipCamera() {
+  const cap = local.get("camera");
+  if (!cap) return;
+  const from = camFacing;
+  const want = from === "environment" ? "user" : "environment";
+  const { w: hintW, h: hintH } = pickerBox();
+  const old = cap.stream.getVideoTracks()[0];
+
+  // the old lens is released BEFORE the new one is asked for, and the order is
+  // the whole fix: macOS and iOS allow one camera capture at a time, so asking
+  // while the first track is still live is not a flip but a second capture. it
+  // fails outright, and on a phone it can take the tab with it. what the order
+  // costs is that a failure leaves the share with no picture for as long as it
+  // takes to reopen the lens it was on, which is what the catch does.
+  old?.stop();
+  if (old) cap.stream.removeTrack(old);
+
+  let stream = null;
+  try {
+    stream = await grabCamera(hintW, hintH, want, true);
+  } catch (err) {
+    // one lens on the device: stop claiming a second one exists. the notice is
+    // for a share that ended up with nothing, not for a flip that simply had
+    // nowhere to go.
+    camHasBoth = false;
+    try {
+      stream = await grabCamera(hintW, hintH, from);
+    } catch {}
+    if (!stream) {
+      notice(captureError("camera", err));
+      stopShare("camera");
+      return;
     }
   }
 
-  attachTile(myId, stream, true);
-  // nothing is sent until the server confirms the slot via the broadcast.
-  send({ t: "share-start" });
+  // the share was stopped while the permission prompt was up: this stream owns
+  // nothing and has to die here, or the camera light stays on.
+  if (local.get("camera") !== cap) {
+    stream.getTracks().forEach((t) => { t.stop(); });
+    return;
+  }
+
+  const track = stream.getVideoTracks()[0];
+  // which lens answered, rather than which one was asked for.
+  noteCamera(track);
+  // only the camera's own destinations: replacing the track on every sender
+  // would have pushed the camera down the screen's connections too, the moment
+  // both went on air.
+  await Promise.all([...sending].map(([key, pc]) => {
+    if (srcOf(key) !== "camera") return null;
+    const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+    return sender?.replaceTrack(track).catch(() => {});
+  }));
+  cap.stream.addTrack(track);
+  track.onended = () => stopShare("camera");
+
+  // the new camera has its own geometry, so the cut has to be recomputed from
+  // it and not from what the old one left behind.
+  const s = await geometriaReal(track);
+  cap.geom = s.width && s.height ? { width: s.width, height: s.height } : null;
+  await applyCapture("camera");
   render();
 }
 
@@ -1043,17 +1573,27 @@ async function startShare() {
 // between "I stopped" and "I was denied" stays with the caller: only whoever
 // STOPPED has to tell the server and close the sending PCs, since a denied
 // peer never held a slot.
-function discardCapture() {
-  localStream?.getTracks().forEach((t) => { t.stop(); });
-  localStream = null;
-  dropTile(myId);
+function discardCapture(src) {
+  const cap = local.get(src);
+  if (!cap) return;
+  cap.stream.getTracks().forEach((t) => { t.stop(); });
+  local.delete(src);
+  // any applyCapture() still between retries is working for a share that no
+  // longer exists. the entry is gone, so its own identity check already fails;
+  // the generation is stamped on the SOURCE, so this is what cancels it, and
+  // bumping the global here cancelled nothing while looking like the mechanism.
+  cap.gen = -1;
+  dropTile(keyOf(myId, src));
 }
 
-function stopShare() {
-  send({ t: "share-stop" });
-  discardCapture();
-  for (const pc of sending.values()) pc.close();
-  sending.clear();
+// stopping ONE source. the screen and the camera are separate shares that
+// happen to belong to the same person: stopping the camera must not close the
+// screen's connections, and `share-stop` now names which slot to free.
+function stopShare(src) {
+  if (!local.has(src)) return;
+  send({ t: "share-stop", src });
+  discardCapture(src);
+  closePCs(sending, (key) => srcOf(key) === src);
   render();
 }
 
@@ -1063,12 +1603,17 @@ let focusId = null;               // tile owning the whole stage, or null
 
 function attachTile(id, stream, isSelf = false) {
   let tile = tiles.get(id);
-  // the presence tile lives in the same map under the same id. drop it before
-  // building the video tile: it has no srcObject, so nothing flickers.
-  if (tile?.classList.contains("peer")) {
-    tile.remove();
-    tiles.delete(id);
-    tile = null;
+  // the presence tile lives in the same map under the BARE peer id, so a video
+  // key never finds it and it has to be dropped by peer. it has no srcObject,
+  // so nothing flickers. peerOf() returns a bare id unchanged, so the key that
+  // IS the bare id takes the same path and needs no second branch -- it just
+  // has to forget the tile it was about to reuse.
+  const plateKey = peerOf(id);
+  const plate = tiles.get(plateKey);
+  if (plate?.classList.contains("peer")) {
+    plate.remove();
+    tiles.delete(plateKey);
+    if (plateKey === id) tile = null;
   }
   if (!tile) {
     tile = document.createElement("div");
@@ -1319,15 +1864,16 @@ function plate(id) {
 // it cannot use attachTile/dropTile, which both call render() back.
 function syncRoster() {
   const want = peers.size ? new Set([myId, ...peers]) : new Set();
-  for (const id of want) {
-    // whoever already has video on stage gets no monogram: that tile is their
-    // presence.
-    if (!tiles.has(id) || tiles.get(id).classList.contains("peer")) plate(id);
-  }
-  for (const [id, tile] of [...tiles]) {
-    if (!tile.classList.contains("peer") || want.has(id)) continue;
+  // whoever already has video on stage gets no monogram: those tiles are their
+  // presence, and one peer can now own two of them, so the question is asked
+  // per PEER and not per key.
+  for (const id of want) if (!videosOf(id)) plate(id);
+  for (const [key, tile] of [...tiles]) {
+    // a presence tile is keyed by the bare peer id, so `want` is asked directly.
+    if (!tile.classList.contains("peer")) continue;
+    if (want.has(key) && !videosOf(key)) continue;
     tile.remove();
-    tiles.delete(id);
+    tiles.delete(key);
   }
 }
 
@@ -1549,6 +2095,8 @@ document.addEventListener("fullscreenchange", relayout);
 
 addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
+  // innermost first: the menu floats over the gate's own layer.
+  if (qualOpen) return closeQual();
   if (gateOpen) return closeGate();
   // in fullscreen esc belongs to the browser; here it only leaves focus.
   if (focusId && !document.fullscreenElement) {
@@ -1606,11 +2154,17 @@ function nameOf(id) {
 // the `names` broadcast lands after `joined`, and in that gap I would show up
 // by id. with no valid name it falls back to a bare "you", which does not
 // qualify itself twice.
-function pill(tile, id) {
-  const isMe = id === myId;
-  const displayName = isMe ? (nameOk(myName) ? myName : "you") : nameOf(id);
+function pill(tile, key) {
+  const peer = peerOf(key);
+  const src = srcOf(key);
+  const isMe = peer === myId;
+  const base = isMe ? (nameOk(myName) ? myName : "you") : nameOf(peer);
+  // the source is appended only when this peer has more than one video on
+  // stage. a lone screen needs no label saying it is a screen, and adding one
+  // unconditionally would push the name out of a narrow tile for nothing.
+  const displayName = src && videosOf(peer) > 1 ? `${base} · ${src}` : base;
   tile.querySelector(".who b").textContent = displayName;
-  tile.querySelector(".who").classList.toggle("me", isMe && displayName !== "you");
+  tile.querySelector(".who").classList.toggle("me", isMe && base !== "you");
   return displayName;
 }
 // localStorage throws in a restricted context (cookies blocked, sandboxed
@@ -1849,8 +2403,9 @@ function render() {
   const idle = tiles.size === 0;
   $("empty").hidden = !idle;
   if (idle) {
-    // the same budget startShare() hints to the picker, assuming 16:9.
-    const { w, h } = boxFor(maxCapturePixels);
+    // what the active profile will actually capture, assuming 16:9: the
+    // server's budget is the ceiling, and Motion aims below it.
+    const { w, h } = boxFor(budgetOf(qual()));
     $("fRoom").textContent = ROOM;
     $("fPeers").textContent = n;
     $("fSharers").textContent = `${sharers.size}/${maxSharers}`;
@@ -1859,49 +2414,68 @@ function render() {
   if (focusId && !tiles.has(focusId)) focusId = null;
   $("gridBtn").disabled = !focusId;
 
-  for (const [id, tile] of tiles) {
+  for (const [key, tile] of tiles) {
     // a name can change after the tile exists, so the pill is rewritten on
     // every render, not only at creation.
-    pill(tile, id);
+    pill(tile, key);
+    const peer = peerOf(key);
     if (tile.classList.contains("peer")) {
-      const named = names.has(id);
-      const waiting = sharers.has(id);
+      const named = names.has(peer);
+      // any of their sources still waiting for its video: a presence tile is
+      // keyed by the bare id, so the sharer set is asked per peer.
+      const waiting = [...sharers].some((k) => peerOf(k) === peer);
       tile.classList.toggle("anon", !named);
       tile.classList.toggle("wait", waiting);
       tile.querySelector(".glyph").textContent =
-        named ? initial(nameOf(id)) : "_";
+        named ? initial(nameOf(peer)) : "_";
       if (waiting) tile.querySelector(".who b").textContent = "connecting…";
       // two people with the same name are only told apart by id.
-      tile.querySelector(".who").title = named ? `${nameOf(id)} · ${id}` : id;
+      tile.querySelector(".who").title = named ? `${nameOf(peer)} · ${peer}` : peer;
       continue;
     }
-    const on = id === focusId;
+    const on = key === focusId;
     tile.classList.toggle("focused", on);
-    const targetLabel = id === myId ? "your screen" : nameOf(id);
+    const targetLabel = peer === myId
+      ? `your ${srcOf(key) || "screen"}`
+      : `${nameOf(peer)}'s ${srcOf(key) || "screen"}`;
     const btn = tile.querySelector(".focus");
     btn.textContent = on ? "leave focus" : "focus";
     btn.setAttribute("aria-label", on ? "Leave focus" : `Focus on ${targetLabel}`);
     tile.querySelector(".full").setAttribute("aria-label", `Fullscreen: ${targetLabel}`);
   }
 
-  const btn = $("shareBtn");
-  const mine = !!localStream;
-  // the set is full and I am not in it: there is no slot to ask for.
-  const full = !mine && sharers.size >= maxSharers;
-  btn.className = mine ? "stop" : "on";
-  btn.disabled = dead || full || !canShare();
-  btn.title = mine
-    ? "Stop sharing"
-    : !canShare() ? whyCantShare()
-    : full ? `${maxSharers} already on air` : "Share screen";
-  btn.setAttribute("aria-label", btn.title);
+  // each source button is the toggle of its OWN source, because the two can be
+  // on air together: a single "stop" serving both would have made stopping the
+  // camera stop the screen with it.
+  const onScreen = local.has("screen");
+  const onCam = local.has("camera");
+  // a slot is a stream, so the room can be full while I already hold one: what
+  // matters per button is whether THIS source has a slot to ask for.
+  const noSlot = sharers.size >= maxSharers;
+
+  renderSourceBtn("shareBtn", {
+    on: onScreen, noSlot, noun: "screen",
+    icoStart: "icoScreen", icoStop: "icoStop",
+    // hidden only where the browser has ANSWERED that it cannot. an insecure
+    // origin is a different statement: there the capability exists and the fix
+    // belongs to the user, so the button stays and its title carries the reason.
+    // hiding on that would erase the only hint that screen sharing exists at all.
+    hidden: !onScreen && window.isSecureContext && !canShareScreen(),
+    why: canShareScreen() ? "" : whyCantShare(),
+  });
+  renderCamBtn(onCam, noSlot);
+  renderQualBtn();
 
   relayout();
 }
 
 /* ---------- dock ---------- */
 
-$("shareBtn").onclick = () => (localStream ? stopShare() : startShare());
+$("shareBtn").onclick = () =>
+  (local.has("screen") ? stopShare("screen") : startShare("screen"));
+$("camBtn").onclick = () =>
+  (local.has("camera") ? stopShare("camera") : startShare("camera"));
+$("flipBtn").onclick = () => { flipCamera(); };
 $("copyBtn").onclick = async () => {
   const b = $("copyBtn");
   // remove and re-add the class with a reflow in between, or a second click in
@@ -1932,6 +2506,196 @@ $("soundBtn").onclick = () => {
   renderSoundBtn();
   if (soundOn) ensureAudio();
 };
+
+/* ---------- quality ---------- */
+
+// coloured means a mode is on, the same vocabulary the share button uses: here
+// it says the capture is not on the default trade. what it is not is a toggle,
+// so the click opens the three choices with the words that tell them apart
+// instead of cycling through them blind.
+let qualOpen = false;
+
+// one shape for both source buttons. the two are the same seven decisions --
+// colour, visibility, the two icon swaps, disabled, title, aria-label -- and
+// written twice they had already diverged: only what genuinely differs per
+// source is an argument. `why` is the reason this source cannot START, empty
+// when it can; it never gates stopping.
+function renderSourceBtn(id, { on, noSlot, noun, icoStart, icoStop, hidden, why }) {
+  const b = $(id);
+  b.hidden = hidden;
+  // a coloured dock button means a mode is on, and a live source is exactly that.
+  b.className = on ? "stop" : "on";
+  // the icon says which way the click goes, and it has to be per source: with
+  // both able to run at once, one shared stop icon would have claimed the
+  // screen was on air whenever the camera was.
+  //
+  // toggleAttribute and not `.hidden`: the `hidden` IDL property lives on
+  // HTMLElement, and these are SVGElements. `svg.hidden = false` assigns a
+  // plain JS property and never touches the attribute, so the icon that starts
+  // `hidden` in the markup stays hidden forever. the CSS rule matches the
+  // attribute, so the attribute is what has to move.
+  $(icoStart).toggleAttribute("hidden", on);
+  $(icoStop).toggleAttribute("hidden", !on);
+  // stopping has to stay reachable on a phone, where the screen source never
+  // existed in the first place: the capability only gates STARTING one.
+  b.disabled = dead || (!on && (noSlot || !!why));
+  b.title = on
+    ? `Stop sharing the ${noun}`
+    : why || (noSlot ? `${maxSharers} already on air` : `Share ${noun}`);
+  b.setAttribute("aria-label", b.title);
+}
+
+function renderCamBtn(onCam, noSlot) {
+  // hidden and not disabled: a camera button on a browser with no camera API
+  // is the same empty promise the install button used to make on Firefox. this
+  // rides on `[hidden] { display: none !important }`, see the stylesheet. the
+  // `!onCam` term is the share button's lesson, applied before it costs
+  // anything: whatever is on air keeps its stop, or an answer arriving
+  // mid-share takes away the only way to end it.
+  const hidden = !onCam && (!canShareCamera() || !camHasAny);
+  const flip = $("flipBtn");
+  // the flip only exists while there is something to flip. a third state
+  // crammed into the camera button would have cost the ability to stop it.
+  flip.hidden = hidden || !onCam || !camHasBoth;
+  if (!flip.hidden) {
+    flip.disabled = dead;
+    flip.title = `Switch to the ${camFacing === "environment" ? "front" : "back"} camera`;
+    flip.setAttribute("aria-label", flip.title);
+  }
+  renderSourceBtn("camBtn", {
+    on: onCam, noSlot, noun: "camera",
+    icoStart: "icoCam", icoStop: "icoCamStop",
+    hidden,
+    // the camera has no insecure-origin case to explain: where it cannot be
+    // started the button is not there, so there is never a reason to carry.
+    why: "",
+  });
+}
+
+// how many cameras exist decides whether the flip is offered at all. the count
+// needs no permission, only the labels do, so this can run before any capture.
+// counting videoinput devices says how many cameras exist, never that any two
+// of them are a front and a back. a laptop with a webcam and a phone offered as
+// a Continuity camera counts two, and neither has a facingMode to flip between,
+// so the flip appeared on a desktop that has nothing to flip. a device that
+// names its lens is the one that has lenses.
+function noteCamera(track) {
+  const st = track?.getSettings?.() || {};
+  camFacingKnown = !!st.facingMode;
+  if (st.facingMode) camFacing = st.facingMode;
+}
+
+async function probeCameras() {
+  if (!canShareCamera() || !navigator.mediaDevices.enumerateDevices) return;
+  try {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const cams = devs.filter((d) => d.kind === "videoinput").length;
+    camHasBoth = cams > 1 && camFacingKnown;
+    // a browser that lists devices at all and lists no camera has none, so the
+    // button would be promising a device that does not exist. an EMPTY list is
+    // a different statement: Safari answers that before any permission is
+    // granted, and hiding on it would kill the button on the one device where
+    // the camera is the only capture available.
+    if (devs.length && !cams) camHasAny = false;
+  } catch {}
+  render();
+}
+
+function renderQualBtn() {
+  const b = $("qualBtn");
+  b.classList.toggle("on", quality !== QUALITY_DEFAULT);
+  // the profile only ever reaches a capture, so without one the button is a
+  // promise the browser cannot keep, exactly like the share button beside it.
+  b.disabled = !canShare();
+  b.title = canShare() ? `Capture quality: ${qual().label}` : whyCantShare();
+  b.setAttribute("aria-label", b.title);
+  b.setAttribute("aria-expanded", qualOpen ? "true" : "false");
+}
+
+// built once: QUALITY does not change at runtime, and rebuilding on every open
+// would put a second place in charge of which item is ticked, which is the
+// exact split that let the mark lag a click behind.
+function buildQualMenu() {
+  $("qmenu").innerHTML = Object.entries(QUALITY)
+    .map(([key, p]) =>
+      `<button type="button" role="menuitemradio" data-q="${key}">` +
+      `<b>${p.label}</b><span>${p.hint}</span></button>`)
+    .join("");
+  markQual();
+}
+
+// the mark is written in place rather than re-rendered: the menu stays open
+// after a choice, so recreating the items would throw away the focus of whoever
+// is choosing with the keyboard.
+function markQual() {
+  for (const b of $("qmenu").querySelectorAll("[data-q]")) {
+    b.setAttribute("aria-checked", String(b.dataset.q === quality));
+  }
+}
+
+function openQual() {
+  const menu = $("qmenu");
+  menu.hidden = false;
+  // measured after unhiding, and placed from the button's box: `position:
+  // fixed` keeps it out of the stage the tiles are fitted into, so opening it
+  // moves no video.
+  const b = $("qualBtn").getBoundingClientRect();
+  const m = menu.getBoundingClientRect();
+  menu.style.left = `${Math.min(Math.max(8, b.left + b.width / 2 - m.width / 2), innerWidth - m.width - 8)}px`;
+  menu.style.top = `${Math.max(8, b.top - m.height - 10)}px`;
+  qualOpen = true;
+  renderQualBtn();
+  menu.querySelector('[aria-checked="true"]')?.focus();
+}
+
+function closeQual() {
+  // hiding the container does not move the focus off a button inside it, so
+  // whoever chose with the keyboard was left focused on an invisible element
+  // and the next tab started from nowhere. it goes back to the button that
+  // opened the menu, and only when it was in here: closing by clicking
+  // somewhere else must not steal what that click just focused.
+  const inside = $("qmenu").contains(document.activeElement);
+  qualOpen = false;
+  $("qmenu").hidden = true;
+  renderQualBtn();
+  if (inside) $("qualBtn").focus();
+}
+
+// setParameters does not renegotiate and applyConstraints reconfigures the
+// track in place, so a profile change lands on a live share without a byte of
+// SDP crossing the wire and without the picker reappearing.
+async function setQuality(key) {
+  if (!QUALITY[key] || key === quality) return;
+  quality = key;
+  storeQuality(key);
+  markQual();
+  render();                       // the empty card announces the capture size
+  // the captures and the senders are independent of each other -- the encoder
+  // parameters read nothing applyCapture writes -- and this runs while someone
+  // is comparing profiles against a live screen. two batches in a row meant the
+  // new bitrate waited out a source that spends 900ms refusing the cut.
+  await Promise.all([
+    ...[...local.keys()].map((src) => applyCapture(src)),
+    ...[...sending.values()].map((pc) => applyEncoding(pc)),
+  ]);
+}
+
+$("qualBtn").onclick = () => (qualOpen ? closeQual() : openQual());
+// choosing does NOT close the menu, which is the opposite of what a menu
+// usually does and is the point here: a profile applies to the live capture in
+// place, so leaving it open is what lets someone try the three against the
+// screen they are actually sharing and stop at the one that reads. closing on
+// the choice also meant the mark moved after the menu was already gone, which
+// looked like the click had not registered.
+$("qmenu").onclick = (e) => {
+  const item = e.target.closest("[data-q]");
+  if (item) setQuality(item.dataset.q);
+};
+// a menu over a stage that is mostly video has to close by clicking the video.
+// pointerdown and not click, because the tiles answer pointerdown to pan.
+addEventListener("pointerdown", (e) => {
+  if (qualOpen && !e.target.closest("#qmenu, #qualBtn")) closeQual();
+}, true);
 
 /* ---------- install ---------- */
 
@@ -2061,7 +2825,7 @@ function drawWave(tile) {
   if (!data?.length) return;
 
   accent ||= getComputedStyle(document.documentElement)
-    .getPropertyValue("--accent").trim() || "#5ad3bb";
+    .getPropertyValue("--accent").trim() || "#2f9e88";
   const show = data.slice(-Math.floor(w / WAVE_SLOT));
   const peak = Math.max(...show, 1);
   g.fillStyle = accent;
@@ -2099,15 +2863,45 @@ setInterval(async () => {
     push(id, bps);
   }
 
-  // our own tile: aggregates the upload to every peer
-  const self = tiles.get(myId);
-  if (self && !self.classList.contains("peer") && sending.size) {
-    let total = 0, outW = 0, outH = 0, limitReason = "", policy = "";
-    for (const [id, pc] of sending) {
-      const stats = await pc.getStats();
+  // our own tiles: one per source on air, each aggregating the upload to ITS
+  // own destinations. iterating all of `sending` would have folded the screen's
+  // bitrate into the camera's strip the moment both went up, and reported each
+  // one's destination count as the sum of both.
+  await Promise.all([...local].map(([src, cap]) => selfStrip(src, cap)));
+
+  // room session clock: reuse the single 1s telemetry tick — no second timer.
+  const crono = $("topTime");
+  if (crono && !crono.hidden && startedAt) crono.textContent = fmtClock(Date.now() - startedAt);
+}, 1000);
+
+
+// one sharer strip, for ONE source. it is a function and not a loop body
+// because the two sources are independent all the way down: their destinations,
+// their byte counters and their round trips into getStats().
+async function selfStrip(mySrc, myCap) {
+  const self = tiles.get(keyOf(myId, mySrc));
+  const mySenders = [...sending].filter(([k]) => srcOf(k) === mySrc);
+  if (self && !self.classList.contains("peer") && mySenders.length) {
+    let total = 0, outW = 0, outH = 0, outFps = 0, limitReason = "", policy = "";
+    // the tightest destination's estimate, not the sum: separate paths do not
+    // add up, they share one uplink, and what governs the stream is the worst
+    // of them.
+    let est = 0;
+    // the reports are gathered together and folded after: with two sources on
+    // air this loop is 8 PCs, and one serialized getStats() each is the whole
+    // second's budget spent waiting. `est` and `outW` are minima, so the order
+    // they are folded in does not enter into it.
+    const reports = await Promise.all(mySenders.map(([, pc]) => pc.getStats()));
+    for (const [i, [sendKey, pc]] of mySenders.entries()) {
+      const stats = reports[i];
+      const avail = estimateOf(stats);
+      if (avail && (!est || avail < est)) est = avail;
       stats.forEach((r) => {
         if (r.type === "outbound-rtp" && r.kind === "video") {
-          const b = rate(`tx:${id}`, r.bytesSent || 0);
+          // keyed by the whole composite: the same destination now carries two
+          // streams, and one shared counter would have had them overwrite each
+          // other's byte total every tick.
+          const b = rate(`tx:${sendKey}`, r.bytesSent || 0);
           if (b) total += b;
           // the worst destination is the interesting one: an encoder that
           // dropped a rung is what the sharer needs to see, even if the others
@@ -2117,6 +2911,7 @@ setInterval(async () => {
           if (r.frameWidth && (!outW || r.frameWidth < outW)) {
             outW = r.frameWidth;
             outH = r.frameHeight;
+            outFps = Math.round(r.framesPerSecond || 0);
             limitReason =
               r.qualityLimitationReason && r.qualityLimitationReason !== "none"
                 ? r.qualityLimitationReason
@@ -2133,29 +2928,44 @@ setInterval(async () => {
     // only when it differs, because the right capture with an output one rung
     // below is the whole diagnosis, and whoever caused the collapse was the one
     // person who could not see it.
-    const cap = localStream?.getVideoTracks()[0]?.getSettings();
+    const cap = myCap.stream.getVideoTracks()[0]?.getSettings();
     const capTxt = cap?.width && cap?.height ? `${cap.width}×${cap.height}` : "";
     const didDrop = outW && cap?.width && outW < cap.width;
-    const detail = (didDrop ? ` → ${outW}×${outH}` : "") + (limitReason ? ` ${limitReason}` : "");
+    // the framerate is on the sharer's own strip because a profile can buy
+    // resolution with frames: 6fps with no number beside it reads as a frozen
+    // screen, and the person who chose it is the only one who can say so.
+    const detail =
+      (didDrop ? ` → ${outW}×${outH}` : "") +
+      (outFps ? ` · ${outFps}fps` : "") +
+      (limitReason ? ` ${limitReason}` : "");
     self.querySelector(".tel").classList.add("vivo");
-    self.querySelector(".rate").textContent = `↑ ${fmt(total) || "--"}`;
+    // sent against available, because they answer opposite questions and look
+    // identical without each other: 400 kb/s of 3.4 Mb/s is an encoder that is
+    // not asking, 400 of 450 is a link that has nothing left to give. the
+    // estimate is congestion control's guess, not a measurement of the wire,
+    // and it starts cold at ~300 kb/s and climbs.
+    const rateEl = self.querySelector(".rate");
+    rateEl.textContent = `↑ ${fmt(total) || "--"}${est ? ` / ${fmt(est)}` : ""}`;
+    rateEl.title = est
+      ? `sending ${fmt(total)}, congestion control estimates ${fmt(est)} available on the tightest destination`
+      : "sending";
     const size = self.querySelector(".size");
     size.textContent =
-      `${capTxt ? `${capTxt}${detail} · ` : ""}${sending.size} destination${sending.size > 1 ? "s" : ""}`;
+      `${capTxt ? `${capTxt}${detail} · ` : ""}${mySenders.length} destination${mySenders.length > 1 ? "s" : ""}`;
     size.className = `size${didDrop || limitReason ? " warn" : ""}`;
     // the path field is useless on our own tile (there is no ICE pair to talk
-    // about), so it is where the encoding policy fits at no layout cost.
+    // about), so it carries the encoding policy at no layout cost, and when
+    // there is nothing wrong with the policy, the profile that is not the
+    // default one: a room watching 6fps deserves to know it was chosen.
+    // a refused cut outranks the profile name for the same reason a refused
+    // policy does: one is what was chosen, the other is what is being encoded.
+    const warn = policy || myCap.policy;
     const via = self.querySelector(".path");
-    via.textContent = policy || "";
-    via.className = `path${policy ? " warn" : ""}`;
-    push(myId, total);
+    via.textContent = warn || (quality !== QUALITY_DEFAULT ? qual().label.toLowerCase() : "");
+    via.className = `path${warn ? " warn" : ""}`;
+    push(keyOf(myId, mySrc), total);
   }
-
-  // room session clock: reuse the single 1s telemetry tick — no second timer.
-  const crono = $("topTime");
-  if (crono && !crono.hidden && startedAt) crono.textContent = fmtClock(Date.now() - startedAt);
-}, 1000);
-
+}
 
 // mm:ss under an hour, h:mm:ss after: a room session is read in minutes first.
 function fmtClock(ms) {
@@ -2171,18 +2981,31 @@ function fmtClock(ms) {
 // second, getStats() ran twice for the same peer, once here and once in the
 // loop. and RTCStatsReport is already maplike, so the `new Map()` that used to
 // be here copied the whole report just to use `.get`.
-function pathOf(stats) {
+// the active path and the bandwidth estimate are two fields of ONE record, so
+// what counts as that record is decided here and nowhere else. it was written
+// twice, with the predicate duplicated, which is a rule that drifts silently
+// the day a second pair can be nominated.
+function nominatedPair(stats) {
   for (const r of stats.values()) {
-    if (r.type === "candidate-pair" && r.state === "succeeded" && r.nominated) {
-      const local = stats.get(r.localCandidateId);
-      const rtt = r.currentRoundTripTime;
-      return {
-        type: local?.candidateType ?? "?",
-        rtt: rtt != null ? Math.round(rtt * 1000) : null,
-      };
-    }
+    if (r.type === "candidate-pair" && r.state === "succeeded" && r.nominated) return r;
   }
   return null;
+}
+
+// only Chromium fills `availableOutgoingBitrate` in: Safari and Firefox report
+// nothing, which is why an absent value hides the field instead of showing 0.
+function estimateOf(stats) {
+  return nominatedPair(stats)?.availableOutgoingBitrate || 0;
+}
+
+function pathOf(stats) {
+  const pair = nominatedPair(stats);
+  if (!pair) return null;
+  const rtt = pair.currentRoundTripTime;
+  return {
+    type: stats.get(pair.localCandidateId)?.candidateType ?? "?",
+    rtt: rtt != null ? Math.round(rtt * 1000) : null,
+  };
 }
 
 boot();
