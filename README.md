@@ -45,23 +45,114 @@ in `$BUN_INSTALL/bin` or in `~/.bun/bin`, which covers a non-login shell that
 never read the install rc) and hands the run over. Without Bun it prints what is
 missing, why the server needs it, and the one line that installs it, then exits.
 
-Then, on the same machine:
+## How to use
+
+Three things have to be true before a call happens: the server is up, everybody
+can open the page over **HTTPS** (or `localhost`), and the browsers can reach a
+**STUN** server over **UDP**. The first is the command above. The other two are
+the whole difference between the three paths below.
+
+| what you want | how you serve it | extra flags |
+|---|---|---|
+| a group inside your tailnet | `tailscale serve` | none |
+| one call with somebody outside it | ngrok, cloudflared | `--ice`, and it is not optional |
+| a look at the interface | `localhost` | none |
+
+Whichever it is, what you send people is a link with the room in the hash:
+`https://…/#retro`. See [Rooms](#rooms).
+
+### With Tailscale
+
+The case this was built for, and the only one where nothing else needs
+configuring.
 
 ```bash
-tailscale serve --bg 3000
+bunx @thoth-dev/tailcast     # HTTP + signaling on :3000, STUN on udp/3478
+tailscale serve --bg 3000    # https://<machine>.<tailnet>.ts.net
 ```
 
-This publishes `https://<machine>.<tailnet>.ts.net` with a real Let's Encrypt
-certificate, reachable only from inside the tailnet. **This step is not
-optional:** `getDisplayMedia` exists only in a secure context, so serving on
-`http://100.64.x.y:3000` makes the API disappear from `navigator.mediaDevices`.
+`serve` puts a real Let's Encrypt certificate in front of the same machine the
+STUN socket is on, reachable only from inside the tailnet. **This step is not
+optional:** `getDisplayMedia` exists only in a secure context. And because the
+page's hostname *is* that machine, the client derives
+`stun:<machine>.<tailnet>.ts.net:3478` by itself and the derivation is correct —
+which is why `--ice` does not appear here.
 
-`tailscale serve` needs HTTPS enabled on the tailnet first (admin console,
-**DNS → Enable HTTPS**). Without it, `tailscale cert` answers `HTTPS cert support
-is not enabled` and serve never comes up.
+Two things have to be in place:
 
-STUN runs on UDP 3478 directly on the tailnet IP, outside `tailscale serve`,
-which proxies TCP only. If your tailnet has restrictive ACLs, open 3478/udp.
+- **HTTPS enabled on the tailnet** (admin console, **DNS → Enable HTTPS**).
+  Without it `tailscale cert` answers `HTTPS cert support is not enabled` and
+  serve never comes up.
+- **3478/udp reachable**, if your ACLs are restrictive. `tailscale serve`
+  proxies TCP only, so browsers hit `100.x:3478` directly for STUN.
+
+`serve --bg` persists across restarts; from then on only the Bun process needs
+restarting.
+
+### Behind a tunnel (ngrok, cloudflared)
+
+For somebody who is not on your tailnet. It works, and it costs the two things
+this section is about.
+
+```bash
+bunx @thoth-dev/tailcast --ice "stun:stun.l.google.com:19302,stun:stun.cloudflare.com:3478"
+
+ngrok http 3000                                  # or
+cloudflared tunnel --url http://localhost:3000
+```
+
+**`--ice` is not optional here, and leaving it out fails in a shape that looks
+like a working call.** A tunnel puts HTTPS in front of your port, and what it
+forwards to the browser is TCP; none of them forward UDP. The page arrives from
+a hostname that answers HTTPS and nothing else, so the STUN url the
+client derives from it — `stun:<subdomain>.ngrok-free.dev:3478` — is a UDP port
+that does not exist, and no `srflx` candidate ever forms. What that renders is a
+**black tile**, not `connecting…`: signaling is the half a tunnel carries
+perfectly, so the SDP crosses, `ontrack` fires, and a `<video>` is attached to a
+track that will never receive a packet. Read it backwards next time —
+`connecting…` means the SDP never arrived, black means it arrived and the media
+did not.
+
+So `--ice` points the browsers at public STUN instead, which is what those two
+urls are. The server's own STUN server goes unused in this mode: the peers are
+on different networks, and a `100.x` address is of no use to either of them.
+
+`stun:` only. A `turn:` url is refused with a line on stderr rather than
+accepted quietly, because TURN needs credentials and a relay this project does
+not have. That is also the honest limit of this path: with no relay, two peers
+behind symmetric NATs (mobile carriers, plenty of corporate networks) have no
+route to each other at all, and there is nothing here to fall back to.
+
+Two more things bite behind a tunnel:
+
+- **Its own warning page.** Free ngrok puts one in front of the first visit;
+  click through it. If the page still cannot read `/config` it retries three
+  times and then says so, instead of starting a call that cannot connect — an
+  interstitial or a 502 is HTML with a status, which is exactly the shape that
+  read fails in.
+- **There is no authentication.** A tunnel is a public URL in front of a room
+  whose name is the only partition that exists: whoever opens the link is in the
+  call. `--ice` makes it work, it does not make it safe. Pick a room nobody
+  would guess, treat the link as the secret it is, and close the tunnel when the
+  call is over. See [Security](#security).
+
+### On this machine only
+
+```bash
+bunx @thoth-dev/tailcast
+# then http://localhost:3000
+```
+
+`localhost` is a secure context by definition, so capture works there with
+nothing in front of it. Good for trying the interface out; no use for a call,
+since it is the one address every other machine resolves to itself.
+
+**`http://192.168.1.20:3000` and `http://100.64.x.y:3000` are not secure
+contexts.** The page loads and the room fills up, but `getDisplayMedia` is
+absent from `navigator.mediaDevices` there, so nothing can be captured — the
+share button stays where it is, disabled, with the reason in its tooltip,
+because on an insecure origin the capability exists and the fix is yours. That
+fix is HTTPS, by one of the two paths above. Not a self-signed certificate.
 
 ## Flags
 
@@ -76,7 +167,7 @@ bunx @thoth-dev/tailcast [flags]
 | `--peers <n>` | `MAX_PEERS` | 5 | peers per room; the 6th gets `denied` and stays out |
 | `--sharers <n>` | `MAX_SHARERS` | 3 | how many transmit at once; the 4th attempt gets `share-denied` |
 | `--pixels <n>` | `MAX_CAPTURE_PIXELS` | 1440000 | capture pixel budget (1600×900) |
-| `--ice <urls>` | `ICE_URLS` | | comma-separated `stun:` urls, overriding the one derived from the page's hostname. only needed behind a tunnel |
+| `--ice <urls>` | `ICE_URLS` | | comma-separated `stun:` urls, overriding the one derived from the page's hostname. only needed [behind a tunnel](#behind-a-tunnel-ngrok-cloudflared) |
 | `--bg` | | | run in the background |
 | `--stop` | | | stop whatever runs in the background on the same port |
 | `--force` | | | with `--stop`, kill even when the process can't be confirmed as ours |
@@ -94,12 +185,9 @@ dir. The command reports success only once the child's own `/config` answers,
 which means after it actually bound the port rather than merely after it was
 spawned.
 
-`GET /config` also hands `iceUrls` to the client. It is empty by default, and the
-client then derives its STUN url from `location.hostname` — right whenever the
-page and the STUN socket are the same machine, which is what `tailscale serve`
-gives you. Behind a tunnel that forwards TCP only (ngrok, cloudflared) the
-derived url points at a UDP port that does not exist, so `--ice` says where STUN
-actually listens.
+`GET /config` is where the browser reads the ones it needs: `stunPort`,
+`maxPeers`, `maxSharers`, `maxCapturePixels` and `iceUrls`, that last one empty
+unless `--ice` was given.
 
 ## Rooms
 
