@@ -34,6 +34,7 @@ type Opts = {
 	maxPeers?: number;
 	maxSharers?: number;
 	maxCapturePixels?: number;
+	iceUrls?: string;
 };
 
 const ROOT = path.join(import.meta.dir, "..");
@@ -68,6 +69,9 @@ const helpText =
       --peers <n>      peers per room (default 5)
       --sharers <n>    how many transmit at once (default 3)
       --pixels <n>     capture pixel budget (default 1440000, = 1600×900)
+      --ice <urls>     comma-separated stun: urls for the browsers to use.
+                       only needed behind a tunnel (ngrok, cloudflared), where
+                       the page's hostname is not where STUN listens
       --bg             run in the background
       --stop           stop what runs in the background
       --force          with --stop, kill even when the process cannot be confirmed
@@ -139,6 +143,7 @@ for (let i = 0; i < argv.length; i++) {
 	else if (a === "--peers") opts.maxPeers = parseNumber(nextValue(), a, 1);
 	else if (a === "--sharers") opts.maxSharers = parseNumber(nextValue(), a, 1);
 	else if (a === "--pixels") opts.maxCapturePixels = parseNumber(nextValue(), a, 1);
+	else if (a === "--ice") opts.iceUrls = nextValue();
 	else if (a === "--bg") bg = true;
 	else if (a === "--stop") stop = true;
 	else if (a === "--force") force = true;
@@ -331,6 +336,7 @@ const env: Record<string, string> = {
 if (opts.maxPeers) env.MAX_PEERS = String(opts.maxPeers);
 if (opts.maxSharers) env.MAX_SHARERS = String(opts.maxSharers);
 if (opts.maxCapturePixels) env.MAX_CAPTURE_PIXELS = String(opts.maxCapturePixels);
+if (opts.iceUrls) env.ICE_URLS = opts.iceUrls;
 
 const serverTarget = path.join(ROOT, "server.ts");
 

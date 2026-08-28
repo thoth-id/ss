@@ -66,6 +66,43 @@ function int(name: string, fallback: number, max = Number.MAX_SAFE_INTEGER): num
 const PORT = int("PORT", 3000, 65535);
 const STUN_PORT = int("STUN_PORT", 3478, 65535);
 
+/* the client derives its STUN url from `location.hostname`, which is right
+   whenever the page and the STUN socket are the same machine -- `tailscale
+   serve` in front of this process, the case this project was built for. put a
+   tunnel in front instead (ngrok, cloudflared) and the derivation breaks in a
+   way nothing reports: the page arrives over https from a hostname that tunnels
+   TCP only, so `stun:<tunnel-host>:3478` is a UDP endpoint that does not exist,
+   no srflx candidate ever forms, and the receiver renders a black tile. black
+   and not "connecting...", because ontrack fires when the remote description is
+   applied -- the signaling half works fine through the tunnel -- so a video
+   element gets attached to a track that never receives a packet.
+
+   ICE_URLS overrides the derivation. stun: only: TURN needs credentials and a
+   relay, which is a different feature with a different security story (see "Out
+   of scope"), and half of it configured here would look like it works until the
+   first symmetric NAT. */
+function iceUrls(): string[] {
+	const raw = process.env.ICE_URLS?.trim();
+	if (!raw) return [];
+	const out: string[] = [];
+	for (const entry of raw.split(",")) {
+		const url = entry.trim();
+		if (!url) continue;
+		if (/^turns?:/i.test(url)) {
+			process.stderr.write(`ICE_URLS: TURN is not supported (${url}); ignoring it\n`);
+			continue;
+		}
+		if (!/^stuns?:[^\s,]+$/i.test(url)) {
+			process.stderr.write(`ICE_URLS: ${JSON.stringify(url)} is not a stun: url; ignoring it\n`);
+			continue;
+		}
+		out.push(url);
+	}
+	return out;
+}
+
+const ICE_URLS = iceUrls();
+
 // peers per room (--peers). the 6th gets `denied` and stays out.
 const MAX_PEERS = int("MAX_PEERS", 5);
 
@@ -225,6 +262,7 @@ Bun.serve<Client>({
 		if (url.pathname === "/config") {
 			return Response.json({
 				stunPort: STUN_PORT,
+				iceUrls: ICE_URLS,
 				maxPeers: MAX_PEERS,
 				maxSharers: MAX_SHARERS,
 				maxCapturePixels: MAX_CAPTURE_PIXELS,

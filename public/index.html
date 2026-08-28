@@ -757,10 +757,43 @@ window.addEventListener("keydown", () => { if (soundOn) ensureAudio(); });
 
 /* ---------- setup ---------- */
 
+/* /config carries the ICE servers, so failing to read it is not the cosmetic
+   loss the old one-line catch treated it as: the fallback derives STUN from
+   location.hostname, which behind a tunnel is a UDP port that does not exist.
+   one flaky read then costs the whole call, and the symptom is a tile stuck on
+   `negotiating` that an F5 fixes -- which reads as a network problem when it is
+   a boot problem.
+
+   `r.ok` is checked because a tunnel answers with its own pages: an interstitial
+   or a 502 is HTML with a status, and `r.json()` on it throws into the same
+   catch as a dead network, where it used to look identical to one. */
+const CFG_TRIES = 3;
+const CFG_RETRY = 300;
+
+async function loadConfig() {
+  let last = "";
+  for (let i = 0; i < CFG_TRIES; i++) {
+    try {
+      const r = await fetch("/config", { cache: "no-store" });
+      if (!r.ok) throw new Error(`answered ${r.status}`);
+      return await r.json();
+    } catch (e) {
+      last = e?.message || String(e);
+      if (i < CFG_TRIES - 1) await new Promise((f) => setTimeout(f, CFG_RETRY * (i + 1)));
+    }
+  }
+  // say it rather than starting a call that cannot connect. whoever reads this
+  // is one reload away from a working room, and had no way to know that.
+  notice(`could not read /config (${last}); reload the page`);
+  return null;
+}
+
 async function boot() {
-  const cfg = await fetch("/config")
-    .then((r) => r.json())
-    .catch(() => ({ stunPort: 3478, maxSharers: 3, maxCapturePixels: 1_440_000 }));
+  const cfg = (await loadConfig()) ?? {
+    stunPort: 3478,
+    maxSharers: 3,
+    maxCapturePixels: 1_440_000,
+  };
   maxSharers = cfg.maxSharers ?? 3;
   maxCapturePixels = cfg.maxCapturePixels ?? 1_440_000;
   // say so up front instead of leaving a button that does nothing. on a phone
@@ -777,8 +810,13 @@ async function boot() {
   // link opens straight into its room, which is the point of sending a link.
   if (!nameOk(myName)) openGate(true);
   // the hostname here is the tailnet MagicDNS name, which resolves to the
-  // 100.x that STUN hands back as an srflx candidate.
-  iceServers = [{ urls: `stun:${location.hostname}:${cfg.stunPort}` }];
+  // 100.x that STUN hands back as an srflx candidate. that derivation holds
+  // only while the page and the STUN socket are the same machine: behind a
+  // tunnel the hostname tunnels TCP and `stun:<host>:3478` answers nothing, so
+  // ICE_URLS on the server says where STUN really is.
+  iceServers = cfg.iceUrls?.length
+    ? [{ urls: cfg.iceUrls }]
+    : [{ urls: `stun:${location.hostname}:${cfg.stunPort}` }];
   connect();
 }
 
