@@ -24,7 +24,9 @@ import {
 	focusScenario,
 	gateScenario,
 	narrowScenario,
+	qualityScenario,
 	roomScenario,
+	sourcesScenario,
 	zoomScenario,
 } from "./scenarios.ts";
 
@@ -53,6 +55,8 @@ await focusScenario(check);
 await zoomScenario(check);
 await narrowScenario(check);
 await roomScenario(check);
+await qualityScenario(check);
+await sourcesScenario(check);
 
 console.log(
 	failures.length ? `\n${failures.length} FAILURE(S): ${failures.join(", ")}` : "\nall green",

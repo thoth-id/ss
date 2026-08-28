@@ -80,7 +80,8 @@ Identifiers are in English (`resolveStatic`, `targetBox`, `pointUnder`,
 (`quadro`, `foco`) and in the `.vivo` class — rename them when you touch that
 code, not as a sweep.
 
-`localStorage` keys are `tailcast:name`, `tailcast:rooms` and `tailcast:sound`.
+`localStorage` keys are `tailcast:name`, `tailcast:rooms`, `tailcast:sound` and
+`tailcast:quality`.
 The legacy `ss:` keys (`ss:name`, `ss:nome`, `ss:rooms`, `ss:salas`, `ss:sound`)
 are still read for migration and then cleared, so existing users keep their name,
 room history and sound preference without a hard cut. Every read is wrapped:
@@ -218,12 +219,15 @@ there is no glare and perfect negotiation is unnecessary. ICE candidates carry
 which of the two PCs they belong to. Candidates arriving before
 `setRemoteDescription` queue on `pc.pending`.
 
-Do not unify these maps.
+Do not unify these maps. They are keyed by `"<peerId>#<src>"` now, not by peer
+id — see *Two sources at once*.
 
 ### The server is the arbiter
 
 `MAX_PEERS` (5) and `MAX_SHARERS` (3) live at the top of `server.ts`, and the
-server owns both decisions — it is the only place that sees a whole room, so
+server owns both decisions (`MAX_SHARERS` counts **streams**, not people,
+since one peer can hold its screen and its camera at once — see *Two sources at
+once*) — it is the only place that sees a whole room, so
 simultaneous clicks on different machines are only serializable there. All three
 limits (`MAX_PEERS`, `MAX_SHARERS`, `MAX_CAPTURE_PIXELS`) read the environment so
 the CLI's `--peers`/`--sharers`/`--pixels` flags can override them; the measured
@@ -272,11 +276,54 @@ for it in the fit: `PAD_TOP` (52) and `PAD_BOT` (84). That is the whole
 mechanism, and `bench/scenarios.ts` asserts it by measuring the dock and pill
 boxes against every tile box, not by trusting the constants.
 
-The dock is seven buttons, and each one maps to something the product already
-does: share (teal to start, red to stop, disabled with the reason in its
-`title`), copy link, switch room, your name, leave focus, mute sounds, and
-install. Do not add a button for a capability that does not exist — there is no
-camera and no hang-up here, however much the reference call UIs have them.
+Every dock button maps to something the product already does: share (teal to
+start, red to stop, disabled with the reason in its `title`), camera (hidden
+where there is no camera API), capture quality, copy link, room, name,
+leave-focus, sound, and install (hidden until the browser offers it). Do not
+add a button for a capability that does not exist — there is no audio and no
+hang-up here, however much the reference call UIs have them. **The camera is
+the one that was added after this rule was written, and it earned it by
+measurement** — see *The camera exists because the phone's screen cannot*.
+
+The quality button is the one that opens a panel instead of acting, because a
+profile is a choice among three and round icons cannot say which. `.qmenu` is
+`position: fixed` and placed from the button's own box, deliberately: the dock's
+height is `PAD_BOT`, the band the tile fit reserves, so a panel growing inside
+it would move every tile on the stage. The bench asserts the page still does not
+scroll with the menu open.
+
+**Choosing does not close it**, which is the opposite of what a menu normally
+does and is the point: a profile applies to the live capture in place, so the
+menu staying open is what lets someone try the three against the screen they are
+actually sharing. It closes on `esc`, on the button, or on a click anywhere else
+— and closing puts the focus back on the button, because hiding a container does
+not move the focus off a button inside it, and the next `tab` then started from
+an invisible element.
+
+**`[hidden] { display: none !important }` at the top of the sheet is
+load-bearing, and it is the file's only `!important`.** The browser's own
+`[hidden]` rule is `display: none` at the specificity of a bare attribute, so
+*any* class that sets `display` outranks it and the element stays on screen with
+`hidden` set. This was four hand-written overrides — `.notice`, `.empty`,
+`.gate`, and a fourth added for `.qmenu`, which had spent a release taking
+clicks over the stage while `qmenu.hidden` read `true`. Writing a fifth was the
+wrong altitude: the element nobody had written one for was **`#installBtn`**,
+which is `.dock button { display: grid }`, so the install button was visible in
+every browser that never fires `beforeinstallprompt` — Firefox, Safari, plain
+`http` — which is the exact button this project says must not exist there. One
+general rule covers the next hideable element before it is written. Specificity
+cannot beat a class from a bare attribute selector, which is why the
+`!important` is not negotiable here.
+
+The bench asserts this **generally**, and generally means every element in the
+page and not a list of the ones that use `hidden` today: it walks
+`querySelectorAll("*")`, sets the attribute with `toggleAttribute` (so the
+source buttons' SVG icons are covered, which have no `hidden` IDL property) and
+reads `getComputedStyle(...).display`. A list would have had to name
+`#installBtn`, and nobody writes down the name of the element they forgot.
+Reverting to the per-element overrides turns that one assertion red with
+`installBtn=grid` and leaves the rest green. The closing assertions also click the closed menu's old coordinates
+now — reading the `hidden` attribute proved only that the attribute was set.
 
 **A dock button that stays coloured means a mode is on** — that is what the share
 and sound buttons say, and copying is not a mode. The copy button used to go
@@ -287,6 +334,27 @@ reflow so a second click animates again. Clipboard failure is caught rather than
 left as an unhandled rejection: `navigator.clipboard` does not exist outside a
 secure context, so on plain `http://100.x` the call is a `TypeError`, and the
 title says to copy from the address bar instead.
+
+**The accent is `#2f9e88`, and the token that pairs with it is `--ink`.** It
+was `#5ad3bb` for a release, which is a neon over a near-black floor. The
+pairing is the part worth remembering, not the hue: `.dock button.on` and `.go`
+fill with `--accent` and ask for `color: var(--ink)`, and `--ink` was never
+declared anywhere. `var()` with no fallback is invalid at computed-value time,
+so `color` fell back to `inherit` and painted `--fg` on the accent. A missing
+custom property fails silently by design: it does not drop the declaration, it
+drops it *at computed-value time*, which no console reports. Whoever changes
+`--accent` changes `--ink` with it.
+
+**`--ink` is white, and a dark ink was tried and rejected.** On paper the dark
+one wins: `#04100d` on the accent is 7.4:1 against white's 3.3:1. On screen it
+loses, and the reason is what the dock is made of: every icon here is a 1.7px
+`stroke`, not a filled glyph, so a dark stroke on a mid-tone fill reads as a
+hole punched through the button rather than as a symbol drawn on it. The one
+place the ratio does bind is the `.go` label, which is real text — white leaves
+it at 3.3:1, under AA. That is a known trade and not an oversight: recovering
+it means taking the *fill* a tone deeper (about `#26836f`, 4.6:1) while
+`--accent` itself stays where it is for the thin strokes over the dark floor,
+which need to go the other way.
 
 Two type roles, and the split is the point: **mono is machine truth** (ids,
 rates, resolutions, candidate types, room names, and the `tailcast` wordmark,
@@ -428,6 +496,206 @@ not a test of the render. Both once produced green suites over broken renders.
 
 Every claim in this section has a mutant that turns the suite red; the control
 run stays green. Add a zoom assertion only with its mutant.
+
+### Two sources at once, and the key that made it possible
+
+The screen and the camera run together, and the change that allowed it is one
+line of data modelling: **everything keyed by peer id is now keyed by
+`"<peerId>#<src>"`** — `tiles`, `zooms`, `sending`, `receiving`, and the
+server's own `sharers` set. `keyOf`/`peerOf`/`srcOf` are the only three
+functions that know the composite exists; nothing between them parses it.
+Presence tiles keep the bare peer id, which is why `peerOf()` has to survive a
+key with no `#` and why `attachTile` drops the monogram **by peer** rather than
+by key.
+
+**A sharer slot is a stream, not a person.** `MAX_SHARERS` counts streams, so
+one person can fill two slots. That is not a compromise: the file already says
+what the limit governs — how many streams each machine *decodes*, at 0.18 core
+each — so counting people would have made it stop describing the thing it
+protects.
+
+Five traps, each of which was a real defect before it was a rule:
+
+- **One PC per (destination, source).** This is the directional rule taken one
+  step further, and the cost is not where it looks: there is one encoder per PC
+  either way, so two sources are two encoders whether or not they share a
+  connection. A single PC carrying both tracks would have left the receiver
+  guessing which track was which.
+- **The `src` in a signal is stated from the media sender's point of view and is
+  never inverted**, unlike `dir`. That is what makes both sides derive the same
+  key. Absent means `screen`, which is what every message meant when a peer
+  could only have one.
+- **The capture generation is stamped on the source, not held in one global.**
+  With two captures alive, a global counter meant the second `applyCapture`
+  cancelled the first one's retries, and the screen would go on quietly encoding
+  its whole source because the camera started a moment later.
+- **The telemetry loops per source.** Iterating all of `sending` folded the
+  screen's bitrate into the camera's strip and reported each one's destination
+  count as the sum of both. The byte counters are keyed by the full composite
+  for the same reason: the same destination now carries two streams.
+- **`flipCamera` replaces the track only on the camera's own senders.** Filtering
+  on `srcOf(key)` is what stops the camera being pushed down the screen's
+  connections the moment both are up.
+
+**Each dock button toggles its own source, and the flip got a button of its
+own.** A single shared stop made stopping the camera stop the screen; cramming
+the flip into the camera button cost the ability to stop the camera at all.
+That is three actions, so it is three buttons — and the flip only exists while
+there is something to flip. Which is what made the dock ten buttons wide: at
+430px it measured **475px against a 430px viewport**, scrolling the page
+sideways, so there is a second breakpoint at 480px. The bench asserts the widest
+state (both sources on air, flip showing) rather than the default one, because
+the default one never overflowed.
+
+### The camera exists because the phone's screen cannot
+
+This file used to say "there is no camera here", and that was right until the
+question stopped being about a camera. The ask was the phone's **screen** in a
+room, over wifi, with no app and no cable, and the wall it hits is not this
+project's:
+
+```
+iPhone 16 Pro, iOS 18.7, Safari 26.5, https via tailscale serve
+secureContext   true          <- HTTPS was never the problem
+mediaDevices    present
+getDisplayMedia absent
+getUserMedia    function
+```
+
+Read on the device, not inferred. **No browser on iOS or Android hands the
+screen to a web page**, by any API, over any transport — cable versus wifi does
+not enter into it, because the transport was never what was missing. That is
+why Meet and Discord share a phone screen from their native app and never from
+their own website. What the same measurement also says is that the camera *is*
+there, so it is the one capture a phone browser can actually perform, and the
+dock now offers it.
+
+What that buys and what it does not: **the camera is not a substitute for the
+phone's screen.** Whoever wants the screen itself still needs AirPlay to a Mac
+(then share that window) or a native app speaking the signaling protocol in
+`README.md` — the server would not change, since it never looks inside `data`.
+Do not let the camera button's existence read as the screen question being
+solved.
+
+Four things hold it together:
+
+- **`canShare()` split into `canShareScreen()` and `canShareCamera()`, and
+  every call site had to pick one.** Collapsing them back re-creates the
+  original bug in mirror image: a phone would get an enabled screen button, or
+  a desktop with no camera would get a camera button promising a device it does
+  not have.
+- **The share button disables on capability only for *starting*.** `btn.disabled
+  = dead || (!mine && (full || !canShareScreen()))`. Gating it on capability
+  alone left a phone sharing its camera with no way to stop, because the screen
+  source it was being judged against never existed there.
+- **Both source buttons are `hidden`, not disabled, and only on an answer.**
+  This is the install button's lesson, and the distinction it turns on is the
+  whole point: *the browser said no* and *the origin is insecure* are different
+  statements. On an insecure origin the capability exists and the fix belongs to
+  the user, so the button stays with the reason in its `title` — hiding there
+  would erase the only hint that screen sharing exists at all. `screenWorks`
+  carries the third case: an API that is defined and then refuses the capability
+  outright (`NotSupportedError`, `TypeError`, `InvalidStateError`) has answered,
+  so the button retires. A user cancelling is `NotAllowedError` and never
+  reaches that branch, which is what keeps a decline from being read as a
+  refusal.
+- **The stop button cannot keep wearing a monitor.** With the screen source
+  hidden on a phone, the share button is the only stop there is, so it swaps its
+  icon while anything is on air. **The swap is `toggleAttribute("hidden", …)`
+  and not `.hidden`** — the `hidden` IDL property is on `HTMLElement` and these
+  are `SVGElement`s, so `svg.hidden = false` assigns a plain JS property, never
+  touches the attribute, and the icon that starts hidden in the markup stays
+  hidden forever. The CSS rule matches the attribute, so the attribute is what
+  has to move. The bench caught exactly this, on the first run of the new
+  scenario.
+- **Flipping front to back uses `replaceTrack`, not a restart.** It does not
+  renegotiate, so the sharer slot is never released, no SDP crosses the wire and
+  no tile is rebuilt. A stop-and-start would drop all three, and the slot could
+  be taken in between by somebody else. What *is* restarted is the capture: the
+  old track is stopped **before** the new lens is asked for, because macOS and
+  iOS allow one camera capture at a time and overlapping the two is a second
+  capture, not a flip. The cost of that order is a share with no picture if the
+  new lens never arrives, so a failure reopens the lens it was on and only then
+  gives up.
+- **`facingMode` is `exact` for the flip and ideal for the start.** An ideal
+  `facingMode` is a hint the device may answer with the camera that is already
+  open, and a flip returning the same lens is indistinguishable from a dead
+  button — while `OverconstrainedError`, which only `exact` can produce, is the
+  answer the catch was already written for. Starting a share stays ideal:
+  refusing there would cost the capture outright.
+- **The lens is read back, never assumed.** `camFacing` used to be set to what
+  was *requested*, and a phone is free to answer `environment` with its front
+  camera. It did, so the first flip asked for the camera already open — which is
+  both halves of a field report: it starts on the front, and switching kills it.
+  `noteCamera()` reads `track.getSettings().facingMode` after every capture.
+- **The count needs a permission, and counting devices is not counting lenses.**
+  Two separate defects sat in one expression, `camHasBoth = cams > 1`, and they
+  cancelled each other out into a button that was missing where it belonged and
+  present where it did not. First: "counting devices needs no permission" is
+  true only of the call succeeding, not of the answer meaning anything — without
+  a granted camera, Safari answers `enumerateDevices` with an **empty list** and
+  Chrome with a **single generic `videoinput`** whatever the hardware holds,
+  precisely so a page cannot count cameras before being allowed to. The one
+  probe ran at boot, so `cams > 1` was false on every phone and nothing
+  recounted for the rest of the session. Second: a laptop with a webcam and a
+  phone offered as a Continuity camera enumerates **two** videoinputs with no
+  front and no back between them, so the flip turned up on a desktop with
+  nothing to flip. The count is therefore taken again on a granted camera, and
+  gated on the device naming a lens at all (`cams > 1 && camFacingKnown`). None
+  of it was visible to the bench before, which set `camHasBoth` by hand and
+  never went through the probe.
+
+- **The camera's box follows the device, not the monitor.** `pickerBox()` is
+  16:9 by construction, and handing it to `getUserMedia` asked a phone held
+  upright for a landscape frame — which is what it answered with, so the front
+  camera came out lying down. Nothing downstream could undo it: `applyCapture`
+  fits the geometry that *arrived* into the budget and only ever shrinks. It
+  was also the worse half of the pixel arithmetic the `CAP_SLACK` comment
+  already documents — the browser fits the source in preserving its own aspect
+  and never crops, so a 9:16 sensor lands at **32%** of a 16:9 box where a 4:3
+  one gets 75%. `cameraBox()` turns the box on its side, and the gate is
+  `(orientation: portrait)` **and** `(pointer: coarse)`, not the window's shape
+  alone: a portrait monitor is ordinary on a desktop, its webcam still has one
+  orientation, and ideal width/height is a request the browser may answer by
+  *cropping* the native frame — following the window there would carve a
+  portrait strip out of the only orientation that camera has. The screen picker
+  stays 16:9 for the reason it always did (following `screen` delivers 31% of
+  the budget on a portrait monitor).
+
+- **The same error name says opposite things per source, and getting it
+  backwards is silent by construction.** Cancelling the screen picker is
+  `NotAllowedError` and deserves no notice; the *same name* out of
+  `getUserMedia` is a permission the person refused and now has to grant in the
+  site settings. The old catch silenced both, so someone who denied the camera
+  by accident tapped the button forever and watched nothing happen — a refusal
+  that reads exactly like a broken button. `captureError(src, err)` is the one
+  place that maps a failure to a sentence worth acting on, and returning `""`
+  is how a cancel stays quiet. `NotReadableError` gets its own line because
+  macOS and iOS allow one capture at a time, which is the project's own
+  measured platform note showing up as a user-facing error.
+
+`sourcesScenario` in `bench/scenarios.ts` asserts all of it by deleting
+`getDisplayMedia` off the live `navigator.mediaDevices` and reading back
+`getComputedStyle(...).display` — never the flags that were set, since `hidden`
+on a dock button only means anything because of the `!important` rule, and that
+rule is the one most easily reverted. The assertion worth keeping in mind is
+*sharing a camera with no screen API still offers stop*: gating the button on
+capability alone left a phone with no way to stop, judged against a source that
+never existed there.
+
+**What is not covered.** The bench drives fake streams, so it asserts the
+button's states, the `hidden` rule, the fit and the box that reaches
+`getUserMedia` — it cannot assert that a real camera opens, that `facingMode`
+picks the lens you meant, or what a phone camera does to the encoder. The
+orientation case is emulated (430×780 plus `Emulation.setTouchEmulationEnabled`,
+which is what actually sets `(pointer: coarse)`; the metrics override alone
+leaves it false), so what is verified is that a portrait device asks for a
+portrait box, not that a given sensor honours it. And **rotating the phone
+mid-share is still open**: `applyCapture` pins the width and height it computed
+from the geometry that arrived, so turning the device sideways afterwards leaves
+the cut asking for the orientation it started in. That was true before this
+change too, in the other direction; nobody has measured what a real device does
+with it.
 
 ### Presence is a call tile
 
@@ -585,12 +853,13 @@ PWA is exactly where that becomes an app frozen on an old `sw.js` that never
 fetches the new one.
 
 The install button is the last one in the dock and is `hidden` until
-`beforeinstallprompt` fires. A button promising an install the browser will not
-perform — Firefox and Safari on desktop, or plain http — is worse than no button.
-It is last because it is the rarest action and the only one that leaves for good
-once used. iOS fires no such event: there the path is Safari's own "Add to Home
-Screen", which is what the `apple-mobile-web-app-*` metas serve. They, not the
-manifest, carry the name and the standalone mode on iOS.
+`beforeinstallprompt` fires — which needs `[hidden] { display: none !important }`
+to be true rather than merely written, see *The shell is a call, not a page*. A button promising an install the browser will not
+perform — Firefox and Safari on desktop, or plain http — is worse than no
+button. It is last because it is the rarest action and the only one that leaves
+for good once used. iOS fires no such event: there the path is Safari's own "Add
+to Home Screen", which is what the `apple-mobile-web-app-*` metas serve. They,
+not the manifest, carry the name and the standalone mode on iOS.
 
 Losing the address bar costs nothing here, because the room button already
 switches rooms without one.
@@ -645,6 +914,178 @@ Three rules that came out of that, and the measurements behind all of them are i
 
 The sharer's strip also shows the outbound resolution when it differs from the
 capture, plus `qualityLimitationReason`.
+
+### Three profiles, because the automatic trade is not always the right one
+
+The encoder's trade is real and unavoidable — a thin link buys pixels with
+frames or frames with pixels — but *which* trade is right is a property of what
+is on the screen, and the encoder cannot see that. A terminal wants every pixel
+and does not care about 6fps; a video wants the opposite. So the trade is a
+choice in the dock (`QUALITY` in `public/index.html`), three profiles, stored in
+`localStorage` under `tailcast:quality`:
+
+| profile | capture | fps | maxBitrate | degradationPreference | contentHint |
+|---|---|---|---|---|---|
+| Text | full budget | 5 | 4 Mb/s | maintain-resolution | text |
+| Sharp (default) | full budget | 15 | 3 Mb/s | maintain-resolution | detail |
+| Motion | 921,600 px, locked | 30 | 2.5 Mb/s | maintain-framerate | motion |
+
+**The default trades frames for pixels, and that is the product's opinion: a
+shared screen is read, not watched.** It was 30fps at full resolution for one
+release, which is the request that ends in an unreadable rung — 1,440,000 px at
+30fps is 56% more pixels than the 720p30 Discord publishes as its free tier, and
+Discord's number is a *locked target*, not the outcome of a negotiation. What
+makes a stream stable is a ceiling the encoder is not allowed to walk away from.
+Full resolution at 15fps costs about half of 30fps and degrades into fewer
+frames rather than fewer pixels.
+
+`Motion` is the one profile with an **absolute** target (`pixels: 1280*720`)
+rather than the server's budget. Absolute and not a fraction on purpose: a
+fraction moves when `--pixels` moves, and a profile whose target follows a flag
+is not a target. `budgetOf()` takes the min of the two, so `--pixels` still
+bounds every profile — the flag protects the sharer's CPU, and a profile is a
+preference.
+
+**That target is an area, and the menu called it "720p" for a release.** It is
+1280×720 only on a 16:9 source. `applyCapture` fits the source's *own* aspect
+into the budget, so the same profile delivers 1188×770 on a 1.54 laptop screen,
+1214×758 at 16:10 and 1176×784 at 3:2 — every one within 1% of 921,600 px, not
+one of them 720 lines. Measured in the field on a 1.54 screen: the sharer's
+strip read `1486×964` on Sharp against `1188×770` on Motion, a ratio of 1.2508
+against the 1.25 that √(1,440,000 / 921,600) predicts. The arithmetic was doing
+exactly what it says; the label was the defect. On a source *smaller* than the
+budget it was wronger still — `k` is capped at 1, so a 1024×768 window comes out
+1024×768 under both profiles and the two differ only in frames.
+
+**So the hints name no resolution, and no framerate either.** The fix is not a
+better number: no number belongs there at all. A rung is a property of the
+source, which is chosen in the picker after the menu is read, and the section
+below records that `applyConstraints` resolving does not even prove the source
+reconfigured — `cut refused` is a state this client can reach. What the three
+hints carry now is the trade itself, in the same shape for each (`most detail,
+least motion` / `balanced detail and motion` / `most motion, least detail`), so
+they can be read against one another. Two of them used to describe the identical
+capture in different words: `every pixel` and `full resolution` are both
+`pixels: null`, and the only difference between Text and Sharp is frames. The
+measured numbers stay where they are measured, which is the sharer's own strip.
+Do not put a resolution back into this menu.
+
+Four more things that are load-bearing:
+
+- **A profile change touches no signaling.** `setParameters` does not
+  renegotiate and `applyConstraints` reconfigures the track in place, so
+  switching mid-share reopens no picker, rebuilds no tile and sends no SDP.
+  That is why `applyCapture()` is a function of its own instead of living
+  inside `startShare`.
+- **`captureSrc` holds the source's real geometry**, not the current track
+  size. Recomputing the cut from what the last profile left in the track would
+  ratchet the resolution down and never let it back up.
+- **The picker is always asked for the full budget and 30fps**, whatever the
+  active profile. The profile only ever cuts below that, and cutting at the
+  picker would make going back up require a second picker.
+- **The framerate goes to the track and to the encoder.** `applyConstraints`
+  first with `frameRate`, then again without it if that was refused: a source
+  that rejects the constraint must not take the resize down with it, and
+  `encodings[0].maxFramerate` holds the ceiling either way.
+
+### `applyConstraints` resolving does not prove the source reconfigured
+
+The same lesson `setParameters` taught one section up, learned again one
+function away, and this time the field found it first: *"when I open the live it
+comes in low quality; if I change the profile and go back to the one it was on,
+it gets better."*
+
+The sharer's own strip is what settled it. On a 2560×1440 screen it read
+`2560×1440 → 640×360 · 30fps bandwidth` — the capture never left the screen's
+own size, so the encoder was handed **3,686,400 px, 1.78× the 2,073,600** where
+encoding jumps from ~2 to ~10 cores, and it answered by walking down its ladder
+to the ½ rung of 1280×720. After the flip: `1600×900 · 15fps`. (The `30fps` in
+that first reading is `Motion`, not a second defect — see the end of this
+section. It is also why the flip landed on `Sharp` rather than back where it
+started.)
+
+**The same call, with the same arguments, works seconds later** — that is the
+whole clue, and it rules out the arithmetic. What differs is that by then the
+track has sinks (the local tile and N senders), and at `startShare` it had
+**none**: `geometriaReal` disconnects its own `<video>` one line earlier, and
+`attachTile` came one line later. A source with no consumer has nothing to
+reconfigure, and the constraint was lost without a word, because
+`applyConstraints` had resolved.
+
+So two things changed, and only the second is verifiable headless:
+
+- **`startShare` attaches the tile before calling `applyCapture()`.** That is
+  the fix, not a tidy-up. Its evidence is the field report and the mechanism,
+  not an assertion: a `canvas.captureStream` track honours a resize with no sink
+  at all, so the bench cannot reproduce a sinkless screen capture.
+- **`applyCapture` reads `getSettings()` back and retries** (`CUT_TRIES` 4,
+  `CUT_RETRY` 300ms), and when the source still will not take it the sharer's
+  strip says `cut refused` in the path field instead of the console saying it to
+  nobody. The check is on **area against the budget**, not on the exact box: the
+  source keeps its own aspect, so some geometries settle at 96% of the budget
+  and none of that is a failure. The retries cost nothing on the path that
+  works — they only run when the read-back says the cut did not land, which is
+  also why the up-to-900ms they can add lands only on the broken path.
+
+`captureGen` exists because the retry loop outlives its caller: without it, a
+call being replaced (a profile change, a restarted share) would keep writing the
+old profile's box over the new one.
+
+The bench drives a source that swallows the first `applyConstraints` and honours
+the rest, and asserts on what `getSettings()` says afterwards — never on the
+call having resolved. Two mutants turn it red and the control stays green:
+capping the loop at one attempt fails the first assertion, and returning without
+the read-back fails both.
+
+**And the `30fps` in that strip was not a second defect — it was `Motion`.** The
+pair `640×360 · 30fps` is impossible under `Sharp`, whose `maxFramerate` is 15,
+which is what made it look like the encoding policy had failed too. It had not.
+Reproduced headless, two peers, the capture pinned at 2560×1440 and the profile
+set to `Motion`, the sharer's strip reads
+
+```
+2560×1440 → 640×360 · 30fps bandwidth · 1 destination
+```
+
+character for character, with `degradationPreference: "maintain-framerate"` and
+`maxFramerate: 30` in force the whole time. That is `Motion` doing exactly what
+it promises: handed 3,686,400 px and a link that cannot carry them, it keeps the
+30 frames and pays in pixels. The encoder was right; what was wrong was the
+number of pixels it was handed.
+
+So it is **one defect, not two**, and the same fix covers both halves. With the
+cut landing, the same run captures at `Motion`'s locked 1280×720 and the path
+field goes back to reading `motion` instead of `cut refused`.
+
+Two things worth keeping from that measurement. On an unrestricted link the
+encoder **climbs back** — 640×360 → 960×540 → 1280×720 over ~20s — so a low
+resolution read in the first seconds is not a verdict, the same caveat the
+`↑ sent / available` pill carries. And with the link pinned at `b=AS:500` it
+does not climb: it oscillates between 480×270 and 640×360. Pinning the wire with
+`b=AS` on the local description is what makes `qualityLimitationReason` read
+`bandwidth` on a loopback that otherwise has 6 Mb/s to give, and is the only way
+to exercise this rig on one machine.
+
+The old `CAP_BITRATE` (1.5 Mb/s, one constant for everyone) is gone into the
+table. Raising a ceiling is not the same as spending it — the bandwidth estimate
+still decides — but 1.5 Mb/s was a ceiling low enough to bind on a tailnet link
+that had more to give.
+
+**The sharer's `↑` reads `sent / available`**, the second number being
+`availableOutgoingBitrate` off the nominated candidate pair — congestion
+control's own estimate, taken from the *tightest* destination rather than summed
+(separate paths do not add up, they share one uplink). Without it, `400 kb/s`
+alone is ambiguous in the exact way that matters: 400 of 3400 is an encoder that
+is not asking, 400 of 450 is a link with nothing left to give, and those two
+have opposite remedies. Only Chromium fills the field in, so an absent value
+hides the half instead of showing a zero. Remember it starts cold at ~300 kb/s
+and climbs, so a low estimate in the first seconds is not a verdict.
+
+**What is not covered.** The bench asserts the menu, the persistence, the locked
+target, the `setParameters` path and the read-back of the capture cut; it cannot
+assert what the profiles do to a real encoder, for the same reason WebRTC itself is not covered here. Whether
+`Text` actually fixes the macOS collapse is a two-machine measurement that has
+not been run.
 
 ## Two things that will bite you
 

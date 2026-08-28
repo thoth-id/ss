@@ -9,8 +9,8 @@ touches media.
 { "t": "join",   "room": "standup", "name": "gabriel" }   // name is optional
 { "t": "rename", "name": "gabriel" }
 { "t": "signal", "to": "<peerId>", "data": { /* opaque */ } }
-{ "t": "share-start" }
-{ "t": "share-stop" }
+{ "t": "share-start", "src": "screen" }   // src optional, defaults to "screen"
+{ "t": "share-stop",  "src": "screen" }   // without src: every source this peer holds
 ```
 
 Every message that arrives before a `join` is ignored.
@@ -23,12 +23,22 @@ Every message that arrives before a `join` is ignored.
 { "t": "peer-joined",  "id": "<id>" }
 { "t": "peer-left",    "id": "<id>" }
 { "t": "names",        "map": { "<id>": "gabriel", ... } }
-{ "t": "sharers",      "ids": ["<id>", ...] }
-{ "t": "share-denied", "reason": "limit" }
+{ "t": "sharers",      "ids": ["<id>#screen", ...] }
+{ "t": "share-denied", "reason": "limit", "src": "screen" }
 { "t": "signal",       "from": "<id>", "data": { /* opaque */ } }
 ```
 
 ids are 8 hex chars (`3f9a1b2c`), handed out fresh per socket.
+
+A sharer slot is a **stream, not a person**: one peer can hold its screen and its
+camera at the same time, so the ids in `sharers` are `"<peerId>#<src>"` keys and
+`MAX_SHARERS` counts streams. That is the axis it was always measured on — how
+many streams each machine has to *decode* — so counting people would have made
+the limit stop describing what it protects. An unknown `src` is refused outright
+rather than taking a slot under a key nothing could free. `src` also rides on the
+WebRTC negotiation inside `data`, always stated from the point of view of whoever
+sends the media, which is what makes both sides agree on the key without the
+server ever reading it.
 
 ## `data` is opaque, and that is the point
 

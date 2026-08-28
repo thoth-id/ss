@@ -34,6 +34,10 @@ const CFG = (await (cfgResp as Response).json()) as {
 const MAX_PEERS: number = CFG.maxPeers;
 const MAX_SHARERS: number = CFG.maxSharers;
 
+// a sharer slot is a STREAM, not a person: the server's set holds
+// "<peerId>#<src>" keys so one peer can hold its screen and its camera at once.
+const sk = (id: string, src = "screen") => `${id}#${src}`;
+
 // T2 builds a room of MAX_SHARERS+1 to watch arbitration deny the extra one,
 // which only fits if the room cap is greater than the sharer cap. saying so
 // here keeps an incompatible configuration from looking like a failing test.
@@ -224,7 +228,7 @@ async function testRoomIsolation() {
 
 	a.send({ t: "share-start" });
 	await settle();
-	eq("sharers of room-1 has the peer", a.last("sharers")?.ids, [a.id()]);
+	eq("sharers of room-1 has the peer", a.last("sharers")?.ids, [sk(a.id())]);
 	eq("sharers do not leak into room-2", b.last("sharers")?.ids, []);
 
 	a.close();
@@ -328,9 +332,17 @@ async function testSharerArbitration() {
 	for (let i = 0; i < MAX_SHARERS; i++) {
 		ps[i].send({ t: "share-start" });
 		await settle();
-		eq(`sharer ${i + 1} enters the set`, ps[i].last("sharers")?.ids, ids.slice(0, i + 1));
+		eq(
+			`sharer ${i + 1} enters the set`,
+			ps[i].last("sharers")?.ids,
+			ids.slice(0, i + 1).map((x) => sk(x)),
+		);
 	}
-	eq("the broadcast reaches the whole room", extra.last("sharers")?.ids, ids.slice(0, MAX_SHARERS));
+	eq(
+		"the broadcast reaches the whole room",
+		extra.last("sharers")?.ids,
+		ids.slice(0, MAX_SHARERS).map((x) => sk(x)),
+	);
 
 	const before = extra.of("sharers").length;
 	extra.send({ t: "share-start" });
@@ -341,7 +353,10 @@ async function testSharerArbitration() {
 		"limit",
 	);
 	eq("share-denied generates no broadcast", extra.of("sharers").length, before);
-	ok("whoever was denied does not enter the set", !extra.last("sharers")?.ids.includes(extraId));
+	ok(
+		"whoever was denied does not enter the set",
+		!extra.last("sharers")?.ids.includes(sk(extraId)),
+	);
 	ok("share-denied goes only to the sender", ps[0].of("share-denied").length === 0);
 
 	const all = ps.flatMap((p) => p.of("sharers"));
@@ -358,7 +373,11 @@ async function testSharerArbitration() {
 
 	ps[0].send({ t: "share-stop" });
 	await settle();
-	eq("share-stop removes from the set", extra.last("sharers")?.ids, ids.slice(1, MAX_SHARERS));
+	eq(
+		"share-stop removes from the set",
+		extra.last("sharers")?.ids,
+		ids.slice(1, MAX_SHARERS).map((x) => sk(x)),
+	);
 
 	const beforeStop = extra.of("sharers").length;
 	ps[0].send({ t: "share-stop" });
@@ -368,8 +387,8 @@ async function testSharerArbitration() {
 	extra.send({ t: "share-start" });
 	await settle();
 	eq("a freed slot lets a new sharer in", extra.last("sharers")?.ids, [
-		...ids.slice(1, MAX_SHARERS),
-		extraId,
+		...ids.slice(1, MAX_SHARERS).map((x) => sk(x)),
+		sk(extraId),
 	]);
 
 	for (const p of ps) {
@@ -386,11 +405,11 @@ async function testSharerLeave() {
 	a.send({ t: "share-start" });
 	b.send({ t: "share-start" });
 	await settle();
-	eq("two active sharers", c.last("sharers")?.ids, [aId, bId]);
+	eq("two active sharers", c.last("sharers")?.ids, [sk(aId), sk(bId)]);
 
 	a.close();
 	await settle();
-	eq("the sharer's close frees the slot", c.last("sharers")?.ids, [bId]);
+	eq("the sharer's close frees the slot", c.last("sharers")?.ids, [sk(bId)]);
 	eq("close also emits peer-left", c.first("peer-left")?.id, aId);
 
 	// somebody who was not a sharer must generate no sharers broadcast on leaving
@@ -414,7 +433,7 @@ async function testSharerSnapshot() {
 	late.join("snap");
 	await settle();
 
-	eq("whoever arrives later receives the current set", late.first("sharers")?.ids, [a.id()]);
+	eq("whoever arrives later receives the current set", late.first("sharers")?.ids, [sk(a.id())]);
 
 	a.close();
 	late.close();
@@ -566,7 +585,7 @@ async function testReconnect() {
 
 	a.send({ t: "share-start" });
 	await settle();
-	eq("sharer registered before the drop", b.last("sharers")?.ids, [aId]);
+	eq("sharer registered before the drop", b.last("sharers")?.ids, [sk(aId)]);
 
 	a.close();
 	await settle();
@@ -588,8 +607,8 @@ async function testReconnect() {
 
 	a2.send({ t: "share-start" });
 	await settle();
-	eq("the reconnect recovers the slot under the new id", b.last("sharers")?.ids, [newId]);
-	ok("the old id is not in the set", !b.last("sharers")?.ids.includes(aId));
+	eq("the reconnect recovers the slot under the new id", b.last("sharers")?.ids, [sk(newId)]);
+	ok("the old id is not in the set", !b.last("sharers")?.ids.includes(sk(aId)));
 
 	a2.close();
 	b.close();
@@ -655,6 +674,56 @@ async function testStun() {
 	sock.close();
 }
 
+// one peer holding two slots at once. this is the whole reason the sharer set
+// is keyed by "<id>#<src>" instead of by peer: a screen and a camera are two
+// streams to decode, which is the axis MAX_SHARERS was always measured on.
+async function testTwoSources() {
+	console.log("\nT2b: one peer, two sources");
+	const [a, b] = await room("dual", 2);
+	const aId = a.id();
+
+	a.send({ t: "share-start", src: "screen" });
+	await settle();
+	eq("the screen takes a slot", b.last("sharers")?.ids, [sk(aId)]);
+
+	a.send({ t: "share-start", src: "camera" });
+	await settle();
+	eq("the camera takes a second one", b.last("sharers")?.ids, [sk(aId), sk(aId, "camera")]);
+
+	const before = b.of("sharers").length;
+	a.send({ t: "share-start", src: "camera" });
+	await settle();
+	eq("a repeated source does not re-broadcast", b.of("sharers").length, before);
+
+	// an unknown source would occupy a slot under a key nothing can ever free.
+	a.send({ t: "share-start", src: "hologram" });
+	await settle();
+	eq("an unknown source is refused outright", b.of("sharers").length, before);
+
+	a.send({ t: "share-stop", src: "screen" });
+	await settle();
+	eq("stopping one source leaves the other", b.last("sharers")?.ids, [sk(aId, "camera")]);
+
+	// one socket, so the two are processed in order and there is nothing to
+	// observe in between.
+	a.send({ t: "share-start", src: "screen" });
+	// no src at all means every source, which is what a client that predates
+	// the second one means by sending share-stop.
+	a.send({ t: "share-stop" });
+	await settle();
+	eq("share-stop with no source frees them all", b.last("sharers")?.ids, []);
+
+	a.send({ t: "share-start", src: "screen" });
+	a.send({ t: "share-start", src: "camera" });
+	await settle();
+	eq("both are back", b.last("sharers")?.ids?.length, 2);
+	a.close();
+	await settle();
+	eq("closing frees every slot the socket held", b.last("sharers")?.ids, []);
+	b.close();
+	await settle();
+}
+
 /* ---------- run ---------- */
 
 await testStatic();
@@ -664,6 +733,7 @@ await testRoomIsolation();
 await testSignalRelay();
 await testMaxPeers();
 await testSharerArbitration();
+await testTwoSources();
 await testSharerLeave();
 await testSharerSnapshot();
 await testShareBeforeJoin();
