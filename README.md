@@ -146,10 +146,36 @@ Every number here, with the run that produced it: [`docs/measurements.md`](docs/
   and STUN was never needed; `relay` would mean the direct path failed.
 - On your own tile it shows the **captured** resolution, and if the encoder is
   sending less than that, the real one appears beside it
-  (`1600×900 → 640×360 bandwidth`): a correct capture with the output one rung
-  down is the whole diagnosis. If the encoding policy did not take in your
-  browser, `policy refused` or `policy not confirmed` shows up in place of the
-  path field.
+  (`1600×900 → 640×360 · 30fps bandwidth`): a correct capture with the output one
+  rung down is the whole diagnosis. If the encoding policy did not take in your
+  browser, `policy refused`, `policy not confirmed` or `no encodings` shows up in
+  place of the path field.
+- Your `↑` reads **sent / available**: the second number is congestion control's
+  estimate for the tightest destination. `400 kb/s of 3.4 Mb/s` is an encoder not
+  asking for what is there; `400 of 450` is a link with nothing left to give.
+  Only Chromium reports it, and it starts around 300 kb/s and climbs, so the
+  first seconds are not a verdict.
+- **The screen and the camera can be on air together**, and each dock button
+  toggles its own source: stopping the camera leaves the screen up. They are two
+  slots, so a full room can be full because of one person. A third button flips
+  front to back, and exists only while a camera is on air on a device with more
+  than one.
+- **The dock only offers the sources that exist.** On a phone there is no screen
+  button, because **no browser on iOS or Android gives a web page the screen** —
+  by any API, over wifi or cable. That is measured per browser, never guessed
+  from the user agent. An insecure origin is the one case that keeps the button,
+  disabled with the reason in its tooltip, because there the capability exists
+  and the fix is yours. To put a phone's actual *screen* in a room, mirror it to
+  a desktop (AirPlay, `scrcpy`) and share that window.
+- The **quality button** picks which trade the encoder makes, since it cannot
+  see whether it is sending a terminal or a video: **Text**, **Sharp** (the
+  default) and **Motion**. Switching mid-share reopens no picker and
+  renegotiates nothing, and the menu stays open after a choice so you can try
+  the three against the screen you are actually sharing. If code on a shared
+  screen arrives unreadable, this is the button.
+- The default trades frames for pixels on purpose: **a shared screen is read,
+  not watched.** Full resolution at 15fps costs about half of what 30fps does
+  and, when the link tightens, loses frames instead of letters.
 - The bar meter is the last minute of bitrate, one bar per second. A link going
   bad shows up there before the instantaneous number explains why.
 - Anyone in the room who is not transmitting appears as a monogram in a rail

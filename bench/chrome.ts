@@ -13,11 +13,22 @@ rmSync(`${OUT}/prof`, { recursive: true, force: true });
 
 export let proc: Subprocess | null = null;
 
+// `chromium` is on PATH on the Linux box this suite was written on and on no
+// macOS install: there the binary lives inside the .app bundle and is not
+// linked anywhere. hard-coding one name made the bench unrunnable on the very
+// machine whose Safari/Chrome behaviour is being chased, so the name is an env
+// var with the two usual defaults behind it.
+const CHROME =
+	process.env.CHROME ||
+	(process.platform === "darwin"
+		? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+		: "chromium");
+
 export function ensureChrome(): Subprocess {
 	if (proc) return proc;
 	proc = Bun.spawn(
 		[
-			"chromium",
+			CHROME,
 			"--headless=new",
 			"--disable-gpu",
 			"--hide-scrollbars",
