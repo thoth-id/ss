@@ -1963,14 +1963,36 @@ addEventListener("beforeinstallprompt", (e) => {
   $("installBtn").hidden = false;
 });
 
+// arc fires beforeinstallprompt and then draws no dialog at all: the api is
+// there, the install ui is not, which their own docs say outright. prompt()
+// returns, nothing appears, and the button reads as broken. a click that
+// answers nothing is the worst thing a button can do, so when the browser stays
+// silent the tooltip says why. silence is either never resolving userChoice or
+// dismissing it faster than a person could have decided.
+const NO_INSTALL_UI = "This browser cannot install web apps. Chrome, Edge or Brave can.";
+
 $("installBtn").onclick = async () => {
   if (!installPrompt) return;
-  installPrompt.prompt();
-  await installPrompt.userChoice;
-  // the event fires once per load, so declining today brings the button back
-  // only on the next one.
+  const b = $("installBtn");
+  const mute = setTimeout(() => { b.title = NO_INSTALL_UI; }, 1200);
+  const asked = performance.now();
+  let outcome = null;
+  try {
+    installPrompt.prompt();
+    ({ outcome } = await installPrompt.userChoice);
+  } catch {
+    // prompt() throws once spent, which is the second click on a browser that
+    // never answered the first.
+  }
+  clearTimeout(mute);
+  if (outcome !== "accepted" && performance.now() - asked < 300) {
+    b.title = NO_INSTALL_UI;        // no dialog was ever drawn, so nothing was declined
+    return;
+  }
+  // spent either way: an accepted prompt installs, a declined one cannot be
+  // raised again, so the button goes until the next load.
   installPrompt = null;
-  $("installBtn").hidden = true;
+  b.hidden = true;
 };
 
 addEventListener("appinstalled", () => {
