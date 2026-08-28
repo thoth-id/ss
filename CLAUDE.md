@@ -595,6 +595,18 @@ manifest, carry the name and the standalone mode on iOS.
 Losing the address bar costs nothing here, because the room button already
 switches rooms without one.
 
+**Arc fires the event and then draws nothing.** Its own docs say it: the API is
+present, the install UI is not, so a custom install button "won't have any
+effect". The button therefore appears (the event fired) and the click looks
+dead. Since there is no way to ask a browser whether it will actually draw the
+dialog, the click infers it from the answer: no answer within 1.2s, or a
+dismissal faster than 300ms, means no dialog was ever drawn, and the tooltip
+says so instead of leaving the button mute. A real decline is slower than that
+and is treated as a decline: the event is single use either way, so the button
+goes until the next load. All five paths — never resolving, instant dismissal,
+`prompt()` throwing on a second click, accepted, genuinely declined — are
+covered by driving a fake `installPrompt` over CDP.
+
 **The favicon set is the delivered `thoth` set, copied byte-for-byte, and it
 stays that way.** Those files live at the root of `public/` because that is what
 the set's own `head.html` assumes. Do not resize, recolour, recentre or reassemble
