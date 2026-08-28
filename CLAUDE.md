@@ -1107,6 +1107,62 @@ does **not** cover STUN — peers hit `100.x:3478` directly, so it must stay bou
 on `0.0.0.0:3478`. On a multi-homed host that bind has a measured failure mode
 for same-machine clients: `docs/measurements.md`.
 
+### A tunnel in front breaks the STUN url, and the symptom is a black tile
+
+The client derived its STUN url from `location.hostname`, and that is correct
+for the deployment this project was built for: `tailscale serve` puts HTTPS in
+front of the same machine the STUN socket is on, so the page's hostname and the
+STUN host are the same name. Put a tunnel there instead — ngrok, cloudflared,
+any of them — and the derivation breaks, because a tunnel that forwards TCP
+forwards no UDP: `stun:uninterpreted-clay-roilier.ngrok-free.dev:3478` is a
+hostname that answers HTTPS and nothing else, so no `srflx` candidate ever
+forms.
+
+**What that renders is a black tile, not `connecting…`, and the difference is
+the whole diagnostic.** `ontrack` fires when the remote description is applied,
+which happens as soon as the SDP crosses the signaling — and the signaling is
+the half a tunnel carries perfectly. So `attachTile` replaces the monogram with
+a `<video>` bound to a track that will never receive a packet. Read backwards:
+a tile stuck on `connecting…` means the SDP never arrived, a **black** tile
+means it arrived and the media did not. The sharer's log looks flawless in both
+cases — the ngrok dashboard showed `/config` 200 and two `/ws` 101 while
+nothing at all was flowing.
+
+`ICE_URLS` (`--ice`) overrides the derivation, and the value depends on where
+the peers are, which is the part no default can guess: `stun:<lan-ip>:3478`
+reaches this server's own STUN from the same LAN, a public STUN covers peers on
+different networks, and neither one survives a symmetric NAT. **`stun:` only.**
+TURN is refused with a line on stderr rather than accepted quietly: it needs
+credentials and a relay this project does not have, and half of it configured
+here would look like it works right up to the first NAT that needs the other
+half. That is the same *never swallow the failure* rule the encoder section
+records, applied one layer down.
+
+**And the intermittency was a second defect, in the same file, found by the
+field report `sometimes it stays on negotiating and only F5 fixes it`.** That
+sentence is the whole diagnosis: a NAT does not change between reloads, so
+anything a reload cures is boot state, not the network. `/config` was read with
+`fetch(...).then(r => r.json()).catch(() => ({ ...defaults }))`, and once ICE
+servers started arriving in that response the fallback object stopped being a
+cosmetic default — it has no `iceUrls`, so a single failed read silently
+reinstated the hostname derivation this section exists to override, and the call
+was over before it began.
+
+Behind a tunnel that read fails easily and in a shape the old code could not
+tell from a dead network: `r.ok` was never checked, so a 502 or an interstitial
+— HTML with a status — threw out of `r.json()` into the same catch as an
+offline browser. `loadConfig()` now checks the status, retries (`CFG_TRIES` 3,
+`CFG_RETRY` 300ms, growing), and when all three fail says so through `notice()`
+instead of starting a call that cannot connect. The retries cost nothing on the
+path that works — measured at one call and 1ms — because they only run after a
+failure.
+
+None of this makes a tunnel a good idea — see *Out of scope*. It is a public
+bind with no auth in front of a room whose name is the only partition that
+exists. `--ice` makes it work; it does not make it safe.
+
+## Verification status
+
 ## Verification status
 
 Covered headless by `test.ts`: signaling, room limits, sharer arbitration, the

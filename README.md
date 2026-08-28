@@ -76,6 +76,7 @@ bunx @thoth-dev/tailcast [flags]
 | `--peers <n>` | `MAX_PEERS` | 5 | peers per room; the 6th gets `denied` and stays out |
 | `--sharers <n>` | `MAX_SHARERS` | 3 | how many transmit at once; the 4th attempt gets `share-denied` |
 | `--pixels <n>` | `MAX_CAPTURE_PIXELS` | 1440000 | capture pixel budget (1600×900) |
+| `--ice <urls>` | `ICE_URLS` | | comma-separated `stun:` urls, overriding the one derived from the page's hostname. only needed behind a tunnel |
 | `--bg` | | | run in the background |
 | `--stop` | | | stop whatever runs in the background on the same port |
 | `--force` | | | with `--stop`, kill even when the process can't be confirmed as ours |
@@ -92,6 +93,13 @@ With `--bg`, the pidfile and the log live in `$XDG_RUNTIME_DIR/tailcast/` as
 dir. The command reports success only once the child's own `/config` answers,
 which means after it actually bound the port rather than merely after it was
 spawned.
+
+`GET /config` also hands `iceUrls` to the client. It is empty by default, and the
+client then derives its STUN url from `location.hostname` — right whenever the
+page and the STUN socket are the same machine, which is what `tailscale serve`
+gives you. Behind a tunnel that forwards TCP only (ngrok, cloudflared) the
+derived url points at a UDP port that does not exist, so `--ice` says where STUN
+actually listens.
 
 ## Rooms
 

@@ -127,6 +127,7 @@ async function testStatic() {
 		maxPeers: number;
 		maxSharers: number;
 		maxCapturePixels: number;
+		iceUrls: unknown;
 		[key: string]: unknown;
 	};
 	eq("/config returns stunPort", json.stunPort, STUN_PORT);
@@ -137,6 +138,15 @@ async function testStatic() {
 	for (const field of ["maxPeers", "maxSharers", "maxCapturePixels"]) {
 		ok(`/config returns ${field} as an integer > 0`, positiveInt(json[field]), json[field]);
 	}
+	// shape again, and the field has to be present even when empty: the client
+	// branches on `cfg.iceUrls?.length`, so an absent field and an empty one
+	// take the same path only as long as the field is an array either way.
+	ok(
+		"/config returns iceUrls as an array of stun: urls",
+		Array.isArray(json.iceUrls) &&
+			(json.iceUrls as unknown[]).every((u) => typeof u === "string" && /^stuns?:/i.test(u)),
+		json.iceUrls,
+	);
 
 	const miss = await fetch(`${HTTP}/does-not-exist`);
 	eq("unknown route gives 404", miss.status, 404);
